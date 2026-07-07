@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas import TeacherDashboardResponse
-from app.services.learning_workflow import build_teacher_dashboard
+from app.services.ai_workflow import build_teacher_dashboard
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 

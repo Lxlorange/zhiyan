@@ -1,15 +1,23 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-from app.schemas import CourseMapResponse
-from app.services.learning_workflow import COURSE_CHAPTERS, KNOWLEDGE_POINTS
+from app.core.database import get_db
+from app.schemas import CourseMapResponse, KnowledgePointRead, KnowledgeSearchHit, KnowledgeSearchRequest
+from app.services.knowledge_service import get_course_map_from_db, list_knowledge_points, search_knowledge
 
 router = APIRouter(prefix="/course", tags=["course"])
 
 
 @router.get("/map", response_model=CourseMapResponse)
-def course_map() -> CourseMapResponse:
-    return CourseMapResponse(
-        course="人工智能与 AI4S 实践",
-        chapters=COURSE_CHAPTERS,
-        knowledge_points=KNOWLEDGE_POINTS,
-    )
+def course_map(db: Session = Depends(get_db)) -> CourseMapResponse:
+    return get_course_map_from_db(db)
+
+
+@router.get("/knowledge-points", response_model=list[KnowledgePointRead])
+def knowledge_points(db: Session = Depends(get_db)) -> list[KnowledgePointRead]:
+    return list_knowledge_points(db)
+
+
+@router.post("/knowledge/search", response_model=list[KnowledgeSearchHit])
+def knowledge_search(request: KnowledgeSearchRequest, db: Session = Depends(get_db)) -> list[KnowledgeSearchHit]:
+    return search_knowledge(db, request.query, request.limit)

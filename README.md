@@ -35,6 +35,18 @@ Copy-Item backend\.env.example backend\.env
 DATABASE_URL=postgresql+psycopg://zhiyan:zhiyan@localhost:5432/zhiyan_a3
 ```
 
+配置千问 API Key 后，画像、诊断、路径、资源、题目、辅导和评估会走真实 AI 生成：
+
+```text
+LLM_PROVIDER=qwen
+QWEN_API_KEY=你的千问DashScope API Key
+QWEN_MODEL=qwen-plus
+QWEN_BASE_URL=https://ws-1ulzsdw0gslyucjg.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+```
+
+如果未配置 `QWEN_API_KEY`，AI 链路接口会返回 `503`，提示缺少千问 API Key。
+运行时固定读取 `backend/.env`，不是 `.env.example`；如果页面弹窗显示 `503`，优先检查 `backend/.env` 中的 `QWEN_API_KEY`、`LLM_PROVIDER` 和 `QWEN_BASE_URL`。
+
 推荐一体化启动：
 
 ```powershell

@@ -1,5 +1,5 @@
 from app.schemas import AssessmentResponse, ProfileRequest, StudentProfile, TutorRequest, TutorResponse, WorkflowState
-from app.services.learning_workflow import assess_answers, create_profile, start_workflow, tutor_answer
+from app.services.ai_workflow import assess_answers, create_profile, start_workflow, tutor_answer
 
 
 def build_profile(request: ProfileRequest) -> StudentProfile:

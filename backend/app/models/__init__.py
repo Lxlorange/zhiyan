@@ -1,3 +1,41 @@
+from app.models.learning import (
+    AgentTaskRecord,
+    AnswerRecord,
+    Course,
+    CourseChapter,
+    DocumentChunk,
+    GeneratedResourceRecord,
+    KnowledgeDocument,
+    KnowledgePoint,
+    LearningPathRecord,
+    LearningProject,
+    LearningProjectEvent,
+    ResearchDirection,
+    ResearchDirectionEvent,
+    ResearchDirectionTemplate,
+    StudentProfileRecord,
+    StudentProfileVersion,
+    WorkflowSessionRecord,
+)
 from app.models.user import User
 
-__all__ = ["User"]
+__all__ = [
+    "AgentTaskRecord",
+    "AnswerRecord",
+    "Course",
+    "CourseChapter",
+    "DocumentChunk",
+    "GeneratedResourceRecord",
+    "KnowledgeDocument",
+    "KnowledgePoint",
+    "LearningPathRecord",
+    "LearningProject",
+    "LearningProjectEvent",
+    "ResearchDirection",
+    "ResearchDirectionEvent",
+    "ResearchDirectionTemplate",
+    "StudentProfileRecord",
+    "StudentProfileVersion",
+    "User",
+    "WorkflowSessionRecord",
+]

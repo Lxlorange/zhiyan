@@ -20,6 +20,7 @@ frontend/.vite/
 *.log
 Thumbs.db
 .DS_Store
+.codex/
 
 # Local data
 backend/data/*.db
