@@ -117,7 +117,7 @@
               <template #header>智能体协作轨迹</template>
               <el-table v-if="workflow" :data="workflow.agent_trace" size="small">
                 <el-table-column prop="agent" label="Agent" width="170" />
-                <el-table-column prop="summary" label="输出摘要" />
+                <el-table-column prop="output_summary" label="输出摘要" />
                 <el-table-column prop="latency_ms" label="耗时(ms)" width="100" />
               </el-table>
               <el-empty v-else description="等待工作流执行" />
@@ -132,20 +132,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { askTutor, runDemoWorkflow, type DemoWorkflowResponse, type TutorResponse } from './api'
+import { askTutor, runDemoWorkflow, type WorkflowState, type TutorResponse } from './api'
 
 const studentMessage = ref(
   '我是计算机专业大二学生，Python 基础一般，想做 WiFi CSI 跌倒检测课程项目，但不太理解召回率、混淆矩阵和数据集划分。'
 )
 const question = ref('为什么跌倒检测更看重召回率而不是准确率？')
-const workflow = ref<DemoWorkflowResponse>()
+const workflow = ref<WorkflowState>()
 const tutorAnswer = ref<TutorResponse>()
 const loading = ref(false)
 const tutorLoading = ref(false)
 
 const metrics = computed(() => [
   { label: '画像维度', value: workflow.value ? '8' : '-' },
-  { label: '薄弱点', value: workflow.value?.weak_points.length ?? '-' },
+  { label: '薄弱点', value: workflow.value?.gaps.length ?? '-' },
   { label: '学习节点', value: workflow.value?.path.length ?? '-' },
   { label: '资源类型', value: workflow.value?.resources.length ?? '-' }
 ])

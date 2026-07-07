@@ -1,39 +1,12 @@
 from fastapi import APIRouter
 
-from app.schemas import (
-    AssessmentRequest,
-    AssessmentResponse,
-    DemoWorkflowResponse,
-    ProfileRequest,
-    StudentProfile,
-    TutorRequest,
-    TutorResponse,
-)
-from app.services.mock_agents import assess_answers, build_profile, run_demo_workflow, tutor_answer
+from app.api.routes_auth import router as auth_router
+from app.api.routes_course import router as course_router
+from app.api.routes_teacher import router as teacher_router
+from app.api.routes_workflow import router as workflow_router
 
 router = APIRouter(prefix="/api")
-
-
-@router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@router.post("/profiles", response_model=StudentProfile)
-def create_profile(request: ProfileRequest) -> StudentProfile:
-    return build_profile(request)
-
-
-@router.post("/demo-workflow", response_model=DemoWorkflowResponse)
-def demo_workflow(request: ProfileRequest) -> DemoWorkflowResponse:
-    return run_demo_workflow(request)
-
-
-@router.post("/tutor", response_model=TutorResponse)
-def tutor(request: TutorRequest) -> TutorResponse:
-    return tutor_answer(request)
-
-
-@router.post("/assessments", response_model=AssessmentResponse)
-def assessment(request: AssessmentRequest) -> AssessmentResponse:
-    return assess_answers(request.answers)
+router.include_router(auth_router)
+router.include_router(workflow_router)
+router.include_router(course_router)
+router.include_router(teacher_router)

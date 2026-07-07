@@ -1,31 +1,77 @@
 # 智研星链 A3
 
-面向 A3 赛题“基于大模型的个性化资源生成与学习多智能体系统开发”的前后端初始化工程。
+面向 A3 赛题“基于大模型的个性化资源生成与学习多智能体系统开发”的一体化演示工程。
 
 ## 目录
 
-- `frontend/`: Vue 3 + Vite + TypeScript 前端。
-- `backend/`: FastAPI 后端与多智能体/RAG mock 服务。
+- `backend/`: FastAPI 后端、多智能体链路和内置轻量前端。
+  - `backend/app/api/`: API 路由，按课程、工作流、教师端拆分。
+  - `backend/app/services/`: 画像、诊断、路径、资源、辅导、评估等业务服务。
+  - `backend/app/web/`: FastAPI 托管的轻量前端。
+- `frontend/`: 可选的 Vue 3 + Vite 前端草稿；当前主演示不依赖它。
 - `docs/`: 赛题材料和项目计划书。
 
 ## 本地启动
 
-后端：
+本项目后端使用 PostgreSQL。先准备数据库：
+
+```sql
+CREATE DATABASE zhiyan_a3;
+CREATE USER zhiyan WITH PASSWORD 'zhiyan';
+GRANT ALL PRIVILEGES ON DATABASE zhiyan_a3 TO zhiyan;
+\c zhiyan_a3
+GRANT ALL ON SCHEMA public TO zhiyan;
+```
+
+如你的 PostgreSQL 用户、密码或端口不同，复制 `backend/.env.example` 为 `backend/.env` 后修改 `DATABASE_URL`：
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+```
+
+默认连接串：
+
+```text
+DATABASE_URL=postgresql+psycopg://zhiyan:zhiyan@localhost:5432/zhiyan_a3
+```
+
+推荐一体化启动：
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python run.py
 ```
 
-前端：
+然后访问：
+
+- 页面：`http://127.0.0.1:8000`
+- API 文档：`http://127.0.0.1:8000/docs`
+
+也可以在项目根目录启动：
 
 ```powershell
-cd frontend
-npm install
-npm run dev
+python run.py
 ```
 
-前端默认请求 `http://localhost:8000/api`。
+## 当前已实现链路
+
+`注册/登录 -> 学生对话画像 -> 诊断知识短板 -> 规划学习路径 -> 多 Agent 生成资源 -> 智能辅导 -> 练习评估 -> 更新画像`
+
+核心接口：
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/workflow/start`
+- `GET /api/workflow/{session_id}`
+- `POST /api/tutor`
+- `POST /api/assessments`
+- `GET /api/course/map`
+- `GET /api/teacher/dashboard`
+
+详细操作和预期返回见：
+
+- `docs/用户操作与预期返回.md`

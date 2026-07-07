@@ -6,7 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "zhiyan-a3-api"
     app_env: str = "development"
-    database_url: str = "sqlite:///./data/app.db"
+    database_url: str = "postgresql+psycopg://zhiyan:zhiyan@localhost:5432/zhiyan_a3"
+    jwt_secret_key: str = "change-this-secret-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     llm_provider: str = "mock"
     xunfei_app_id: str = ""

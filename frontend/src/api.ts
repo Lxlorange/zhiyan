@@ -14,6 +14,8 @@ export interface StudentProfile {
   resource_preference: string[]
   learning_pace: string
   interest_direction: string
+  mastery: Record<string, number>
+  revision: number
 }
 
 export interface ResourceCard {
@@ -23,29 +25,52 @@ export interface ResourceCard {
   target_profile: string
   knowledge_points: string[]
   content: string
+  format_hint: string
   sources: string[]
+  safety_notes: string[]
 }
 
 export interface LearningStep {
   id: string
   title: string
+  objective: string
   reason: string
   resources: string[]
   estimated_minutes: number
+  status: string
 }
 
 export interface AgentTrace {
   agent: string
   status: string
-  summary: string
+  input_summary: string
+  output_summary: string
   latency_ms: number
 }
 
-export interface DemoWorkflowResponse {
+export interface KnowledgeGap {
+  id: string
+  title: string
+  severity: string
+  evidence: string
+  related_points: string[]
+}
+
+export interface QuizQuestion {
+  id: string
+  prompt: string
+  options: string[]
+  answer: string
+  knowledge_point: string
+}
+
+export interface WorkflowState {
+  session_id: string
   profile: StudentProfile
-  weak_points: string[]
+  gaps: KnowledgeGap[]
   path: LearningStep[]
   resources: ResourceCard[]
+  quiz: QuizQuestion[]
   agent_trace: AgentTrace[]
 }
 
@@ -54,10 +79,11 @@ export interface TutorResponse {
   knowledge_points: string[]
   sources: string[]
   follow_up_exercise: string
+  strategy: string
 }
 
 export function runDemoWorkflow(message: string) {
-  return api.post<DemoWorkflowResponse>('/demo-workflow', { message })
+  return api.post<WorkflowState>('/workflow/start', { message })
 }
 
 export function askTutor(question: string, profile?: StudentProfile) {
