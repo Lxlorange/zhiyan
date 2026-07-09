@@ -4,7 +4,6 @@
       <div>
         <p class="eyebrow">OpenMAIC Style Classroom</p>
         <h2>{{ currentItem?.title || 'AI 课堂' }}</h2>
-        <p>{{ currentItem?.objective || '课堂需要完成课件、例题、实操和复盘四个环节，全部通过后才会自动完成学习项。' }}</p>
       </div>
       <div class="classroom-hero-actions">
         <el-button @click="goBackToSyllabus">返回学习清单</el-button>
@@ -16,7 +15,7 @@
     <section v-else-if="loading" class="panel-like classroom-loading">正在加载课堂...</section>
     <el-empty v-else-if="!currentItem || !classroom" description="没有找到当前课堂，请返回学习清单重新进入。" />
 
-    <section v-else class="classroom-layout">
+    <section v-else class="classroom-layout" :class="{ 'classroom-layout--focus': isSlidePlayerFocused }">
       <aside class="classroom-outline panel-like">
         <div class="classroom-outline-head">
           <span>学习项</span>
@@ -44,7 +43,7 @@
         </nav>
       </aside>
 
-      <main class="classroom-main panel-like">
+      <main class="classroom-main panel-like" :class="{ 'classroom-main--slides': isSlidePlayerFocused }">
         <header class="classroom-main-head">
           <div>
             <span>{{ activeGateMeta.kind }}</span>
@@ -55,120 +54,168 @@
           </el-tag>
         </header>
 
-        <section v-if="activeGate === 'ppt'" class="classroom-task-card">
-          <div class="task-copy">
-            <h4>生成并学习课堂 PPT</h4>
-            <p>参考 OpenMAIC 的 slides、quizzes、interactive practice、PBL reflection 组织方式，为当前学习项生成可下载课件和后续任务。</p>
-          </div>
-          <el-input v-model="pptInstruction" type="textarea" :rows="3" placeholder="可选：补充 PPT 风格、重点、案例或公式要求" />
-          <div class="classroom-action-row">
-            <el-button type="primary" :loading="generatingPpt" @click="handleGeneratePpt">生成 PPT 课件</el-button>
-            <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-          </div>
-          <section v-if="pptPackage" class="slide-player">
-            <div class="slide-stage">
-              <div class="slide-canvas">
-                <div class="slide-count">Slide {{ activeSlideIndex + 1 }} / {{ slideList.length }}</div>
-                <h4>{{ currentSlide?.title }}</h4>
-                <ul>
-                  <li v-for="bullet in currentSlide?.bullets || []" :key="bullet">{{ bullet }}</li>
-                </ul>
+        <Transition name="panel-swap" mode="out-in">
+          <section v-if="activeGate === 'ppt'" key="ppt" class="classroom-task-card">
+            <Transition name="panel-swap" mode="out-in">
+              <div v-if="isPptSetupVisible" key="ppt-setup" class="classroom-generation-panel">
+                <div class="task-copy">
+                  <h4>{{ pptPackage ? '重新生成课堂 PPT' : '生成课堂 PPT' }}</h4>
+                </div>
+                <el-input v-model="pptInstruction" type="textarea" :rows="5" placeholder="可选：补充 PPT 风格、重点、案例或公式要求" />
+                <div class="classroom-action-row">
+                  <el-button v-if="pptPackage" @click="editingPptInstruction = false">取消</el-button>
+                  <el-button type="primary" :loading="generatingPpt" @click="handleGeneratePpt">
+                    {{ pptPackage ? '确认重新生成' : '生成 PPT 课件' }}
+                  </el-button>
+                </div>
               </div>
-              <div class="slide-notes">
-                <span>AI Teacher Notes</span>
-                <p>{{ currentSlide?.speaker_notes || '围绕当前页讲解核心概念、应用场景和易错点。' }}</p>
-              </div>
-            </div>
 
-            <div class="slide-controls">
-              <el-button :disabled="activeSlideIndex <= 0" @click="goToSlide(activeSlideIndex - 1)">上一页</el-button>
-              <el-progress :percentage="slideReadPercent" :stroke-width="8" />
-              <el-button :disabled="activeSlideIndex >= slideList.length - 1" @click="goToSlide(activeSlideIndex + 1)">下一页</el-button>
-            </div>
+              <section v-else key="ppt-player" class="slide-player">
+                <header class="slide-player-head">
+                  <div>
+                    <span>动态课件</span>
+                    <h4>{{ pptTitle }}</h4>
+                  </div>
+                  <div class="slide-player-actions">
+                    <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
+                    <el-button @click="editingPptInstruction = true">重新生成</el-button>
+                  </div>
+                </header>
 
-            <div class="slide-strip">
-              <button
-                v-for="(slide, index) in slideList"
-                :key="`${slide.title}-${index}`"
-                type="button"
-                :class="{ active: activeSlideIndex === index, viewed: visitedSlideIndices.has(index) }"
-                @click="goToSlide(index)"
-              >
-                <small>{{ index + 1 }}</small>
-                <span>{{ slide.title }}</span>
-              </button>
-            </div>
+                <div class="slide-stage">
+                  <div class="slide-canvas">
+                    <div class="slide-count">Slide {{ activeSlideIndex + 1 }} / {{ slideList.length }}</div>
+                    <h4>{{ currentSlide?.title }}</h4>
+                    <ul>
+                      <li v-for="bullet in currentSlide?.bullets || []" :key="bullet">{{ bullet }}</li>
+                    </ul>
+                  </div>
+                  <div class="slide-notes">
+                    <span>AI Teacher Notes</span>
+                    <p>{{ currentSlide?.speaker_notes || '暂无讲稿。' }}</p>
+                  </div>
+                </div>
 
-            <div class="classroom-action-row">
-              <el-button
-                type="success"
-                :disabled="!allSlidesViewed || classroom?.slides_completed"
-                @click="handleCompleteSlides"
-              >
-                {{ classroom?.slides_completed ? '课件学习已完成' : `完成课件学习 ${slidesVisitedCount}/${slideList.length}` }}
-              </el-button>
-            </div>
+                <div class="slide-controls">
+                  <el-button :disabled="activeSlideIndex <= 0" @click="goToSlide(activeSlideIndex - 1)">上一页</el-button>
+                  <el-progress :percentage="slideReadPercent" :stroke-width="8" />
+                  <el-button :disabled="activeSlideIndex >= slideList.length - 1" @click="goToSlide(activeSlideIndex + 1)">下一页</el-button>
+                </div>
+
+                <div class="slide-strip">
+                  <button
+                    v-for="(slide, index) in slideList"
+                    :key="`${slide.title}-${index}`"
+                    type="button"
+                    :class="{ active: activeSlideIndex === index, viewed: visitedSlideIndices.has(index) }"
+                    @click="goToSlide(index)"
+                  >
+                    <small>{{ index + 1 }}</small>
+                    <span>{{ slide.title }}</span>
+                  </button>
+                </div>
+
+                <div class="classroom-action-row">
+                  <el-button
+                    type="success"
+                    :disabled="!allSlidesViewed || classroom?.slides_completed"
+                    @click="handleCompleteSlides"
+                  >
+                    {{ classroom?.slides_completed ? '课件学习已完成' : `完成课件学习 ${slidesVisitedCount}/${slideList.length}` }}
+                  </el-button>
+                </div>
+              </section>
+            </Transition>
           </section>
-        </section>
 
-        <section v-else-if="activeGate === 'quiz'" class="classroom-task-card">
-          <div class="task-copy">
-            <h4>回答课堂例题</h4>
-            <p>例题来自 PPT 生成结果，必须达到 70 分以上才能进入完成条件。</p>
-          </div>
-          <el-alert v-if="!classroom?.slides_completed" title="请先翻完动态课件并点击完成课件学习" type="warning" :closable="false" />
-          <div v-else class="quiz-list">
-            <label v-for="question in quizQuestions" :key="question.id">
-              <span>{{ question.id }}. {{ question.prompt }}</span>
-              <el-input v-model="quizAnswers[question.id]" placeholder="填写你的答案" />
-            </label>
-          </div>
-          <div class="classroom-action-row">
-            <el-button type="primary" :disabled="!classroom?.slides_completed" :loading="submittingQuiz" @click="handleSubmitQuiz">提交例题</el-button>
-          </div>
-          <p v-if="latestQuizFeedback" class="task-feedback">{{ latestQuizFeedback }}</p>
-        </section>
+          <section v-else-if="activeGate === 'quiz'" key="quiz" class="classroom-task-card">
+            <div class="task-copy">
+              <h4>回答课堂例题</h4>
+            </div>
+            <Transition name="panel-swap" mode="out-in">
+              <div v-if="classroom?.quiz_passed" key="quiz-done" class="gate-complete-panel">
+                <strong>例题已通过</strong>
+                <p v-if="latestQuizFeedback" class="task-feedback">{{ latestQuizFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button type="primary" @click="activeGate = 'practice'">进入实操</el-button>
+                </div>
+              </div>
+              <div v-else key="quiz-form" class="classroom-form-stack">
+                <el-alert v-if="!classroom?.slides_completed" title="请先翻完动态课件并点击完成课件学习" type="warning" :closable="false" />
+                <div v-else class="quiz-list">
+                  <label v-for="question in quizQuestions" :key="question.id">
+                    <span>{{ question.id }}. {{ question.prompt }}</span>
+                    <el-input v-model="quizAnswers[question.id]" placeholder="填写你的答案" />
+                  </label>
+                </div>
+                <p v-if="latestQuizFeedback" class="task-feedback">{{ latestQuizFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button type="primary" :disabled="!classroom?.slides_completed" :loading="submittingQuiz" @click="handleSubmitQuiz">提交例题</el-button>
+                </div>
+              </div>
+            </Transition>
+          </section>
 
-        <section v-else-if="activeGate === 'practice'" class="classroom-task-card">
-          <div class="task-copy">
-            <h4>完成实操任务</h4>
-            <p>{{ practiceSpec?.title || '生成 PPT 后会在这里显示实操任务。' }}</p>
-          </div>
-          <div v-if="practiceSpec" class="classroom-point-list">
-            <div v-for="step in practiceSteps" :key="step"><span>{{ step }}</span></div>
-          </div>
-          <el-input v-model="practiceForm.artifact_url" placeholder="产物链接或文件路径，可选" />
-          <el-input v-model="practiceForm.key_result" type="textarea" :rows="3" placeholder="关键结果，例如指标、截图描述、运行结果" />
-          <el-input v-model="practiceForm.report" type="textarea" :rows="7" placeholder="实操报告：说明你做了什么、如何验证、遇到什么问题、结果是否达到标准" />
-          <div class="classroom-action-row">
-            <el-button type="primary" :disabled="!pptPackage" :loading="submittingPractice" @click="handleSubmitPractice">提交实操</el-button>
-          </div>
-          <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
-        </section>
+          <section v-else-if="activeGate === 'practice'" key="practice" class="classroom-task-card">
+            <div class="task-copy">
+              <h4>{{ practiceSpec?.title || '完成实操任务' }}</h4>
+            </div>
+            <Transition name="panel-swap" mode="out-in">
+              <div v-if="classroom?.practice_passed" key="practice-done" class="gate-complete-panel">
+                <strong>实操已通过</strong>
+                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button type="primary" @click="activeGate = 'reflection'">进入复盘</el-button>
+                </div>
+              </div>
+              <div v-else key="practice-form" class="classroom-form-stack">
+                <div v-if="practiceSpec" class="classroom-point-list">
+                  <div v-for="step in practiceSteps" :key="step"><span>{{ step }}</span></div>
+                </div>
+                <el-input v-model="practiceForm.artifact_url" placeholder="产物链接或文件路径，可选" />
+                <el-input v-model="practiceForm.key_result" type="textarea" :rows="3" placeholder="关键结果，例如指标、截图描述、运行结果" />
+                <el-input v-model="practiceForm.report" type="textarea" :rows="7" placeholder="实操报告：说明你做了什么、如何验证、遇到什么问题、结果是否达到标准" />
+                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button type="primary" :disabled="!pptPackage" :loading="submittingPractice" @click="handleSubmitPractice">提交实操</el-button>
+                </div>
+              </div>
+            </Transition>
+          </section>
 
-        <section v-else class="classroom-task-card">
-          <div class="task-copy">
-            <h4>提交学习复盘</h4>
-            <p>复盘必须具体到知识点、证据和下一步行动，系统会用它更新后续学习路径。</p>
-          </div>
-          <div v-if="reflectionPrompts.length" class="classroom-prompts">
-            <div v-for="prompt in reflectionPrompts" :key="prompt">{{ prompt }}</div>
-          </div>
-          <el-input v-model="reflectionForm.reflection" type="textarea" :rows="8" placeholder="写下本节学到的内容、完成证据、仍然薄弱的知识点" />
-          <el-input v-model="unresolvedQuestionsText" type="textarea" :rows="3" placeholder="未解决问题，每行一个" />
-          <el-input v-model="reflectionForm.next_action" placeholder="下一步行动" />
-          <div class="classroom-action-row">
-            <el-button type="primary" :disabled="!pptPackage" :loading="submittingReflection" @click="handleSubmitReflection">提交复盘</el-button>
-          </div>
-          <p v-if="latestReflectionFeedback" class="task-feedback">{{ latestReflectionFeedback }}</p>
-        </section>
+          <section v-else key="reflection" class="classroom-task-card">
+            <div class="task-copy">
+              <h4>提交学习复盘</h4>
+            </div>
+            <Transition name="panel-swap" mode="out-in">
+              <div v-if="classroom?.reflection_passed" key="reflection-done" class="gate-complete-panel">
+                <strong>复盘已通过</strong>
+                <p v-if="latestReflectionFeedback" class="task-feedback">{{ latestReflectionFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button @click="goBackToSyllabus">返回学习清单</el-button>
+                </div>
+              </div>
+              <div v-else key="reflection-form" class="classroom-form-stack">
+                <div v-if="reflectionPrompts.length" class="classroom-prompts">
+                  <div v-for="prompt in reflectionPrompts" :key="prompt">{{ prompt }}</div>
+                </div>
+                <el-input v-model="reflectionForm.reflection" type="textarea" :rows="8" placeholder="写下本节学到的内容、完成证据、仍然薄弱的知识点" />
+                <el-input v-model="unresolvedQuestionsText" type="textarea" :rows="3" placeholder="未解决问题，每行一个" />
+                <el-input v-model="reflectionForm.next_action" placeholder="下一步行动" />
+                <p v-if="latestReflectionFeedback" class="task-feedback">{{ latestReflectionFeedback }}</p>
+                <div class="classroom-action-row">
+                  <el-button type="primary" :disabled="!pptPackage" :loading="submittingReflection" @click="handleSubmitReflection">提交复盘</el-button>
+                </div>
+              </div>
+            </Transition>
+          </section>
+        </Transition>
       </main>
 
-      <aside class="classroom-inspector panel-like">
+      <aside v-if="!isSlidePlayerFocused" class="classroom-inspector panel-like">
         <div class="inspector-block">
           <span>课堂状态</span>
           <strong>{{ classroom.status }}</strong>
-          <p>四个闸门全部通过后，学习项才会自动写回完成状态。</p>
         </div>
         <div class="inspector-block">
           <span>完成标准</span>
@@ -222,6 +269,7 @@ const classroom = ref<ClassroomSessionRead | null>(null)
 const activeGate = ref<GateKey>('ppt')
 const activeSlideIndex = ref(0)
 const visitedSlideIndices = ref<Set<number>>(new Set([0]))
+const editingPptInstruction = ref(false)
 const pptInstruction = ref('')
 const unresolvedQuestionsText = ref('')
 const quizAnswers = reactive<Record<string, string>>({})
@@ -234,11 +282,14 @@ const pptResource = computed<ClassroomResourceRead | null>(() => {
   return classroom.value.resources.find((resource) => resource.id === classroom.value?.ppt_resource_id) || null
 })
 const pptPackage = computed<Record<string, any> | null>(() => pptResource.value?.content_data || null)
+const pptTitle = computed(() => pptPackage.value?.title || currentItem.value?.title || '课堂课件')
 const slideList = computed<any[]>(() => pptPackage.value?.slides || [])
 const quizQuestions = computed<any[]>(() => pptPackage.value?.quiz || [])
 const currentSlide = computed(() => slideList.value[activeSlideIndex.value] || null)
 const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
+const isPptSetupVisible = computed(() => !pptPackage.value || editingPptInstruction.value)
+const isSlidePlayerFocused = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value) && !editingPptInstruction.value)
 const practiceSpec = computed(() => pptPackage.value?.practice || null)
 const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
 const reflectionPrompts = computed<string[]>(() => pptPackage.value?.reflection_prompts || [])
@@ -292,6 +343,7 @@ async function handleGeneratePpt() {
     classroom.value = data
     hydrateQuizAnswers()
     syncVisitedSlidesFromSession()
+    editingPptInstruction.value = false
     ElMessage.success('PPT 课件已生成')
   } finally {
     generatingPpt.value = false

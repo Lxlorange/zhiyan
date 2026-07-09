@@ -4,7 +4,6 @@
       <div>
         <p class="eyebrow">Projects</p>
         <h2>项目主页</h2>
-        <p>这里集中管理已经构建的学习项目。选择项目后，可以进入该项目独立的学习清单、查看进度和继续下一步学习。</p>
       </div>
       <el-button type="primary" :loading="loading" @click="loadProjects">刷新项目</el-button>
     </section>

@@ -4,10 +4,6 @@
       <div>
         <p class="eyebrow">Project Planning</p>
         <h2>从学习目标生成项目计划</h2>
-        <p>
-          先描述你想学习或研究的目标。系统会流式生成可微调的项目计划，你可以继续用自然语言调整，
-          满意后再构建为正式学习项目。
-        </p>
       </div>
       <div class="planner-intro-rail" aria-label="项目规划流程">
         <span>目标理解</span>
@@ -22,86 +18,88 @@
         <div class="planner-column-head">
           <div>
             <strong>对话输入</strong>
-            <span>左侧持续描述、澄清和微调目标</span>
           </div>
           <el-tag type="info">Chat</el-tag>
         </div>
 
-        <el-form label-position="top" class="planner-form planner-chat-form">
-          <el-form-item label="学习类型">
-            <el-select v-model="form.learning_type" class="learning-type-select" placeholder="学习类型" clearable>
-              <el-option label="课程项目" value="course_project" />
-              <el-option label="科研项目" value="research_project" />
-              <el-option label="课程知识" value="course_knowledge" />
-            </el-select>
-          </el-form-item>
+        <Transition name="panel-swap" mode="out-in">
+          <el-form v-if="!plan && !streamText && !planning" key="planner-form" label-position="top" class="planner-form planner-chat-form">
+            <el-form-item label="学习类型">
+              <el-select v-model="form.learning_type" class="learning-type-select" placeholder="学习类型" clearable>
+                <el-option label="课程项目" value="course_project" />
+                <el-option label="科研项目" value="research_project" />
+                <el-option label="课程知识" value="course_knowledge" />
+              </el-select>
+            </el-form-item>
 
-          <el-form-item label="学习目标" required>
-            <el-input
-              v-model="form.learning_goal"
-              type="textarea"
-              :rows="6"
-              resize="vertical"
-              placeholder="例如：我想用 3 周学习 WiFi CSI 跌倒检测，最后完成一个 Python demo 和课程项目报告。"
-            />
-          </el-form-item>
+            <el-form-item label="学习目标" required>
+              <el-input
+                v-model="form.learning_goal"
+                type="textarea"
+                :rows="6"
+                resize="vertical"
+                placeholder="例如：我想用 3 周学习 WiFi CSI 跌倒检测，最后完成一个 Python demo 和课程项目报告。"
+              />
+            </el-form-item>
 
-          <el-form-item label="补充要求">
-            <el-input
-              v-model="form.extra_requirements"
-              type="textarea"
-              :rows="4"
-              resize="vertical"
-              placeholder="可写学习周期、课程要求、已有基础、希望生成的资源类型、最终产出形式等。"
-            />
-          </el-form-item>
+            <el-form-item label="补充要求">
+              <el-input
+                v-model="form.extra_requirements"
+                type="textarea"
+                :rows="4"
+                resize="vertical"
+                placeholder="可写学习周期、课程要求、已有基础、希望生成的资源类型、最终产出形式等。"
+              />
+            </el-form-item>
 
-          <div class="form-actions">
-            <el-button type="primary" size="large" :loading="planning" @click="handleCreatePlan">
-              生成项目计划
-            </el-button>
-            <el-button size="large" @click="resetForm">清空</el-button>
-          </div>
-        </el-form>
+            <div class="form-actions">
+              <el-button type="primary" size="large" :loading="planning" @click="handleCreatePlan">
+                生成项目计划
+              </el-button>
+              <el-button size="large" @click="resetForm">清空</el-button>
+            </div>
+          </el-form>
 
-        <section v-if="plan || streamText || planning" class="chat-section planner-chat-thread">
-          <h4>指令记录</h4>
-          <div class="chat-log">
-            <template v-if="instructionMessages.length">
-              <article
-                v-for="message in instructionMessages"
-                :key="message.created_at"
-                class="user"
-              >
-                <span>你</span>
-                <p>{{ message.content }}</p>
+          <section v-else key="planner-chat" class="chat-section planner-chat-thread">
+            <h4>指令记录</h4>
+            <div class="chat-log">
+              <template v-if="instructionMessages.length">
+                <article
+                  v-for="message in instructionMessages"
+                  :key="message.created_at"
+                  class="user"
+                >
+                  <span>你</span>
+                  <p>{{ message.content }}</p>
+                </article>
+              </template>
+              <template v-else>
+                <article class="user">
+                  <span>你</span>
+                  <p>{{ form.learning_goal }}</p>
+                </article>
+              </template>
+              <article class="assistant status-message">
+                <span>状态</span>
+                <p>{{ assistantStatusText }}</p>
               </article>
-            </template>
-            <template v-else>
-              <article class="user">
-                <span>你</span>
-                <p>{{ form.learning_goal }}</p>
-              </article>
-            </template>
-            <article class="assistant status-message">
-              <span>状态</span>
-              <p>{{ assistantStatusText }}</p>
-            </article>
-          </div>
-          <el-input
-            v-model="adjustMessage"
-            type="textarea"
-            :rows="3"
-            resize="none"
-            :disabled="!plan || plan.status === 'built'"
-            placeholder="例如：把计划调整成 14 天，增加可视化演示和更多代码实践。"
-          />
-          <div class="drawer-actions">
-            <el-button :loading="adjusting" :disabled="!plan || plan.status === 'built'" @click="handleAdjust">
-              发送调整
-            </el-button>
-          </div>
-        </section>
+            </div>
+            <el-input
+              v-model="adjustMessage"
+              type="textarea"
+              :rows="3"
+              resize="none"
+              :disabled="!plan || plan.status === 'built'"
+              placeholder="例如：把计划调整成 14 天，增加可视化演示和更多代码实践。"
+            />
+            <div class="drawer-actions">
+              <el-button :disabled="planning || adjusting" @click="resetForm">重新规划</el-button>
+              <el-button :loading="adjusting" :disabled="!plan || plan.status === 'built'" @click="handleAdjust">
+                发送调整
+              </el-button>
+            </div>
+          </section>
+        </Transition>
       </aside>
 
       <article class="planner-document-card">
@@ -117,7 +115,6 @@
 
         <section v-if="!plan && !streamText && !planning" class="document-empty">
           <strong>等待生成项目计划</strong>
-          <p>左侧输入学习目标后，右侧会以文档形式持续生成目标拆解、推进阶段、资源计划和风险边界。</p>
         </section>
 
         <template v-else>

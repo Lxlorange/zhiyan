@@ -1666,6 +1666,10 @@ textarea {
   align-items: start;
 }
 
+.classroom-layout--focus {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
 .classroom-outline,
 .classroom-inspector {
   position: sticky;
@@ -1754,8 +1758,13 @@ textarea {
 }
 
 .classroom-main {
+  min-width: 0;
   min-height: 640px;
   padding: 20px;
+}
+
+.classroom-main--slides {
+  padding: 22px;
 }
 
 .classroom-main-head {
@@ -1871,6 +1880,14 @@ textarea {
   display: grid;
   gap: 16px;
   margin-top: 18px;
+  min-width: 0;
+}
+
+.classroom-generation-panel,
+.classroom-form-stack {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .task-copy {
@@ -1886,12 +1903,6 @@ textarea {
   margin: 0;
   color: #1e1b4b;
   font-size: 18px;
-}
-
-.task-copy p {
-  margin: 0;
-  color: #475569;
-  line-height: 1.75;
 }
 
 .classroom-action-row {
@@ -1930,19 +1941,54 @@ textarea {
 
 .slide-player {
   display: grid;
-  gap: 14px;
+  gap: 16px;
+  min-width: 0;
+}
+
+.slide-player-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #dbe4ff;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff, #f8fbff);
+}
+
+.slide-player-head span {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.slide-player-head h4 {
+  margin: 6px 0 0;
+  color: #1e1b4b;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.slide-player-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .slide-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   gap: 14px;
   align-items: stretch;
+  min-width: 0;
 }
 
 .slide-canvas {
   position: relative;
-  min-height: 420px;
+  min-width: 0;
+  min-height: 500px;
   aspect-ratio: 16 / 9;
   display: flex;
   flex-direction: column;
@@ -1982,6 +2028,7 @@ textarea {
   color: #312e81;
   font-size: 17px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .slide-notes {
@@ -2011,6 +2058,7 @@ textarea {
   grid-template-columns: auto minmax(120px, 1fr) auto;
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 
 .slide-strip {
@@ -2018,6 +2066,7 @@ textarea {
   gap: 10px;
   overflow-x: auto;
   padding: 4px 2px 10px;
+  scrollbar-color: #a5b4fc transparent;
 }
 
 .slide-strip button {
@@ -2082,6 +2131,20 @@ textarea {
   line-height: 1.55;
 }
 
+.gate-complete-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+}
+
+.gate-complete-panel strong {
+  color: #166534;
+  font-size: 18px;
+}
+
 .task-feedback {
   margin: 0;
   padding: 14px;
@@ -2091,6 +2154,24 @@ textarea {
   color: #166534;
   font-weight: 800;
   line-height: 1.6;
+}
+
+.panel-swap-enter-active,
+.panel-swap-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.panel-swap-enter-from,
+.panel-swap-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-swap-enter-active,
+  .panel-swap-leave-active {
+    transition: none;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -2108,6 +2189,7 @@ textarea {
   .project-home-layout,
   .syllabus-layout,
   .classroom-layout,
+  .classroom-layout--focus,
   .planner-intro,
   .planner-form-grid {
     grid-template-columns: 1fr;

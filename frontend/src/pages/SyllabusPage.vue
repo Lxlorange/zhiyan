@@ -4,10 +4,6 @@
       <div>
         <p class="eyebrow">Project Syllabus</p>
         <h2>{{ selectedProject?.title || '项目学习清单' }}</h2>
-        <p>
-          每个学习项目都有独立清单。这里以目录总览方式组织讲解文档、练习、可视化演示、语音讲解、
-          复现 Demo 等多模态入口，并持续记录每个学习项的状态。
-        </p>
       </div>
       <div class="syllabus-hero-actions">
         <el-select

@@ -3,7 +3,6 @@
     <section class="page-hero">
       <p class="eyebrow">Account Settings</p>
       <h2>账号设置</h2>
-      <p>维护学生端基本身份信息。头像、姓名、学校、专业会显示在平台顶栏，并可作为后续个性化学习画像的上下文。</p>
     </section>
 
     <el-row :gutter="20">
@@ -55,7 +54,6 @@
               <p>{{ form.school || '未填写学校' }} · {{ form.major || '未填写专业' }}</p>
             </div>
           </div>
-          <el-alert type="info" :closable="false" title="语言切换和 Light/Dark 当前是占位入口，后续接入 i18n 与主题变量。" />
         </el-card>
       </el-col>
     </el-row>
