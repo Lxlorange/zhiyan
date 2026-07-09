@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AccountSettings from './pages/AccountSettings.vue'
 import ClassroomLearningPage from './pages/ClassroomLearningPage.vue'
+import DailyPlanPage from './pages/DailyPlanPage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
 import ModulePlaceholder from './pages/ModulePlaceholder.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
@@ -122,7 +123,8 @@ export const routes: RouteRecordRaw[] = [
   { path: '/projects/:projectId(\\d+)', name: 'project-detail', component: ProjectHomePage, meta: { page: 'projects' } },
   { path: '/projects/:projectId(\\d+)/syllabus', name: 'project-syllabus', component: SyllabusPage, meta: { page: 'syllabus' } },
   { path: '/projects/:projectId(\\d+)/syllabus/items/:itemId(\\d+)/classroom', name: 'project-classroom', component: ClassroomLearningPage, meta: { page: 'classroom' } },
-  { path: '/daily-plan', name: 'daily-plan', component: ModulePlaceholder, meta: { page: 'daily-plan' } },
+  { path: '/daily-plan', name: 'daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
+  { path: '/projects/:projectId(\\d+)/daily-plan', name: 'project-daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
   { path: '/profile', name: 'profile', component: ModulePlaceholder, meta: { page: 'profile' } },
   { path: '/resources', name: 'resources', component: ModulePlaceholder, meta: { page: 'resources' } },
   { path: '/tutor', name: 'tutor', component: ModulePlaceholder, meta: { page: 'tutor' } },

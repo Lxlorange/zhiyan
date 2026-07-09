@@ -1321,6 +1321,223 @@ textarea {
 .project-card-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+.daily-plan-page {
+  max-width: 1480px;
+}
+
+.daily-plan-hero {
+  align-items: center;
+}
+
+.daily-plan-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 420px;
+}
+
+.daily-plan-layout {
+  display: grid;
+  grid-template-columns: 300px 280px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.daily-plan-settings,
+.daily-plan-days {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.daily-plan-project,
+.daily-plan-stats > div {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dbe4ff;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff, #f8fbff);
+}
+
+.daily-plan-project span,
+.daily-plan-stats span,
+.daily-plan-days-head span,
+.daily-plan-detail-head span,
+.daily-task-main span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-plan-project strong,
+.daily-plan-stats strong,
+.daily-plan-days-head strong {
+  color: #1e1b4b;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.daily-plan-project p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.daily-plan-form {
+  display: grid;
+  gap: 2px;
+}
+
+.daily-plan-form .el-date-editor,
+.daily-task-actions .el-date-editor {
+  width: 100%;
+}
+
+.weekday-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekday-grid .el-checkbox-button,
+.weekday-grid .el-checkbox-button__inner {
+  width: 100%;
+}
+
+.weekday-grid .el-checkbox-button__inner {
+  border-left: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.daily-plan-stats {
+  display: grid;
+  gap: 10px;
+}
+
+.daily-plan-days-head,
+.daily-plan-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.daily-plan-day-list {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: #a5b4fc transparent;
+}
+
+.daily-plan-day-list button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dbe4ff;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #3730a3;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.daily-plan-day-list button:hover,
+.daily-plan-day-list button.active {
+  border-color: #818cf8;
+  background: #eef2ff;
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.1);
+}
+
+.daily-plan-day-list span {
+  color: #1e1b4b;
+  font-weight: 900;
+}
+
+.daily-plan-day-list strong {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.daily-plan-loading {
+  padding: 24px;
+  color: #64748b;
+  text-align: center;
+}
+
+.daily-plan-detail {
+  min-width: 0;
+  min-height: 640px;
+  padding: 20px;
+}
+
+.daily-plan-detail-head {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e0e7ff;
+}
+
+.daily-plan-detail-head h3 {
+  margin: 6px 0 0;
+  color: #1e1b4b;
+  font-size: 24px;
+}
+
+.daily-task-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.daily-task-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+  padding: 18px;
+  border: 1px solid #dbe4ff;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(79, 70, 229, 0.07);
+}
+
+.daily-task-card.removed {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.daily-task-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.daily-task-main h4 {
+  margin: 0;
+  color: #1e1b4b;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.daily-task-main p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.daily-task-actions {
+  display: grid;
+  gap: 10px;
 }
 
 .syllabus-page {
@@ -2188,6 +2405,7 @@ textarea {
   .planner-workbench,
   .project-home-layout,
   .syllabus-layout,
+  .daily-plan-layout,
   .classroom-layout,
   .classroom-layout--focus,
   .planner-intro,
@@ -2196,12 +2414,19 @@ textarea {
   }
 
   .syllabus-overview,
+  .daily-plan-settings,
+  .daily-plan-days,
   .classroom-outline,
   .classroom-inspector {
     position: static;
   }
 
   .syllabus-hero-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .daily-plan-hero-actions {
     justify-content: flex-start;
     min-width: 0;
   }
@@ -2318,7 +2543,8 @@ textarea {
   }
 
   .project-dashboard-grid,
-  .directory-row {
+  .directory-row,
+  .daily-task-card {
     grid-template-columns: 1fr;
   }
 
@@ -2349,6 +2575,8 @@ textarea {
   .syllabus-item-head,
   .syllabus-stage > header,
   .syllabus-status-actions,
+  .daily-plan-detail-head,
+  .daily-plan-hero-actions,
   .classroom-main-head,
   .classroom-hero-actions {
     align-items: flex-start;

@@ -241,6 +241,35 @@ export interface ClassroomSessionRead {
   submissions: ClassroomSubmissionRead[]
 }
 
+export interface DailyPlanItemRead {
+  id: number
+  day_index: number
+  planned_date: string
+  title: string
+  estimated_minutes: number
+  learning_focus: string
+  resource_types: string[]
+  status: string
+  user_order: number
+  syllabus_item_id?: number | null
+  project_id: number
+}
+
+export interface DailyPlanRead {
+  id: number
+  project_id: number
+  syllabus_version_id: number
+  title: string
+  start_date: string
+  daily_minutes: number
+  study_weekends: boolean
+  study_weekdays: number[]
+  generation_reason: string
+  status: string
+  created_at: string
+  items: DailyPlanItemRead[]
+}
+
 export function saveAuth(payload: TokenResponse) {
   localStorage.setItem(TOKEN_KEY, payload.access_token)
   localStorage.setItem(USER_KEY, JSON.stringify(payload.user))
@@ -425,8 +454,32 @@ export function getSyllabusVersions(projectId: number) {
   return api.get<SyllabusVersionSummary[]>(`/learning-projects/${projectId}/syllabus/versions`)
 }
 
+export function generateDailyPlan(projectId: number, payload: {
+  start_date?: string
+  daily_minutes?: number
+  study_weekends?: boolean
+  study_weekdays?: number[]
+  title?: string
+}) {
+  return api.post<DailyPlanRead>(`/learning-projects/${projectId}/daily-plan/generate`, payload)
+}
+
+export function listDailyPlans(projectId: number) {
+  return api.get<DailyPlanRead[]>(`/learning-projects/${projectId}/daily-plans`)
+}
+
+export function moveDailyPlanItem(itemId: number, plannedDate: string) {
+  return api.patch<DailyPlanRead>(`/daily-plan-items/${itemId}/schedule`, {
+    planned_date: plannedDate
+  })
+}
+
 export function updateSyllabusItemStatus(itemId: number, status: string, reason = '') {
   return api.post<SyllabusVersionRead>(`/syllabus-items/${itemId}/status`, { status, reason })
+}
+
+export function deleteSyllabusItem(itemId: number) {
+  return api.delete<void>(`/syllabus-items/${itemId}`)
 }
 
 export function getOrCreateClassroomSession(itemId: number) {

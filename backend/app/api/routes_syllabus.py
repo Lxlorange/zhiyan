@@ -7,6 +7,7 @@ from app.models.learning import LearningProject, LearningProjectEvent
 from app.models.user import User
 from app.schemas import (
     DailyPlanGenerateRequest,
+    DailyPlanMoveItemRequest,
     DailyPlanRead,
     SyllabusAdaptRequest,
     SyllabusCompareResponse,
@@ -32,12 +33,14 @@ from app.services.syllabus_service import (
     copy_syllabus_version,
     delete_syllabus_item,
     generate_daily_plan,
+    get_daily_plan,
     generate_syllabus,
     get_current_syllabus,
     get_syllabus_version,
     list_daily_plans,
     list_syllabus_versions,
     merge_syllabus_items,
+    move_daily_plan_item,
     regenerate_stage,
     reorder_syllabus_items,
     split_syllabus_item,
@@ -353,4 +356,29 @@ def learning_project_daily_plans(
     try:
         return [DailyPlanRead.model_validate(plan) for plan in list_daily_plans(db, user, project_id)]
     except KeyError as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.get("/daily-plans/{plan_id}", response_model=DailyPlanRead)
+def daily_plan_detail(
+    plan_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyPlanRead:
+    try:
+        return DailyPlanRead.model_validate(get_daily_plan(db, user, plan_id))
+    except KeyError as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.patch("/daily-plan-items/{item_id}/schedule", response_model=DailyPlanRead)
+def daily_plan_item_schedule_update(
+    item_id: int,
+    request: DailyPlanMoveItemRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyPlanRead:
+    try:
+        return DailyPlanRead.model_validate(move_daily_plan_item(db, user, item_id, request))
+    except (KeyError, ValueError) as exc:
         raise _handle_error(exc) from exc

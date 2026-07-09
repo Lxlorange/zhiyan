@@ -183,6 +183,15 @@
                 >
                   暂时跳过
                 </el-button>
+                <el-button
+                  type="danger"
+                  plain
+                  :loading="statusUpdatingId === item.id"
+                  :disabled="item.is_locked"
+                  @click="handleDeleteItem(item)"
+                >
+                  删除课程
+                </el-button>
               </div>
             </article>
           </section>
@@ -195,8 +204,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  deleteSyllabusItem,
   ensureSyllabus,
   getCurrentSyllabus,
   listLearningProjects,
@@ -356,6 +366,26 @@ async function handleStatus(itemId: number, status: string) {
     const { data } = await updateSyllabusItemStatus(itemId, status, '用户在学习清单页面更新学习状态')
     syllabus.value = data
     ElMessage.success('学习状态已更新')
+  } finally {
+    statusUpdatingId.value = null
+  }
+}
+
+async function handleDeleteItem(item: SyllabusItemRead) {
+  try {
+    await ElMessageBox.confirm(`确认从学习清单删除“${item.title}”？每日计划中对应任务会标记为已移除。`, '删除课程', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  statusUpdatingId.value = item.id
+  try {
+    await deleteSyllabusItem(item.id)
+    if (selectedProjectId.value) await loadSyllabus(selectedProjectId.value)
+    ElMessage.success('课程已从学习清单删除')
   } finally {
     statusUpdatingId.value = null
   }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -22,6 +22,7 @@ from app.models.learning import (
 from app.models.user import User
 from app.schemas import (
     DailyPlanGenerateRequest,
+    DailyPlanMoveItemRequest,
     SyllabusAdaptRequest,
     SyllabusCompareResponse,
     SyllabusGenerateRequest,
@@ -315,6 +316,7 @@ def generate_syllabus(
 
     for index, generated in enumerate(result.items, start=1):
         db.add(_item_from_generated(generated, version=version, project=project, user=user, order=index))
+    db.flush()
 
     db.add(
         AgentTaskRecord(
@@ -330,7 +332,19 @@ def generate_syllabus(
     project.status = "syllabus_ready"
     project.current_stage = "学习清单已生成"
     project.progress = max(project.progress, 10)
-    project.next_step = "进入学习路径页，调整清单并生成每日计划"
+    project.next_step = "进入每日计划，按日期继续学习"
+    _create_daily_plan_for_version(
+        db,
+        user=user,
+        project=project,
+        version=version,
+        title=f"{project.title} 每日学习计划",
+        start_date=datetime.utcnow(),
+        daily_minutes=project.daily_minutes,
+        study_weekends=False,
+        study_weekdays=[0, 1, 2, 3, 4],
+        generation_reason=f"学习清单 v{version.version_no} 生成后自动排期",
+    )
     _write_project_event(
         db,
         project=project,
@@ -576,6 +590,20 @@ def update_syllabus_item(
     changes = request.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(item, field, value)
+    for plan_item in db.scalars(
+        select(DailyLearningPlanItem).where(
+            DailyLearningPlanItem.syllabus_item_id == item.id,
+            DailyLearningPlanItem.user_id == user.id,
+        )
+    ):
+        if "title" in changes:
+            plan_item.title = item.title
+        if "estimated_minutes" in changes:
+            plan_item.estimated_minutes = item.estimated_minutes
+        if "objective" in changes:
+            plan_item.learning_focus = item.objective
+        if "recommended_resource_types" in changes:
+            plan_item.resource_types = item.recommended_resource_types
     _log_operation(
         db,
         version=version,
@@ -595,6 +623,13 @@ def delete_syllabus_item(db: Session, user: User, item_id: int) -> LearningSylla
     if item.is_locked:
         raise ValueError("locked syllabus item cannot be deleted")
     item.status = "deleted"
+    for plan_item in db.scalars(
+        select(DailyLearningPlanItem).where(
+            DailyLearningPlanItem.syllabus_item_id == item.id,
+            DailyLearningPlanItem.user_id == user.id,
+        )
+    ):
+        plan_item.status = "removed"
     _log_operation(
         db,
         version=version,
@@ -641,6 +676,13 @@ def update_syllabus_item_status(
     version = _version_or_404(db, user, item.syllabus_version_id)
     previous_status = item.status
     item.status = request.status
+    for plan_item in db.scalars(
+        select(DailyLearningPlanItem).where(
+            DailyLearningPlanItem.syllabus_item_id == item.id,
+            DailyLearningPlanItem.user_id == user.id,
+        )
+    ):
+        plan_item.status = request.status
     project = _project_or_404(db, user, item.project_id)
     if request.status in {"in_progress", "completed", "mastered"}:
         project.last_learned_at = datetime.utcnow()
@@ -891,23 +933,89 @@ def generate_daily_plan(
     project = _project_or_404(db, user, project_id)
     version = get_current_syllabus(db, user, project_id)
     daily_minutes = request.daily_minutes or project.daily_minutes
-    active_items = [item for item in version.items if item.status not in {"deleted", "skipped", "merged", "split"}]
+    study_weekdays = _normalize_weekdays(request.study_weekdays, request.study_weekends)
+    plan = _create_daily_plan_for_version(
+        db,
+        user=user,
+        project=project,
+        version=version,
+        title=request.title or f"{project.title} 每日学习计划",
+        start_date=request.start_date or datetime.utcnow(),
+        daily_minutes=daily_minutes,
+        study_weekends=request.study_weekends,
+        study_weekdays=study_weekdays,
+        generation_reason=f"按当前清单 v{version.version_no}、每日 {daily_minutes} 分钟与可学习日自动排期",
+    )
+    _log_operation(
+        db,
+        version=version,
+        user=user,
+        operation_type="generate_daily_plan",
+        summary=f"生成每日计划：{plan.title}",
+        payload={
+            "daily_minutes": daily_minutes,
+            "study_weekends": request.study_weekends,
+            "study_weekdays": study_weekdays,
+            "item_count": len(plan.items),
+        },
+    )
+    project.status = "daily_plan_ready"
+    project.current_stage = "每日计划已生成"
+    project.next_step = "按每日计划进入课堂学习"
+    db.commit()
+    db.refresh(plan)
+    return get_daily_plan(db, user, plan.id)
+
+
+def _create_daily_plan_for_version(
+    db: Session,
+    *,
+    user: User,
+    project: LearningProject,
+    version: LearningSyllabusVersion,
+    title: str,
+    start_date: datetime,
+    daily_minutes: int,
+    study_weekends: bool,
+    study_weekdays: list[int],
+    generation_reason: str,
+) -> DailyLearningPlan:
+    for old_plan in db.scalars(
+        select(DailyLearningPlan).where(
+            DailyLearningPlan.project_id == project.id,
+            DailyLearningPlan.user_id == user.id,
+            DailyLearningPlan.status == "active",
+        )
+    ):
+        old_plan.status = "archived"
+
+    allowed_weekdays = _normalize_weekdays(study_weekdays, study_weekends)
+    current_date = _next_study_date(_date_floor(start_date), allowed_weekdays)
     plan = DailyLearningPlan(
         project_id=project.id,
         syllabus_version_id=version.id,
         user_id=user.id,
-        title=request.title or f"{project.title} 每日学习计划",
-        start_date=request.start_date or datetime.utcnow(),
+        title=title,
+        start_date=current_date,
         daily_minutes=daily_minutes,
-        generation_reason=f"按当前清单 v{version.version_no} 与每日 {daily_minutes} 分钟拆分",
+        study_weekends=study_weekends,
+        study_weekdays=allowed_weekdays,
+        generation_reason=generation_reason,
     )
     db.add(plan)
     db.flush()
+
+    active_items = sorted(
+        [item for item in version.items if item.status not in {"deleted", "skipped", "merged", "split"}],
+        key=lambda item: item.user_order,
+    )
     day_index = 1
     used_minutes = 0
     order_in_day = 1
     for item in active_items:
-        if used_minutes > 0 and used_minutes + item.estimated_minutes > daily_minutes:
+        item_minutes = max(1, int(item.estimated_minutes or daily_minutes))
+        if used_minutes > 0 and used_minutes + item_minutes > daily_minutes:
+            current_date = _next_study_date(current_date + timedelta(days=1), allowed_weekdays)
             day_index += 1
             used_minutes = 0
             order_in_day = 1
@@ -918,29 +1026,85 @@ def generate_daily_plan(
                 project_id=project.id,
                 user_id=user.id,
                 day_index=day_index,
+                planned_date=current_date,
                 title=item.title,
-                estimated_minutes=item.estimated_minutes,
+                estimated_minutes=item_minutes,
                 learning_focus=item.objective,
                 resource_types=item.recommended_resource_types,
+                status=item.status if item.status in {"completed", "mastered"} else "pending",
                 user_order=order_in_day,
             )
         )
-        used_minutes += item.estimated_minutes
+        used_minutes += item_minutes
         order_in_day += 1
-    _log_operation(
-        db,
-        version=version,
-        user=user,
-        operation_type="generate_daily_plan",
-        summary=f"生成每日计划：{plan.title}",
-        payload={"daily_minutes": daily_minutes, "item_count": len(active_items)},
+    db.flush()
+    return plan
+
+
+def _date_floor(value: datetime) -> datetime:
+    return datetime(value.year, value.month, value.day)
+
+
+def _normalize_weekdays(weekdays: list[int], study_weekends: bool) -> list[int]:
+    normalized = sorted({int(day) for day in weekdays if 0 <= int(day) <= 6})
+    if not normalized:
+        normalized = [0, 1, 2, 3, 4]
+    if study_weekends:
+        normalized = sorted(set(normalized) | {5, 6})
+    else:
+        normalized = [day for day in normalized if day < 5] or [0, 1, 2, 3, 4]
+    return normalized
+
+
+def _next_study_date(value: datetime, allowed_weekdays: list[int]) -> datetime:
+    next_date = _date_floor(value)
+    for _ in range(3700):
+        if next_date.weekday() in allowed_weekdays:
+            return next_date
+        next_date += timedelta(days=1)
+    raise ValueError("cannot find an available study date")
+
+
+def _daily_plan_item_or_404(db: Session, user: User, item_id: int) -> DailyLearningPlanItem:
+    item = db.scalar(
+        select(DailyLearningPlanItem).where(
+            DailyLearningPlanItem.id == item_id,
+            DailyLearningPlanItem.user_id == user.id,
+        )
     )
-    project.status = "daily_plan_ready"
-    project.current_stage = "每日计划已生成"
-    project.next_step = "按每日计划进入课堂学习"
+    if item is None:
+        raise KeyError("daily plan item not found")
+    return item
+
+
+def move_daily_plan_item(
+    db: Session,
+    user: User,
+    item_id: int,
+    request: DailyPlanMoveItemRequest,
+) -> DailyLearningPlan:
+    item = _daily_plan_item_or_404(db, user, item_id)
+    plan = get_daily_plan(db, user, item.daily_plan_id)
+    target_date = _date_floor(request.planned_date)
+    if target_date.weekday() not in _normalize_weekdays(plan.study_weekdays or [], plan.study_weekends):
+        raise ValueError("target date is not an enabled study day")
+    item.planned_date = target_date
+    _normalize_daily_plan_order(plan)
     db.commit()
-    db.refresh(plan)
     return get_daily_plan(db, user, plan.id)
+
+
+def _normalize_daily_plan_order(plan: DailyLearningPlan) -> None:
+    grouped_dates = sorted({item.planned_date for item in plan.items})
+    day_index_by_date = {planned_date: index for index, planned_date in enumerate(grouped_dates, start=1)}
+    for planned_date in grouped_dates:
+        day_items = sorted(
+            [item for item in plan.items if item.planned_date == planned_date],
+            key=lambda item: (item.user_order, item.id),
+        )
+        for order, item in enumerate(day_items, start=1):
+            item.day_index = day_index_by_date[planned_date]
+            item.user_order = order
 
 
 def get_daily_plan(db: Session, user: User, plan_id: int) -> DailyLearningPlan:

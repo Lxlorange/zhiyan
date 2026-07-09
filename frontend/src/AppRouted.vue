@@ -54,8 +54,9 @@ const routeProps = computed(() => {
   if (currentPage.value === 'projects') return { selectedProjectId: selectedProjectId.value }
   if (currentPage.value === 'syllabus') return { projectId: selectedProjectId.value }
   if (currentPage.value === 'classroom') return { projectId: selectedProjectId.value, itemId: selectedItemId.value }
+  if (currentPage.value === 'daily-plan') return { projectId: selectedProjectId.value }
   if (currentPage.value === 'settings') return { user: user.value }
-  if (!['directions', 'projects', 'syllabus', 'classroom', 'settings', 'signin'].includes(currentPage.value)) {
+  if (!['directions', 'projects', 'syllabus', 'classroom', 'daily-plan', 'settings', 'signin'].includes(currentPage.value)) {
     return {
       title: currentMeta.value.title,
       description: currentMeta.value.description,

@@ -82,6 +82,9 @@
         </section>
 
         <div class="project-card-actions">
+          <el-button size="large" @click="router.push({ name: 'project-daily-plan', params: { projectId: activeProject.id } })">
+            打开每日计划
+          </el-button>
           <el-button type="primary" size="large" @click="emit('openSyllabus', activeProject.id)">
             打开学习清单
           </el-button>

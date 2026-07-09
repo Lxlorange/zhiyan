@@ -498,7 +498,13 @@ class SyllabusAdaptRequest(BaseModel):
 class DailyPlanGenerateRequest(BaseModel):
     start_date: Optional[datetime] = None
     daily_minutes: Optional[int] = Field(default=None, ge=10, le=300)
+    study_weekends: bool = False
+    study_weekdays: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
     title: str = Field(default="", max_length=255)
+
+
+class DailyPlanMoveItemRequest(BaseModel):
+    planned_date: datetime
 
 
 class SyllabusOperationRead(BaseModel):
@@ -659,6 +665,7 @@ class ClassroomReflectionSubmitRequest(BaseModel):
 class DailyPlanItemRead(BaseModel):
     id: int
     day_index: int
+    planned_date: datetime
     title: str
     estimated_minutes: int
     learning_focus: str
@@ -666,6 +673,7 @@ class DailyPlanItemRead(BaseModel):
     status: str
     user_order: int
     syllabus_item_id: Optional[int] = None
+    project_id: int
 
     model_config = {"from_attributes": True}
 
@@ -677,6 +685,8 @@ class DailyPlanRead(BaseModel):
     title: str
     start_date: datetime
     daily_minutes: int
+    study_weekends: bool = False
+    study_weekdays: List[int] = Field(default_factory=list)
     generation_reason: str
     status: str
     created_at: datetime
