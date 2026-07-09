@@ -13,5 +13,20 @@
     "jsx": "preserve",
     "strict": true
   },
-  "include": ["src/**/*.ts", "src/**/*.vue"]
+  "include": [
+    "src/main.ts",
+    "src/vite-env.d.ts",
+    "src/router.ts",
+    "src/services/**/*.ts",
+    "src/AppRouted.vue",
+    "src/components/AppShell.vue",
+    "src/components/AppSidebar.vue",
+    "src/components/AppTopbar.vue",
+    "src/pages/AccountSettings.vue",
+    "src/pages/DirectionPlanner.vue",
+    "src/pages/LoginPage.vue",
+    "src/pages/ModulePlaceholder.vue",
+    "src/pages/ProjectHomePage.vue",
+    "src/pages/SyllabusPage.vue"
+  ]
 }

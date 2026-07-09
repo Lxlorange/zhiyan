@@ -2318,6 +2318,403 @@ body.app-mode .project-card:hover,
   flex: 0 0 auto;
 }
 
+.legacy-flat-nav {
+  display: none !important;
+}
+
+.tree-nav {
+  gap: 12px;
+}
+
+.tree-nav details {
+  display: grid;
+  gap: 6px;
+}
+
+.tree-nav summary {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: #93a4bd;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tree-nav summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-nav summary::before {
+  content: "›";
+  margin-right: 8px;
+  color: #c7d2fe;
+  font-size: 16px;
+  transition: transform 160ms ease;
+}
+
+.tree-nav details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.tree-nav a {
+  margin-left: 12px;
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.topbar-actions #currentUserLabel,
+.topbar-actions #logoutBtn,
+.topbar-actions #startBtn {
+  display: none;
+}
+
+.topbar-chip {
+  min-width: 68px;
+}
+
+.user-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  min-width: 190px;
+  height: 44px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--ui-border);
+  background: #ffffff;
+  color: var(--ui-text);
+}
+
+.user-menu-button:hover {
+  box-shadow: 0 10px 22px rgba(79, 70, 229, 0.12);
+}
+
+.user-avatar,
+.settings-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #818cf8, #22c55e);
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+  font-weight: 900;
+}
+
+.user-avatar.has-image {
+  color: transparent;
+}
+
+.user-menu-copy {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+}
+
+.user-menu-copy strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-copy small {
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-layout {
+  grid-template-columns: minmax(0, 0.95fr) minmax(340px, 0.75fr);
+  align-items: start;
+}
+
+.settings-form {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.settings-form textarea {
+  min-height: 120px;
+}
+
+.settings-preview {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--ui-primary-soft), #ffffff);
+}
+
+.settings-avatar {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
+}
+
+.settings-preview h3 {
+  margin: 0;
+}
+
+.settings-preview p {
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+}
+
+.syllabus-layout {
+  grid-template-columns: minmax(300px, 0.8fr) minmax(420px, 1.25fr) minmax(320px, 0.95fr);
+  align-items: stretch;
+}
+
+.syllabus-layout > .panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.syllabus-projects,
+.syllabus-versions,
+.daily-plan {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.syllabus-projects select {
+  min-height: 42px;
+}
+
+.project-mini-card,
+.syllabus-summary,
+.daily-plan-header,
+.day-card {
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-surface-subtle);
+}
+
+.project-mini-card h4,
+.syllabus-item-card h4 {
+  margin: 0 0 6px;
+  color: #111827;
+}
+
+.project-mini-card p,
+.syllabus-item-card p,
+.daily-plan p {
+  margin: 0;
+  color: var(--ui-muted);
+  line-height: 1.65;
+}
+
+.syllabus-toolbar {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.syllabus-toolbar button {
+  width: 100%;
+  margin-top: 0;
+}
+
+.syllabus-versions {
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  max-height: 170px;
+  overflow: auto;
+}
+
+.syllabus-version-pill {
+  min-width: 0;
+  height: auto;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid var(--ui-border);
+  background: #fff;
+  color: var(--ui-text);
+}
+
+.syllabus-version-pill.active {
+  background: var(--ui-primary);
+  color: #fff;
+}
+
+.syllabus-version-pill small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.82;
+}
+
+.syllabus-list {
+  display: grid;
+  gap: 12px;
+}
+
+.syllabus-summary {
+  display: grid;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--ui-primary-soft), #ffffff);
+}
+
+.syllabus-summary strong {
+  display: inline-flex;
+  margin-right: 8px;
+  color: var(--ui-primary-dark);
+}
+
+.syllabus-summary small {
+  color: var(--ui-muted);
+  overflow-wrap: anywhere;
+}
+
+.syllabus-item-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.syllabus-item-head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.item-index {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary-dark);
+  font-weight: 900;
+}
+
+.syllabus-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.syllabus-tags .tag {
+  margin: 0;
+}
+
+.syllabus-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.syllabus-meta div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.syllabus-meta strong {
+  color: #334155;
+  font-size: 12px;
+}
+
+.syllabus-meta span {
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.syllabus-actions {
+  max-height: none;
+}
+
+.syllabus-actions button {
+  height: 34px;
+  font-size: 12px;
+}
+
+.syllabus-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.daily-plan {
+  max-height: min(36vh, 360px);
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.daily-plan-header {
+  display: grid;
+  gap: 4px;
+  background: var(--ui-accent-soft);
+}
+
+.daily-plan-header span,
+.day-card span {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.day-card {
+  display: grid;
+  gap: 8px;
+}
+
+.day-card p {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+#syllabusProjectView,
+#syllabusVersionView,
+#dailyPlanView {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 70, 229, 0.42) transparent;
+}
+
+#pathPage #pathView {
+  max-height: min(68vh, 760px);
+}
+
+#pathPage #traceView {
+  max-height: min(28vh, 260px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2341,6 +2738,7 @@ body.app-mode .project-card:hover,
   .landing-hero,
   .grid.direction-layout,
   .grid.project-layout,
+  .syllabus-layout,
   .workflow-card,
   .landing-metrics,
   .capability-grid {
@@ -2363,6 +2761,7 @@ body.app-mode .project-card:hover,
 
   .knowledge-search,
   .metrics,
+  .syllabus-meta,
   .console-result {
     grid-template-columns: 1fr;
   }

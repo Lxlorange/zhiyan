@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from fastapi import Request
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,8 +24,25 @@ app.add_middleware(
 
 app.include_router(router)
 
-web_dir = Path(__file__).resolve().parent / "web"
-app.mount("/static", StaticFiles(directory=web_dir), name="static")
+app_dir = Path(__file__).resolve().parent
+repo_root = app_dir.parents[1]
+vue_dist_dir = repo_root / "frontend" / "dist"
+vue_index = vue_dist_dir / "index.html"
+
+if (vue_dist_dir / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=vue_dist_dir / "assets"), name="vue_assets")
+
+
+def ensure_vue_dist() -> Path:
+    if not vue_index.exists():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Vue frontend build not found. Run `cd frontend && npm install && npm run build` "
+                "before starting the integrated FastAPI server."
+            ),
+        )
+    return vue_dist_dir
 
 
 @app.exception_handler(Exception)
@@ -42,7 +58,21 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 @app.get("/")
 def root() -> FileResponse:
-    return FileResponse(web_dir / "index.html")
+    dist_dir = ensure_vue_dist()
+    return FileResponse(dist_dir / "index.html")
+
+
+@app.get("/{full_path:path}")
+def spa_route(full_path: str) -> FileResponse:
+    reserved_prefixes = ("api", "docs", "redoc", "openapi.json", "assets")
+    if full_path.startswith(reserved_prefixes):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    dist_dir = ensure_vue_dist()
+    target = dist_dir / full_path
+    if target.is_file():
+        return FileResponse(target)
+    return FileResponse(dist_dir / "index.html")
 
 
 @app.on_event("startup")

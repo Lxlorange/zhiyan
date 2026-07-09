@@ -283,3 +283,139 @@ class ResearchDirectionEvent(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProjectPlanSession(Base):
+    __tablename__ = "project_plan_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    learning_type: Mapped[str] = mapped_column(String(64), default="none", nullable=False)
+    learning_goal: Mapped[str] = mapped_column(Text, nullable=False)
+    extra_requirements: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    plan_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    messages: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="planning", nullable=False)
+    direction_id: Mapped[Optional[int]] = mapped_column(ForeignKey("research_directions.id"), nullable=True)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_projects.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class LearningSyllabusVersion(Base):
+    __tablename__ = "learning_syllabus_versions"
+    __table_args__ = (UniqueConstraint("project_id", "version_no", name="uq_project_syllabus_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    generation_method: Mapped[str] = mapped_column(String(64), default="ai", nullable=False)
+    generation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    profile_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    knowledge_base_version: Mapped[str] = mapped_column(String(128), default="AI4S-PRACTICE", nullable=False)
+    user_adjustments: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    agent_summary: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    items: Mapped[list["LearningSyllabusItem"]] = relationship(
+        back_populates="syllabus_version",
+        cascade="all, delete-orphan",
+        order_by="LearningSyllabusItem.user_order",
+    )
+    operations: Mapped[list["LearningSyllabusOperation"]] = relationship(
+        back_populates="syllabus_version",
+        cascade="all, delete-orphan",
+        order_by="LearningSyllabusOperation.created_at",
+    )
+
+
+class LearningSyllabusItem(Base):
+    __tablename__ = "learning_syllabus_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    syllabus_version_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_versions.id"), index=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    item_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    stage: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(32), default="medium", nullable=False)
+    estimated_minutes: Mapped[int] = mapped_column(Integer, default=45, nullable=False)
+    recommendation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    prerequisites: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    knowledge_points: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    related_documents: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    recommended_resource_types: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    classroom_types: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    completion_criteria: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    assessment_method: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True, nullable=False)
+    user_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    syllabus_version: Mapped[LearningSyllabusVersion] = relationship(back_populates="items")
+
+
+class LearningSyllabusOperation(Base):
+    __tablename__ = "learning_syllabus_operations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    syllabus_version_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_versions.id"), index=True, nullable=False)
+    item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_syllabus_items.id"), index=True, nullable=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    operation_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    syllabus_version: Mapped[LearningSyllabusVersion] = relationship(back_populates="operations")
+
+
+class DailyLearningPlan(Base):
+    __tablename__ = "daily_learning_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    syllabus_version_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_versions.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    start_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    daily_minutes: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
+    generation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    items: Mapped[list["DailyLearningPlanItem"]] = relationship(
+        back_populates="daily_plan",
+        cascade="all, delete-orphan",
+        order_by="DailyLearningPlanItem.day_index, DailyLearningPlanItem.user_order",
+    )
+
+
+class DailyLearningPlanItem(Base):
+    __tablename__ = "daily_learning_plan_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    daily_plan_id: Mapped[int] = mapped_column(ForeignKey("daily_learning_plans.id"), index=True, nullable=False)
+    syllabus_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_syllabus_items.id"), index=True, nullable=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    day_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    estimated_minutes: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
+    learning_focus: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    resource_types: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    user_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    daily_plan: Mapped[DailyLearningPlan] = relationship(back_populates="items")

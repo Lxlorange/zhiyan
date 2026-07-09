@@ -17,7 +17,17 @@ export function initButtonLabels() {
     '#submitQuizBtn',
     '#loginBtn',
     '#registerBtn',
-    '#logoutBtn'
+    '#logoutBtn',
+    '#generateSyllabusBtn',
+    '#copySyllabusBtn',
+    '#activateSyllabusBtn',
+    '#compareSyllabusBtn',
+    '#addSyllabusItemBtn',
+    '#mergeSyllabusItemsBtn',
+    '#regenerateStageBtn',
+    '#generateDailyPlanBtn',
+    '#adaptSyllabusBtn',
+    '#saveSettingsBtn'
   ].forEach((selector) => {
     const button = $(selector)
     if (button) button.dataset.label = button.textContent
@@ -181,6 +191,53 @@ export function renderAuthMessage(message, type = 'error') {
   node.className = `auth-message ${type}`
 }
 
+export function renderUserShell(user) {
+  const label = $('#currentUserLabel')
+  if (label) label.textContent = user ? `${user.full_name || user.username} / ${user.role}` : '未登录'
+  const avatar = $('#currentUserAvatar')
+  if (avatar) {
+    avatar.textContent = user ? (user.full_name || user.username || 'U').slice(0, 1).toUpperCase() : '-'
+    if (user?.avatar_url) {
+      avatar.style.backgroundImage = `url("${user.avatar_url}")`
+      avatar.classList.add('has-image')
+    } else {
+      avatar.style.backgroundImage = ''
+      avatar.classList.remove('has-image')
+    }
+  }
+  const name = $('#currentUserName')
+  if (name) name.textContent = user ? (user.full_name || user.username) : '未登录'
+  const meta = $('#currentUserMeta')
+  if (meta) meta.textContent = user ? `${user.username} · ${user.role}` : 'Guest'
+}
+
+export function renderSettings(user) {
+  if (!user) return
+  const fields = {
+    settingsFullName: user.full_name || '',
+    settingsEmail: user.email || '',
+    settingsAvatarUrl: user.avatar_url || '',
+    settingsSchool: user.school || '',
+    settingsMajor: user.major || '',
+    settingsBio: user.bio || ''
+  }
+  Object.entries(fields).forEach(([id, value]) => {
+    const node = document.querySelector(`#${id}`)
+    if (node) node.value = value
+  })
+  const preview = document.querySelector('#settingsProfilePreview')
+  if (preview) {
+    preview.innerHTML = `
+      <div class="settings-avatar">${(user.full_name || user.username || 'U').slice(0, 1).toUpperCase()}</div>
+      <div>
+        <h3>${user.full_name || user.username}</h3>
+        <p>${user.username} / ${user.email}</p>
+        <p>${user.school || '未填写学校'} · ${user.major || '未填写专业'}</p>
+      </div>
+    `
+  }
+}
+
 export function renderMetrics(workflow) {
   $('#sessionMetric').textContent = workflow ? workflow.session_id.slice(0, 8) : '-'
   $('#profileMetric').textContent = workflow ? `v${workflow.profile.revision}` : '-'
@@ -259,6 +316,165 @@ export function renderPath(workflow) {
       <span>Step ${index + 1} / ${step.estimated_minutes} 分钟 / ${step.status}</span>
       <p><strong>${step.title}</strong>：${step.objective}</p>
       <p>${step.reason}</p>
+    </div>
+  `).join('')
+}
+
+export function renderSyllabusProjects(projects, selectedProjectId) {
+  const node = $('#syllabusProjectView')
+  if (!node) return
+  if (!projects || projects.length === 0) {
+    node.className = 'syllabus-projects empty'
+    node.textContent = '暂无学习项目，请先在“探索方向”中保存方向并创建项目。'
+    return
+  }
+  node.className = 'syllabus-projects'
+  node.innerHTML = `
+    <select id="syllabusProjectSelect">
+      ${projects.map((project) => `
+        <option value="${project.id}" ${Number(selectedProjectId) === Number(project.id) ? 'selected' : ''}>
+          ${project.title} / ${project.status} / 每日 ${project.daily_minutes} 分钟
+        </option>
+      `).join('')}
+    </select>
+    <div class="project-mini-card">
+      ${renderSelectedProjectSummary(projects.find((project) => Number(project.id) === Number(selectedProjectId)) || projects[0])}
+    </div>
+  `
+}
+
+function renderSelectedProjectSummary(project) {
+  if (!project) return '<p>请选择学习项目</p>'
+  return `
+    <h4>${project.title}</h4>
+    <p>${project.learning_goal}</p>
+    <div>
+      <span class="tag">${project.difficulty}</span>
+      <span class="tag">${project.goal_type}</span>
+      <span class="tag">${project.recommended_period}</span>
+    </div>
+  `
+}
+
+export function renderSyllabusVersions(versions, currentVersionId) {
+  const node = $('#syllabusVersionView')
+  if (!node) return
+  if (!versions || versions.length === 0) {
+    node.className = 'syllabus-versions empty'
+    node.textContent = '暂无清单版本。点击“生成学习清单”后会在这里展示历史版本。'
+    return
+  }
+  node.className = 'syllabus-versions'
+  node.innerHTML = versions.map((version) => `
+    <button class="syllabus-version-pill ${version.is_current || Number(version.id) === Number(currentVersionId) ? 'active' : ''}" data-version-id="${version.id}">
+      v${version.version_no}
+      <small>${version.generation_method}</small>
+    </button>
+  `).join('')
+}
+
+export function renderSyllabus(version) {
+  const node = $('#pathView')
+  if (!node) return
+  if (!version || !version.items || version.items.length === 0) {
+    node.className = 'timeline empty'
+    node.textContent = '暂无学习清单。'
+    return
+  }
+  const visibleItems = version.items
+    .filter((item) => item.status !== 'deleted')
+    .sort((a, b) => a.user_order - b.user_order)
+  node.className = 'timeline syllabus-list'
+  node.innerHTML = `
+    <div class="syllabus-summary">
+      <div>
+        <strong>v${version.version_no}</strong>
+        <span>${version.generation_reason}</span>
+      </div>
+      <small>${Object.entries(version.agent_summary || {}).map(([agent, summary]) => `${agent}: ${typeof summary === 'string' ? summary : JSON.stringify(summary)}`).join(' / ')}</small>
+    </div>
+    ${visibleItems.map((item, index) => `
+      <article class="syllabus-item-card" data-item-id="${item.id}" draggable="true">
+        <div class="syllabus-item-head">
+          <span class="item-index">${index + 1}</span>
+          <div>
+            <h4>${item.title}</h4>
+            <p>${item.objective || item.recommendation_reason}</p>
+          </div>
+        </div>
+        <div class="syllabus-tags">
+          <span class="tag">${item.stage}</span>
+          <span class="tag">${item.item_type}</span>
+          <span class="tag">${item.difficulty}</span>
+          <span class="tag">${item.estimated_minutes} 分钟</span>
+          <span class="tag">${item.status}</span>
+        </div>
+        <p class="muted">${item.recommendation_reason}</p>
+        <div class="syllabus-meta">
+          <div><strong>知识点</strong><span>${(item.knowledge_points || []).join('、') || '-'}</span></div>
+          <div><strong>课堂形态</strong><span>${(item.classroom_types || []).join('、') || '-'}</span></div>
+          <div><strong>完成标准</strong><span>${item.completion_criteria || '-'}</span></div>
+          <div><strong>评估方式</strong><span>${item.assessment_method || '-'}</span></div>
+        </div>
+        <div class="project-actions syllabus-actions">
+          <button class="ghost syllabus-move-up-btn" data-item-id="${item.id}">上移</button>
+          <button class="ghost syllabus-move-down-btn" data-item-id="${item.id}">下移</button>
+          <button class="secondary syllabus-status-btn" data-item-id="${item.id}" data-status="mastered">已掌握</button>
+          <button class="secondary syllabus-status-btn" data-item-id="${item.id}" data-status="deep">需深入</button>
+          <button class="ghost syllabus-status-btn" data-item-id="${item.id}" data-status="skipped">跳过</button>
+          <button class="ghost syllabus-edit-btn" data-item-id="${item.id}">编辑</button>
+          <button class="ghost syllabus-split-btn" data-item-id="${item.id}">拆分</button>
+          <button class="ghost syllabus-delete-btn" data-item-id="${item.id}">删除</button>
+        </div>
+      </article>
+    `).join('')}
+  `
+}
+
+export function renderDailyPlans(plans) {
+  const node = $('#dailyPlanView')
+  if (!node) return
+  if (!plans || plans.length === 0) {
+    node.className = 'daily-plan empty'
+    node.textContent = '暂无每日计划。生成清单后可按每日学习时长自动拆分。'
+    return
+  }
+  const latest = plans[0]
+  const grouped = latest.items.reduce((acc, item) => {
+    acc[item.day_index] = acc[item.day_index] || []
+    acc[item.day_index].push(item)
+    return acc
+  }, {})
+  node.className = 'daily-plan'
+  node.innerHTML = `
+    <div class="daily-plan-header">
+      <strong>${latest.title}</strong>
+      <span>每日 ${latest.daily_minutes} 分钟 / ${latest.generation_reason}</span>
+    </div>
+    ${Object.entries(grouped).map(([day, items]) => `
+      <div class="day-card">
+        <strong>Day ${day}</strong>
+        ${items.map((item) => `
+          <p><span>${item.estimated_minutes} 分钟</span>${item.title}</p>
+        `).join('')}
+      </div>
+    `).join('')}
+  `
+}
+
+export function renderSyllabusTrace(version) {
+  const node = $('#traceView')
+  if (!node) return
+  if (!version || !version.operations || version.operations.length === 0) {
+    node.className = 'trace empty'
+    node.textContent = '暂无调整记录。'
+    return
+  }
+  node.className = 'trace'
+  node.innerHTML = version.operations.slice().reverse().map((operation) => `
+    <div class="trace-row">
+      <span>${operation.operation_type} / ${new Date(operation.created_at).toLocaleString()}</span>
+      <p>${operation.summary}</p>
     </div>
   `).join('')
 }

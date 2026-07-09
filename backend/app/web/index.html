@@ -149,7 +149,32 @@
           <p>A3 学习多智能体</p>
         </div>
       </a>
-      <nav class="side-nav">
+      <nav class="side-nav tree-nav" aria-label="主导航">
+        <details open>
+          <summary>学习项目</summary>
+          <a href="#/app/directions" data-route="/app/directions">探索方向</a>
+          <a href="#/app/projects" data-route="/app/projects">学习项目</a>
+          <a href="#/app/path" data-route="/app/path">学习清单</a>
+        </details>
+        <details open>
+          <summary>学习过程</summary>
+          <a href="#/app/profile" data-route="/app/profile">学习画像</a>
+          <a href="#/app/resources" data-route="/app/resources">资源中心</a>
+          <a href="#/app/tutor" data-route="/app/tutor">智能辅导</a>
+          <a href="#/app/assessment" data-route="/app/assessment">练习评估</a>
+        </details>
+        <details>
+          <summary>工作台</summary>
+          <a href="#/app/workbench" data-route="/app/workbench">完整链路</a>
+          <a href="#/app/teacher" data-route="/app/teacher">教师驾驶舱</a>
+        </details>
+        <details>
+          <summary>系统</summary>
+          <a href="#/app/settings" data-route="/app/settings">账号设置</a>
+          <a href="/docs" target="_blank">API 文档</a>
+        </details>
+      </nav>
+      <nav class="side-nav legacy-flat-nav">
         <a href="#/app/directions" data-route="/app/directions">探索方向</a>
         <a href="#/app/projects" data-route="/app/projects">学习项目</a>
         <a href="#/app/workbench" data-route="/app/workbench">工作台</a>
@@ -170,6 +195,15 @@
           <span id="topbarSubtitle">WiFi CSI 跌倒检测学习单元</span>
         </div>
         <div class="topbar-actions">
+          <button id="languageToggleBtn" class="ghost topbar-chip" type="button" disabled>语言</button>
+          <button id="themeToggleBtn" class="ghost topbar-chip" type="button" disabled>Light</button>
+          <button id="userMenuBtn" class="user-menu-button" type="button">
+            <span id="currentUserAvatar" class="user-avatar">-</span>
+            <span class="user-menu-copy">
+              <strong id="currentUserName">未登录</strong>
+              <small id="currentUserMeta">Guest</small>
+            </span>
+          </button>
           <span id="currentUserLabel">未登录</span>
           <button id="logoutBtn" class="ghost">退出</button>
           <button id="startBtn">运行完整链路</button>
@@ -215,6 +249,49 @@
               <span>Templates</span>
             </div>
             <div id="directionTemplatesView" class="template-list empty">等待加载模板</div>
+          </article>
+        </section>
+      </section>
+
+      <section id="settingsPage" class="page-view">
+        <div class="page-heading">
+          <p class="eyebrow">Account Settings</p>
+          <h2>账号设置</h2>
+          <p>维护学生端基本身份信息。头像、姓名、学校、专业会显示在平台顶栏，并为后续个性化画像和学习计划提供上下文。</p>
+          <div class="page-steps">
+            <span class="active">基本信息</span>
+            <span>学习身份</span>
+            <span>展示资料</span>
+            <span>保存同步</span>
+          </div>
+        </div>
+        <section class="grid settings-layout">
+          <article class="panel">
+            <div class="panel-header">
+              <h3>个人资料</h3>
+              <span>Profile</span>
+            </div>
+            <div class="settings-form">
+              <label>姓名<input id="settingsFullName" autocomplete="name" /></label>
+              <label>邮箱<input id="settingsEmail" autocomplete="email" /></label>
+              <label>头像 URL<input id="settingsAvatarUrl" placeholder="https://..." /></label>
+              <label>学校<input id="settingsSchool" placeholder="例如：某某大学" /></label>
+              <label>专业<input id="settingsMajor" placeholder="例如：计算机科学与技术" /></label>
+              <label>个人简介<textarea id="settingsBio" placeholder="简单说明当前学习阶段、研究兴趣或课程背景"></textarea></label>
+              <button id="saveSettingsBtn" type="button" class="secondary">保存账号信息</button>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-header">
+              <h3>信息预览</h3>
+              <span>Preview</span>
+            </div>
+            <div id="settingsProfilePreview" class="settings-preview empty">等待加载用户信息</div>
+            <div class="answer-box">
+              <p><strong>语言切换</strong>：占位，后续接入 i18n。</p>
+              <p><strong>Light/Dark</strong>：占位，后续接入主题变量。</p>
+              <p><strong>账号安全</strong>：后续可扩展密码修改、绑定邮箱和登录设备管理。</p>
+            </div>
           </article>
         </section>
       </section>
@@ -329,6 +406,59 @@
       <section id="pathPage" class="page-view">
         <div class="page-heading">
           <p class="eyebrow">Path Planning</p>
+          <h2>学习清单与路径规划</h2>
+          <p>选择一个科研学习项目，生成可编辑的结构化学习清单，再拆分为每日计划。每次调整都会写入操作记录，AI 反馈会形成新的清单版本。</p>
+          <div class="page-steps">
+            <span class="active">1 选择项目</span>
+            <span>2 生成清单</span>
+            <span>3 调整版本</span>
+            <span>4 拆分每日计划</span>
+          </div>
+        </div>
+        <section class="grid syllabus-layout">
+          <article class="panel">
+            <div class="panel-header">
+              <h3>项目与版本</h3>
+              <span>SyllabusAgent</span>
+            </div>
+            <div id="syllabusProjectView" class="syllabus-projects empty">等待加载学习项目</div>
+            <div id="syllabusToolbar" class="syllabus-toolbar">
+              <button id="generateSyllabusBtn" type="button" class="secondary">生成学习清单</button>
+              <button id="copySyllabusBtn" type="button" class="ghost">复制当前版本</button>
+              <button id="activateSyllabusBtn" type="button" class="ghost">设为当前版本</button>
+              <button id="compareSyllabusBtn" type="button" class="ghost">比较最近版本</button>
+              <button id="addSyllabusItemBtn" type="button" class="ghost">新增学习项</button>
+              <button id="mergeSyllabusItemsBtn" type="button" class="ghost">合并前两项</button>
+              <button id="regenerateStageBtn" type="button" class="ghost">重生成阶段</button>
+              <button id="generateDailyPlanBtn" type="button" class="ghost">生成每日计划</button>
+            </div>
+            <div id="syllabusVersionView" class="syllabus-versions empty">暂无清单版本</div>
+          </article>
+          <article class="panel">
+            <div class="panel-header">
+              <h3>学习清单</h3>
+              <span>PathPlannerAgent</span>
+            </div>
+            <div id="pathView" class="timeline empty">选择项目后生成学习清单</div>
+          </article>
+          <article class="panel">
+            <div class="panel-header">
+              <h3>每日计划与动态调整</h3>
+              <span>AdaptationAgent</span>
+            </div>
+            <div class="syllabus-form">
+              <input id="adaptEvidenceInput" value="我在练习中连续答错召回率和混淆矩阵相关题目，希望系统调整学习路径。" />
+              <button id="adaptSyllabusBtn" type="button" class="secondary">根据反馈调整路径</button>
+            </div>
+            <div id="dailyPlanView" class="daily-plan empty">暂无每日计划</div>
+            <div id="traceView" class="trace empty">暂无调整记录</div>
+          </article>
+        </section>
+      </section>
+
+      <section id="legacyPathPage" class="page-view">
+        <div class="page-heading">
+          <p class="eyebrow">Path Planning</p>
           <h2>个性化学习路径</h2>
           <p>根据画像、知识掌握情况和资源偏好安排学习顺序，并展示智能体协作轨迹。</p>
           <div class="page-steps">
@@ -344,14 +474,14 @@
               <h3>学习步骤</h3>
               <span>PathPlannerAgent</span>
             </div>
-            <div id="pathView" class="timeline empty">等待路径规划</div>
+            <div id="legacyPathView" class="timeline empty">等待路径规划</div>
           </article>
           <article class="panel">
             <div class="panel-header">
               <h3>智能体协作轨迹</h3>
               <span>Trace</span>
             </div>
-            <div id="traceView" class="trace empty">等待工作流执行</div>
+            <div id="legacyTraceView" class="trace empty">等待工作流执行</div>
           </article>
         </section>
       </section>

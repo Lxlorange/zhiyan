@@ -10,6 +10,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     app_name: str = "zhiyan-a3-api"
     app_env: str = "development"
+    server_host: str = "127.0.0.1"
+    server_port: int = 18000
     database_url: str = "postgresql+psycopg://zhiyan:zhiyan@localhost:5432/zhiyan_a3"
     jwt_secret_key: str = "change-this-secret-in-production"
     jwt_algorithm: str = "HS256"
@@ -19,7 +21,7 @@ class Settings(BaseSettings):
     qwen_api_key: str = ""
     qwen_model: str = "qwen-plus"
     qwen_base_url: str = "https://ws-1ulzsdw0gslyucjg.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-    qwen_timeout_seconds: int = 60
+    qwen_timeout_seconds: int = 180
     xunfei_app_id: str = ""
     xunfei_api_key: str = ""
     xunfei_api_secret: str = ""

@@ -22,10 +22,23 @@ class UserRead(BaseModel):
     username: str
     email: EmailStr
     full_name: str
+    avatar_url: str = ""
+    school: str = ""
+    major: str = ""
+    bio: str = ""
     role: str
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=64)
+    email: Optional[EmailStr] = None
+    avatar_url: Optional[str] = Field(default=None, max_length=512)
+    school: Optional[str] = Field(default=None, max_length=128)
+    major: Optional[str] = Field(default=None, max_length=128)
+    bio: Optional[str] = Field(default=None, max_length=512)
 
 
 class TokenResponse(BaseModel):
@@ -249,6 +262,44 @@ class DirectionAnalyzeResponse(BaseModel):
     agent_summary: str
 
 
+class ProjectPlanMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str
+    created_at: datetime
+
+
+class ProjectPlanRequest(BaseModel):
+    learning_type: str = Field(default="", pattern="^(|course_project|research_project|course_knowledge)$")
+    learning_goal: str = Field(..., min_length=1, max_length=2000)
+    extra_requirements: str = Field(default="", max_length=3000)
+
+
+class ProjectPlanAdjustRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=3000)
+
+
+class ProjectPlanRead(BaseModel):
+    id: int
+    learning_type: str
+    learning_goal: str
+    extra_requirements: str
+    title: str
+    plan_data: Dict[str, object]
+    messages: List[ProjectPlanMessage]
+    status: str
+    direction_id: Optional[int] = None
+    project_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProjectPlanBuildResponse(BaseModel):
+    plan: ProjectPlanRead
+    project: "LearningProjectRead"
+
+
 class DirectionCreateRequest(BaseModel):
     message: str = Field(..., min_length=1)
     template_id: Optional[int] = None
@@ -338,6 +389,9 @@ class LearningProjectRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+ProjectPlanBuildResponse.model_rebuild()
+
+
 class LearningProjectHomeResponse(BaseModel):
     project: LearningProjectRead
     current_stage: str
@@ -365,3 +419,196 @@ class DirectionDashboardResponse(BaseModel):
     risk_projects: List[LearningProjectRead]
     pending_reviews: List[ResearchDirectionRead]
     recommended_templates: List[DirectionTemplateRead]
+
+
+class SyllabusGenerateRequest(BaseModel):
+    generation_goal: str = Field(default="", max_length=1200)
+    force_new_version: bool = True
+
+
+class SyllabusItemCreateRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=255)
+    item_type: str = Field(default="concept", max_length=64)
+    stage: str = Field(default="自定义", max_length=128)
+    difficulty: str = Field(default="medium", max_length=32)
+    estimated_minutes: int = Field(default=45, ge=5, le=600)
+    recommendation_reason: str = Field(default="用户手动添加", max_length=2000)
+    objective: str = Field(default="", max_length=2000)
+    prerequisites: List[str] = Field(default_factory=list)
+    knowledge_points: List[str] = Field(default_factory=list)
+    related_documents: List[str] = Field(default_factory=list)
+    recommended_resource_types: List[str] = Field(default_factory=list)
+    classroom_types: List[str] = Field(default_factory=list)
+    completion_criteria: str = Field(default="", max_length=2000)
+    assessment_method: str = Field(default="", max_length=2000)
+    user_order: Optional[int] = Field(default=None, ge=1)
+    is_locked: bool = False
+
+
+class SyllabusItemUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=2, max_length=255)
+    item_type: Optional[str] = Field(default=None, max_length=64)
+    stage: Optional[str] = Field(default=None, max_length=128)
+    difficulty: Optional[str] = Field(default=None, max_length=32)
+    estimated_minutes: Optional[int] = Field(default=None, ge=5, le=600)
+    recommendation_reason: Optional[str] = Field(default=None, max_length=2000)
+    objective: Optional[str] = Field(default=None, max_length=2000)
+    prerequisites: Optional[List[str]] = None
+    knowledge_points: Optional[List[str]] = None
+    related_documents: Optional[List[str]] = None
+    recommended_resource_types: Optional[List[str]] = None
+    classroom_types: Optional[List[str]] = None
+    completion_criteria: Optional[str] = Field(default=None, max_length=2000)
+    assessment_method: Optional[str] = Field(default=None, max_length=2000)
+    status: Optional[str] = Field(default=None, max_length=32)
+    is_locked: Optional[bool] = None
+
+
+class SyllabusItemStatusRequest(BaseModel):
+    status: str = Field(..., pattern="^(pending|in_progress|completed|skipped|deep|mastered|split|merged)$")
+    reason: str = Field(default="", max_length=1000)
+
+
+class SyllabusReorderRequest(BaseModel):
+    item_ids: List[int] = Field(..., min_length=1)
+
+
+class SyllabusItemSplitRequest(BaseModel):
+    parts: List[SyllabusItemCreateRequest] = Field(..., min_length=2, max_length=8)
+    reason: str = Field(default="拆分为更细学习项", max_length=1000)
+
+
+class SyllabusItemsMergeRequest(BaseModel):
+    item_ids: List[int] = Field(..., min_length=2, max_length=8)
+    title: str = Field(..., min_length=2, max_length=255)
+    reason: str = Field(default="合并相似学习项", max_length=1000)
+
+
+class SyllabusRegenerateStageRequest(BaseModel):
+    stage: str = Field(..., min_length=1, max_length=128)
+    instruction: str = Field(default="", max_length=1200)
+
+
+class SyllabusAdaptRequest(BaseModel):
+    trigger_type: str = Field(..., min_length=2, max_length=64)
+    evidence: str = Field(..., min_length=2, max_length=1600)
+    require_confirmation: bool = False
+
+
+class DailyPlanGenerateRequest(BaseModel):
+    start_date: Optional[datetime] = None
+    daily_minutes: Optional[int] = Field(default=None, ge=10, le=300)
+    title: str = Field(default="", max_length=255)
+
+
+class SyllabusOperationRead(BaseModel):
+    id: int
+    operation_type: str
+    summary: str
+    payload: Dict[str, object]
+    item_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SyllabusItemRead(BaseModel):
+    id: int
+    syllabus_version_id: int
+    project_id: int
+    title: str
+    item_type: str
+    stage: str
+    difficulty: str
+    estimated_minutes: int
+    recommendation_reason: str
+    objective: str
+    prerequisites: List[str]
+    knowledge_points: List[str]
+    related_documents: List[str]
+    recommended_resource_types: List[str]
+    classroom_types: List[str]
+    completion_criteria: str
+    assessment_method: str
+    status: str
+    user_order: int
+    is_locked: bool
+    is_manual: bool
+
+    model_config = {"from_attributes": True}
+
+
+class SyllabusVersionRead(BaseModel):
+    id: int
+    project_id: int
+    version_no: int
+    generation_method: str
+    generation_reason: str
+    profile_revision: Optional[int] = None
+    knowledge_base_version: str
+    user_adjustments: List[Dict[str, object]]
+    is_current: bool
+    status: str
+    agent_summary: Dict[str, object]
+    created_at: datetime
+    updated_at: datetime
+    items: List[SyllabusItemRead] = Field(default_factory=list)
+    operations: List[SyllabusOperationRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class SyllabusEnsureResponse(BaseModel):
+    state: str
+    message: str
+    syllabus: Optional[SyllabusVersionRead] = None
+
+
+class SyllabusVersionSummary(BaseModel):
+    id: int
+    project_id: int
+    version_no: int
+    generation_method: str
+    generation_reason: str
+    is_current: bool
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SyllabusCompareResponse(BaseModel):
+    base_version: int
+    target_version: int
+    added: List[SyllabusItemRead]
+    removed: List[SyllabusItemRead]
+    changed: List[Dict[str, object]]
+
+
+class DailyPlanItemRead(BaseModel):
+    id: int
+    day_index: int
+    title: str
+    estimated_minutes: int
+    learning_focus: str
+    resource_types: List[str]
+    status: str
+    user_order: int
+    syllabus_item_id: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DailyPlanRead(BaseModel):
+    id: int
+    project_id: int
+    syllabus_version_id: int
+    title: str
+    start_date: datetime
+    daily_minutes: int
+    generation_reason: str
+    status: str
+    created_at: datetime
+    items: List[DailyPlanItemRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}

@@ -1,8 +1,11 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.models.user import User
 from app.schemas import (
     DirectionAnalyzeRequest,
@@ -17,6 +20,10 @@ from app.schemas import (
     LearningProjectHomeResponse,
     LearningProjectRead,
     LearningProjectUpdateRequest,
+    ProjectPlanAdjustRequest,
+    ProjectPlanBuildResponse,
+    ProjectPlanRead,
+    ProjectPlanRequest,
     ResearchDirectionRead,
 )
 from app.services.direction_service import (
@@ -43,6 +50,13 @@ from app.services.direction_service import (
     update_project,
 )
 from app.services.llm_client import LLMConfigurationError, LLMResponseError
+from app.services.project_plan_service import (
+    adjust_project_plan,
+    build_project_from_plan,
+    create_project_plan,
+    stream_adjust_project_plan,
+    stream_create_project_plan,
+)
 
 router = APIRouter(tags=["directions"])
 
@@ -70,6 +84,106 @@ def direction_analyze(
         return analyze_direction(db, request, user)
     except (LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_ai_error(exc) from exc
+
+
+@router.post("/project-plans", response_model=ProjectPlanRead)
+def project_plan_create(
+    request: ProjectPlanRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProjectPlanRead:
+    try:
+        return create_project_plan(db, user, request)
+    except (LLMConfigurationError, LLMResponseError) as exc:
+        raise _handle_ai_error(exc) from exc
+
+
+@router.post("/project-plans/stream")
+def project_plan_stream(
+    request: ProjectPlanRequest,
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    def event_stream():
+        stream_db = SessionLocal()
+        try:
+            for item in stream_create_project_plan(stream_db, user, request):
+                yield f"event: {item['event']}\n"
+                yield f"data: {json.dumps(item['data'], ensure_ascii=False)}\n\n"
+        except LLMConfigurationError as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 503, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except LLMResponseError as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 502, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 500, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        finally:
+            stream_db.close()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/project-plans/{plan_id}/messages", response_model=ProjectPlanRead)
+def project_plan_adjust(
+    plan_id: int,
+    request: ProjectPlanAdjustRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProjectPlanRead:
+    try:
+        return adjust_project_plan(db, user, plan_id, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="project plan not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (LLMConfigurationError, LLMResponseError) as exc:
+        raise _handle_ai_error(exc) from exc
+
+
+@router.post("/project-plans/{plan_id}/messages/stream")
+def project_plan_adjust_stream(
+    plan_id: int,
+    request: ProjectPlanAdjustRequest,
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    def event_stream():
+        stream_db = SessionLocal()
+        try:
+            for item in stream_adjust_project_plan(stream_db, user, plan_id, request):
+                yield f"event: {item['event']}\n"
+                yield f"data: {json.dumps(item['data'], ensure_ascii=False)}\n\n"
+        except KeyError:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 404, 'detail': 'project plan not found'}, ensure_ascii=False)}\n\n"
+        except ValueError as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 409, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except LLMConfigurationError as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 503, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except LLMResponseError as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 502, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield "event: error\n"
+            yield f"data: {json.dumps({'status': 500, 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        finally:
+            stream_db.close()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/project-plans/{plan_id}/build", response_model=ProjectPlanBuildResponse)
+def project_plan_build(
+    plan_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProjectPlanBuildResponse:
+    try:
+        return build_project_from_plan(db, user, plan_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/direction-templates", response_model=DirectionTemplateRead)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.user import User
-from app.schemas import UserCreate
+from app.schemas import UserCreate, UserUpdate
 
 
 def hash_password(password: str) -> str:
@@ -36,6 +36,23 @@ def create_user(db: Session, payload: UserCreate) -> User:
         role=payload.role,
         hashed_password=hash_password(payload.password),
     )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_profile(db: Session, user: User, payload: UserUpdate) -> User:
+    changes = payload.model_dump(exclude_unset=True)
+    next_email = changes.get("email")
+    if next_email and str(next_email) != user.email:
+        existing = get_user_by_identity(db, str(next_email))
+        if existing and existing.id != user.id:
+            raise ValueError("email already exists")
+        user.email = str(next_email)
+    for field in ["full_name", "avatar_url", "school", "major", "bio"]:
+        if field in changes and changes[field] is not None:
+            setattr(user, field, str(changes[field]))
     db.add(user)
     db.commit()
     db.refresh(user)

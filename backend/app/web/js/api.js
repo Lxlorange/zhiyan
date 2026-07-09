@@ -58,7 +58,11 @@ export async function request(path, options = {}) {
     })
     throw error
   }
-  return response.json()
+  if (response.status === 204) {
+    return null
+  }
+  const responseText = await response.text()
+  return responseText ? JSON.parse(responseText) : null
 }
 
 export function registerUser(payload) {
@@ -77,6 +81,13 @@ export function loginUser(payload) {
 
 export function getCurrentUser() {
   return request('/api/auth/me')
+}
+
+export function updateCurrentUser(payload) {
+  return request('/api/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
 }
 
 export function getDirectionTemplates() {
@@ -140,7 +151,7 @@ export function resumeLearningProject(projectId) {
 }
 
 export function requestSyllabusRegeneration(projectId) {
-  return request(`/api/learning-projects/${projectId}/request-syllabus-regeneration`, { method: 'POST' })
+  return generateSyllabus(projectId, { generation_goal: '根据当前项目目标重新生成完整学习清单' })
 }
 
 export function copyLearningProject(projectId) {
@@ -203,4 +214,106 @@ export function getWorkflow(sessionId) {
 
 export function getTeacherDashboard() {
   return request('/api/teacher/dashboard')
+}
+
+export function generateSyllabus(projectId, payload = {}) {
+  return request(`/api/learning-projects/${projectId}/syllabus/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function getCurrentSyllabus(projectId) {
+  return request(`/api/learning-projects/${projectId}/syllabus`)
+}
+
+export function getSyllabusVersions(projectId) {
+  return request(`/api/learning-projects/${projectId}/syllabus/versions`)
+}
+
+export function getSyllabusVersion(versionId) {
+  return request(`/api/syllabus-versions/${versionId}`)
+}
+
+export function activateSyllabusVersion(versionId) {
+  return request(`/api/syllabus-versions/${versionId}/activate`, { method: 'POST' })
+}
+
+export function copySyllabusVersion(versionId) {
+  return request(`/api/syllabus-versions/${versionId}/copy`, { method: 'POST' })
+}
+
+export function compareSyllabusVersions(baseVersionId, targetVersionId) {
+  return request(`/api/syllabus-versions/${baseVersionId}/compare/${targetVersionId}`)
+}
+
+export function addSyllabusItem(versionId, payload) {
+  return request(`/api/syllabus-versions/${versionId}/items`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function updateSyllabusItem(itemId, payload) {
+  return request(`/api/syllabus-items/${itemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteSyllabusItem(itemId) {
+  return request(`/api/syllabus-items/${itemId}`, { method: 'DELETE' })
+}
+
+export function reorderSyllabusItems(versionId, itemIds) {
+  return request(`/api/syllabus-versions/${versionId}/reorder`, {
+    method: 'POST',
+    body: JSON.stringify({ item_ids: itemIds })
+  })
+}
+
+export function updateSyllabusItemStatus(itemId, status, reason = '') {
+  return request(`/api/syllabus-items/${itemId}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status, reason })
+  })
+}
+
+export function splitSyllabusItem(itemId, payload) {
+  return request(`/api/syllabus-items/${itemId}/split`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function mergeSyllabusItems(payload) {
+  return request('/api/syllabus-items/merge', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function regenerateSyllabusStage(versionId, payload) {
+  return request(`/api/syllabus-versions/${versionId}/regenerate-stage`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function adaptSyllabus(projectId, payload) {
+  return request(`/api/learning-projects/${projectId}/syllabus/adapt`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function generateDailyPlan(projectId, payload = {}) {
+  return request(`/api/learning-projects/${projectId}/daily-plan/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function getDailyPlans(projectId) {
+  return request(`/api/learning-projects/${projectId}/daily-plans`)
 }

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import time
@@ -38,118 +38,7 @@ from app.services.knowledge_service import search_knowledge
 from app.services.llm_client import qwen_chat_json
 
 
-DIRECTION_TEMPLATE_SEEDS = [
-    {
-        "title": "WiFi CSI 跌倒检测与健康预警",
-        "description": "围绕无线感知、CSI 特征、分类评价指标和智慧健康应用构建课程项目或科研入门路线。",
-        "suitable_users": ["计算机专业本科生", "电子信息专业学生", "想做 AI4S 课程项目的学生"],
-        "prerequisites": ["Python 基础", "机器学习分类任务基础", "基本实验报告写作能力"],
-        "recommended_period": "14-21 天",
-        "resource_types": ["课堂总结", "可视化演示", "指标例题", "复现 demo", "论文导读", "报告检查清单"],
-        "stage_outputs": ["学习清单", "Python 指标 demo", "CSI 案例笔记", "课程项目报告提纲"],
-        "related_chapters": ["信号处理与无线感知入门", "WiFi CSI 跌倒检测案例", "实验评价指标与结果分析"],
-        "related_documents": ["WiFi CSI 跌倒检测案例", "分类评价指标讲义", "课程项目报告检查清单"],
-        "tags": ["AI4S", "无线感知", "智慧健康", "课程项目"],
-        "is_teacher_recommended": True,
-    },
-    {
-        "title": "医学图像分类",
-        "description": "学习医学图像数据、卷积神经网络、分类评价指标和实验规范，适合 AI4S 入门项目。",
-        "suitable_users": ["人工智能专业学生", "计算机视觉方向学生", "医学 AI 入门学习者"],
-        "prerequisites": ["Python", "深度学习基础", "图像处理基础"],
-        "recommended_period": "21-30 天",
-        "resource_types": ["图像分类讲义", "模型结构图", "代码实验", "论文精读", "错误分析"],
-        "stage_outputs": ["分类 pipeline", "实验对比表", "论文精读笔记"],
-        "related_chapters": ["深度学习基础", "机器学习分类任务", "实验评价指标与结果分析"],
-        "related_documents": ["分类评价指标讲义"],
-        "tags": ["医学影像", "计算机视觉", "深度学习"],
-        "is_teacher_recommended": True,
-    },
-    {
-        "title": "材料性质预测",
-        "description": "面向材料智能方向，学习特征工程、回归模型、评估指标和论文综述写作。",
-        "suitable_users": ["AI4S 科研入门学生", "材料交叉方向学生"],
-        "prerequisites": ["Python 数据处理", "机器学习基础"],
-        "recommended_period": "21-35 天",
-        "resource_types": ["综述导读", "数据处理 demo", "模型比较表", "实验报告模板"],
-        "stage_outputs": ["方向综述大纲", "预测 demo", "实验设计说明"],
-        "related_chapters": ["人工智能与 AI4S 概论", "Python 数据处理基础", "实验评价指标与结果分析"],
-        "related_documents": ["课程项目报告检查清单"],
-        "tags": ["材料智能", "科学计算", "AI4S"],
-        "is_teacher_recommended": False,
-    },
-    {
-        "title": "科学计算中的深度学习",
-        "description": "理解深度学习如何服务科学问题，包括数据表示、模型训练、实验验证和论文阅读。",
-        "suitable_users": ["科研入门学生", "准备读论文的本科生"],
-        "prerequisites": ["Python", "深度学习基础", "数学基础"],
-        "recommended_period": "30 天",
-        "resource_types": ["论文导读", "概念课堂", "方法对比图", "复现任务"],
-        "stage_outputs": ["论文阅读矩阵", "方法复现计划", "综述提纲"],
-        "related_chapters": ["人工智能与 AI4S 概论", "深度学习基础"],
-        "related_documents": ["课程项目报告检查清单"],
-        "tags": ["科学计算", "深度学习", "论文阅读"],
-        "is_teacher_recommended": False,
-    },
-    {
-        "title": "大模型辅助科研写作",
-        "description": "学习如何用大模型进行文献整理、综述构思、论文修改和引用规范检查。",
-        "suitable_users": ["需要写综述的学生", "课程项目报告作者", "科研写作入门者"],
-        "prerequisites": ["基本论文阅读能力", "学术诚信意识"],
-        "recommended_period": "7-14 天",
-        "resource_types": ["写作课堂", "综述大纲", "引用格式", "报告检查"],
-        "stage_outputs": ["综述大纲", "引用清单", "论文段落修改记录"],
-        "related_chapters": ["课程项目报告与展示规范"],
-        "related_documents": ["课程项目报告检查清单"],
-        "tags": ["科研写作", "综述", "引用规范"],
-        "is_teacher_recommended": True,
-    },
-]
-
-
-DIRECTION_TEMPLATE_SEEDS.extend(
-    [
-        {
-            "title": "智慧环境感知与行为识别",
-            "description": "围绕传感器数据、环境状态建模、行为识别和智能空间应用，形成可复现的课程项目或科研入门路线。",
-            "suitable_users": ["计算机专业学生", "电子信息方向学生", "物联网与智能感知入门学习者"],
-            "prerequisites": ["Python 数据处理", "机器学习分类任务基础", "基础传感器数据理解"],
-            "recommended_period": "21-30 天",
-            "resource_types": ["知识讲解", "传感器数据 demo", "可视化演示", "案例复现", "实验报告模板"],
-            "stage_outputs": ["方向综述卡片", "行为识别 demo", "可视化分析记录", "课程项目报告提纲"],
-            "related_chapters": ["人工智能与 AI4S 概论", "Python 数据处理基础", "实验评价指标与结果分析"],
-            "related_documents": ["分类评价指标讲义", "课程项目报告检查清单"],
-            "tags": ["智能感知", "行为识别", "AI4S", "课程项目"],
-            "is_teacher_recommended": True,
-        },
-        {
-            "title": "时间序列异常检测",
-            "description": "学习时间序列数据清洗、特征构造、异常检测模型、评价指标和工业/科研场景复现实验。",
-            "suitable_users": ["人工智能专业学生", "数据科学入门学习者", "希望做可解释实验项目的学生"],
-            "prerequisites": ["Python", "基础统计概念", "机器学习模型训练流程"],
-            "recommended_period": "21-35 天",
-            "resource_types": ["课程讲解文档", "趋势分解图", "异常检测题库", "代码实操案例", "论文导读"],
-            "stage_outputs": ["异常检测学习清单", "模型对比 notebook", "指标分析表", "实验局限性说明"],
-            "related_chapters": ["Python 数据处理基础", "机器学习分类任务", "实验评价指标与结果分析"],
-            "related_documents": ["分类评价指标讲义", "课程项目报告检查清单"],
-            "tags": ["时间序列", "异常检测", "实验复现"],
-            "is_teacher_recommended": False,
-        },
-        {
-            "title": "课程项目复现与报告写作",
-            "description": "面向课程大作业，从选题拆解、论文/案例复现、实验记录、结果分析到报告规范完成完整项目产出。",
-            "suitable_users": ["需要完成课程项目的学生", "科研写作入门学习者", "希望规范复现实验的学生"],
-            "prerequisites": ["基础论文阅读能力", "Python 或课程要求工具链", "学术诚信意识"],
-            "recommended_period": "14-28 天",
-            "resource_types": ["复现计划", "报告结构模板", "引用规范", "实验记录清单", "答辩提纲"],
-            "stage_outputs": ["选题评估表", "复现实验计划", "报告初稿提纲", "引用与诚信检查清单"],
-            "related_chapters": ["课程项目报告与展示规范", "实验评价指标与结果分析"],
-            "related_documents": ["课程项目报告检查清单"],
-            "tags": ["课程项目", "复现", "科研写作", "报告规范"],
-            "is_teacher_recommended": True,
-        },
-    ]
-)
+DIRECTION_TEMPLATE_SEEDS: list[dict] = []
 
 
 class ProjectSuggestion(BaseModel):
@@ -190,11 +79,7 @@ class DirectionAgentResult(BaseModel):
 
 
 def seed_direction_templates(db: Session) -> None:
-    existing_titles = set(db.scalars(select(ResearchDirectionTemplate.title)).all())
-    for seed in DIRECTION_TEMPLATE_SEEDS:
-        if seed["title"] not in existing_titles:
-            db.add(ResearchDirectionTemplate(**seed))
-    db.commit()
+    return
 
 
 def list_direction_templates(db: Session) -> list[DirectionTemplateRead]:
