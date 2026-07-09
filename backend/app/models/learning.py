@@ -381,6 +381,79 @@ class LearningSyllabusOperation(Base):
     syllabus_version: Mapped[LearningSyllabusVersion] = relationship(back_populates="operations")
 
 
+class ClassroomSession(Base):
+    __tablename__ = "classroom_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    syllabus_item_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_items.id"), index=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="learning", nullable=False)
+    progress_state: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    ppt_resource_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    slides_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    slide_progress: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    quiz_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    practice_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reflection_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    resources: Mapped[list["ClassroomResource"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        foreign_keys="ClassroomResource.session_id",
+        order_by="ClassroomResource.created_at",
+    )
+    submissions: Mapped[list["ClassroomSubmission"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ClassroomSubmission.created_at",
+    )
+
+
+class ClassroomResource(Base):
+    __tablename__ = "classroom_resources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("classroom_sessions.id"), index=True, nullable=False)
+    syllabus_item_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_items.id"), index=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    file_path: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    source: Mapped[str] = mapped_column(String(128), default="OpenMAIC-inspired", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session: Mapped[ClassroomSession] = relationship(
+        back_populates="resources",
+        foreign_keys=[session_id],
+    )
+
+
+class ClassroomSubmission(Base):
+    __tablename__ = "classroom_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("classroom_sessions.id"), index=True, nullable=False)
+    syllabus_item_id: Mapped[int] = mapped_column(ForeignKey("learning_syllabus_items.id"), index=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    submission_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    content: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    feedback: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session: Mapped[ClassroomSession] = relationship(back_populates="submissions")
+
+
 class DailyLearningPlan(Base):
     __tablename__ = "daily_learning_plans"
 

@@ -1,6 +1,9 @@
 from app.models.learning import (
     AgentTaskRecord,
     AnswerRecord,
+    ClassroomResource,
+    ClassroomSession,
+    ClassroomSubmission,
     Course,
     CourseChapter,
     DocumentChunk,
@@ -22,6 +25,9 @@ from app.models.user import User
 __all__ = [
     "AgentTaskRecord",
     "AnswerRecord",
+    "ClassroomResource",
+    "ClassroomSession",
+    "ClassroomSubmission",
     "Course",
     "CourseChapter",
     "DocumentChunk",

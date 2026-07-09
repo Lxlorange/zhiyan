@@ -202,6 +202,45 @@ export interface SyllabusEnsureResponse {
   syllabus?: SyllabusVersionRead | null
 }
 
+export interface ClassroomResourceRead {
+  id: number
+  resource_type: string
+  title: string
+  content_data: Record<string, any>
+  file_path: string
+  source: string
+  status: string
+  created_at: string
+}
+
+export interface ClassroomSubmissionRead {
+  id: number
+  submission_type: string
+  content: Record<string, any>
+  score: number
+  passed: boolean
+  feedback: string
+  created_at: string
+}
+
+export interface ClassroomSessionRead {
+  id: number
+  syllabus_item_id: number
+  project_id: number
+  title: string
+  status: string
+  progress_state: Record<string, any>
+  ppt_resource_id?: number | null
+  slides_completed: boolean
+  slide_progress: Record<string, any>
+  quiz_passed: boolean
+  practice_passed: boolean
+  reflection_passed: boolean
+  completed_at?: string | null
+  resources: ClassroomResourceRead[]
+  submissions: ClassroomSubmissionRead[]
+}
+
 export function saveAuth(payload: TokenResponse) {
   localStorage.setItem(TOKEN_KEY, payload.access_token)
   localStorage.setItem(USER_KEY, JSON.stringify(payload.user))
@@ -388,4 +427,48 @@ export function getSyllabusVersions(projectId: number) {
 
 export function updateSyllabusItemStatus(itemId: number, status: string, reason = '') {
   return api.post<SyllabusVersionRead>(`/syllabus-items/${itemId}/status`, { status, reason })
+}
+
+export function getOrCreateClassroomSession(itemId: number) {
+  return api.post<ClassroomSessionRead>(`/syllabus-items/${itemId}/classroom`)
+}
+
+export function generateClassroomPpt(sessionId: number, instruction = '') {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/ppt`, { instruction }, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function submitClassroomQuiz(sessionId: number, answers: Record<string, string>) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/quiz`, { answers })
+}
+
+export function completeClassroomSlides(sessionId: number, payload: {
+  current_index: number
+  total_slides: number
+  visited_indices: number[]
+}) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/slides/complete`, payload)
+}
+
+export function submitClassroomPractice(sessionId: number, payload: {
+  report: string
+  artifact_url?: string
+  key_result?: string
+}) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/practice`, payload)
+}
+
+export function submitClassroomReflection(sessionId: number, payload: {
+  reflection: string
+  unresolved_questions?: string[]
+  next_action?: string
+}) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/reflection`, payload)
+}
+
+export function downloadClassroomResource(resourceId: number) {
+  return api.get<Blob>(`/classroom-resources/${resourceId}/download`, {
+    responseType: 'blob'
+  })
 }

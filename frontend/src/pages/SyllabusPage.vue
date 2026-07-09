@@ -154,7 +154,8 @@
                   <a
                     v-for="resource in resourceLinks(item)"
                     :key="`${item.id}-${resource}`"
-                    :href="resourceHref(item, resource)"
+                    href="#"
+                    @click.prevent="handleStartLearning(item)"
                   >
                     {{ resource }}
                   </a>
@@ -174,19 +175,10 @@
 
               <div class="syllabus-status-actions">
                 <el-button
-                  :loading="statusUpdatingId === item.id"
-                  :disabled="item.status === 'in_progress'"
-                  @click="handleStatus(item.id, 'in_progress')"
+                  type="primary"
+                  @click="handleStartLearning(item)"
                 >
-                  开始学习
-                </el-button>
-                <el-button
-                  type="success"
-                  :loading="statusUpdatingId === item.id"
-                  :disabled="item.status === 'completed' || item.status === 'mastered'"
-                  @click="handleStatus(item.id, 'completed')"
-                >
-                  标记完成
+                  {{ ['completed', 'mastered'].includes(item.status) ? '继续学习' : '开始学习' }}
                 </el-button>
                 <el-button
                   :loading="statusUpdatingId === item.id"
@@ -235,7 +227,7 @@ const pollTimer = ref<number | null>(null)
 
 const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value) || null)
 const activeItems = computed(() =>
-  (syllabus.value?.items || []).filter((item) => !['deleted', 'merged', 'split'].includes(item.status))
+  (syllabus.value?.items || []).filter((item) => !['deleted', 'merged', 'split', 'skipped'].includes(item.status))
 )
 const completedCount = computed(
   () => activeItems.value.filter((item) => ['completed', 'mastered'].includes(item.status)).length
@@ -355,6 +347,13 @@ function clearPollTimer() {
   }
 }
 
+async function handleStartLearning(item: SyllabusItemRead) {
+  await router.push({
+    name: 'project-classroom',
+    params: { projectId: item.project_id, itemId: item.id }
+  })
+}
+
 async function handleStatus(itemId: number, status: string) {
   statusUpdatingId.value = itemId
   try {
@@ -387,10 +386,6 @@ function statusType(status: string): '' | 'success' | 'warning' | 'info' | 'prim
 function resourceLinks(item: SyllabusItemRead) {
   const resources = [...item.recommended_resource_types, ...item.classroom_types]
   return Array.from(new Set(resources.length ? resources : ['讲解文档', '例题互动', '可视化演示', '语音讲解', '复现 Demo', '练习评估']))
-}
-
-function resourceHref(item: SyllabusItemRead, resource: string) {
-  return `#/projects/${item.project_id}/syllabus/items/${item.id}/resources/${encodeURIComponent(resource)}`
 }
 
 function docHref(doc: string) {

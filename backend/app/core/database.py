@@ -38,6 +38,8 @@ def _apply_lightweight_migrations() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS school VARCHAR(128) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS major VARCHAR(128) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(512) NOT NULL DEFAULT ''",
+        "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slides_completed BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slide_progress JSONB NOT NULL DEFAULT '{}'",
     ]
     with engine.begin() as connection:
         for statement in statements:

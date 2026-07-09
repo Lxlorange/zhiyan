@@ -190,6 +190,33 @@ def _write_project_event(
     )
 
 
+def _recalculate_project_learning_progress(db: Session, user: User, project: LearningProject) -> None:
+    active_count = db.scalar(
+        select(func.count(LearningSyllabusItem.id))
+        .join(LearningSyllabusVersion, LearningSyllabusItem.syllabus_version_id == LearningSyllabusVersion.id)
+        .where(
+            LearningSyllabusItem.project_id == project.id,
+            LearningSyllabusItem.user_id == user.id,
+            LearningSyllabusVersion.is_current.is_(True),
+            LearningSyllabusVersion.status != "deleted",
+            LearningSyllabusItem.status.notin_(["deleted", "merged", "split", "skipped"]),
+        )
+    ) or 0
+    completed_count = db.scalar(
+        select(func.count(LearningSyllabusItem.id))
+        .join(LearningSyllabusVersion, LearningSyllabusItem.syllabus_version_id == LearningSyllabusVersion.id)
+        .where(
+            LearningSyllabusItem.project_id == project.id,
+            LearningSyllabusItem.user_id == user.id,
+            LearningSyllabusVersion.is_current.is_(True),
+            LearningSyllabusVersion.status != "deleted",
+            LearningSyllabusItem.status.in_(["completed", "mastered"]),
+        )
+    ) or 0
+    project.completed_item_count = int(completed_count)
+    project.progress = round((completed_count / active_count) * 100) if active_count else 0
+
+
 def _knowledge_context(db: Session, project: LearningProject) -> list[dict]:
     query = " ".join(
         [
@@ -612,25 +639,42 @@ def update_syllabus_item_status(
 ) -> LearningSyllabusVersion:
     item = _item_or_404(db, user, item_id)
     version = _version_or_404(db, user, item.syllabus_version_id)
+    previous_status = item.status
     item.status = request.status
     project = _project_or_404(db, user, item.project_id)
-    if request.status in {"completed", "mastered"}:
-        project.completed_item_count = db.scalar(
-            select(func.count(LearningSyllabusItem.id)).where(
-                LearningSyllabusItem.project_id == project.id,
-                LearningSyllabusItem.user_id == user.id,
-                LearningSyllabusItem.status.in_(["completed", "mastered"]),
-            )
-        ) or project.completed_item_count
+    if request.status in {"in_progress", "completed", "mastered"}:
         project.last_learned_at = datetime.utcnow()
+        project.status = "learning"
+        project.current_stage = item.stage
+        project.next_step = item.title if request.status == "in_progress" else "继续进入下一项学习"
+    _recalculate_project_learning_progress(db, user, project)
+    if project.progress >= 100:
+        project.status = "completed"
+        project.current_stage = "学习清单已完成"
+        project.next_step = "进入练习评估或阶段复盘"
     _log_operation(
         db,
         version=version,
         user=user,
         operation_type=f"mark_{request.status}",
-        summary=f"标记“{item.title}”为 {request.status}",
-        payload={"reason": request.reason},
+        summary=f"更新学习项状态：{item.title} -> {request.status}",
+        payload={"reason": request.reason, "previous_status": previous_status, "status": request.status},
         item_id=item.id,
+    )
+    _write_project_event(
+        db,
+        project=project,
+        user=user,
+        event_type="syllabus_item_status_changed",
+        summary=f"{item.title}: {previous_status} -> {request.status}",
+        payload={
+            "item_id": item.id,
+            "version_id": version.id,
+            "previous_status": previous_status,
+            "status": request.status,
+            "reason": request.reason,
+            "progress": project.progress,
+        },
     )
     db.commit()
     return get_syllabus_version(db, user, version.id)

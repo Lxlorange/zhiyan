@@ -23,6 +23,7 @@
     "src/components/AppSidebar.vue",
     "src/components/AppTopbar.vue",
     "src/pages/AccountSettings.vue",
+    "src/pages/ClassroomLearningPage.vue",
     "src/pages/DirectionPlanner.vue",
     "src/pages/LoginPage.vue",
     "src/pages/ModulePlaceholder.vue",

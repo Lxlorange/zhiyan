@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AccountSettings from './pages/AccountSettings.vue'
+import ClassroomLearningPage from './pages/ClassroomLearningPage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
 import ModulePlaceholder from './pages/ModulePlaceholder.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
@@ -36,6 +37,12 @@ export const pageMeta: Record<string, PageMeta> = {
     subtitle: '项目专属的个性化路径规划与目录总览',
     description: '这里展示当前项目的学习清单，支持生成目录、多模态资源入口和学习状态记录。',
     highlights: ['路径规划', '目录总览', '学习状态']
+  },
+  classroom: {
+    title: 'AI课堂',
+    subtitle: '围绕当前学习项完成总结、资源、练习与复盘',
+    description: '课堂页承接学习清单中的单个学习项，用结构化学习板块记录学习行为并自动更新进度。',
+    highlights: ['课堂学习', '多模态资源', '自动进度']
   },
   'daily-plan': {
     title: '每日计划',
@@ -114,6 +121,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/projects', name: 'projects', component: ProjectHomePage, meta: { page: 'projects' } },
   { path: '/projects/:projectId(\\d+)', name: 'project-detail', component: ProjectHomePage, meta: { page: 'projects' } },
   { path: '/projects/:projectId(\\d+)/syllabus', name: 'project-syllabus', component: SyllabusPage, meta: { page: 'syllabus' } },
+  { path: '/projects/:projectId(\\d+)/syllabus/items/:itemId(\\d+)/classroom', name: 'project-classroom', component: ClassroomLearningPage, meta: { page: 'classroom' } },
   { path: '/daily-plan', name: 'daily-plan', component: ModulePlaceholder, meta: { page: 'daily-plan' } },
   { path: '/profile', name: 'profile', component: ModulePlaceholder, meta: { page: 'profile' } },
   { path: '/resources', name: 'resources', component: ModulePlaceholder, meta: { page: 'resources' } },

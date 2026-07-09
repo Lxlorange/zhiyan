@@ -585,6 +585,77 @@ class SyllabusCompareResponse(BaseModel):
     changed: List[Dict[str, object]]
 
 
+class ClassroomResourceRead(BaseModel):
+    id: int
+    resource_type: str
+    title: str
+    content_data: Dict[str, object]
+    file_path: str
+    source: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ClassroomSubmissionRead(BaseModel):
+    id: int
+    submission_type: str
+    content: Dict[str, object]
+    score: int
+    passed: bool
+    feedback: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ClassroomSessionRead(BaseModel):
+    id: int
+    syllabus_item_id: int
+    project_id: int
+    title: str
+    status: str
+    progress_state: Dict[str, object]
+    ppt_resource_id: Optional[int] = None
+    slides_completed: bool = False
+    slide_progress: Dict[str, object] = Field(default_factory=dict)
+    quiz_passed: bool
+    practice_passed: bool
+    reflection_passed: bool
+    completed_at: Optional[datetime] = None
+    resources: List[ClassroomResourceRead] = Field(default_factory=list)
+    submissions: List[ClassroomSubmissionRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ClassroomPptGenerateRequest(BaseModel):
+    instruction: str = Field(default="", max_length=1200)
+
+
+class ClassroomQuizSubmitRequest(BaseModel):
+    answers: Dict[str, str] = Field(..., min_length=1)
+
+
+class ClassroomSlidesCompleteRequest(BaseModel):
+    current_index: int = Field(..., ge=0)
+    total_slides: int = Field(..., ge=1, le=60)
+    visited_indices: List[int] = Field(..., min_length=1)
+
+
+class ClassroomPracticeSubmitRequest(BaseModel):
+    report: str = Field(..., min_length=30, max_length=5000)
+    artifact_url: str = Field(default="", max_length=512)
+    key_result: str = Field(default="", max_length=2000)
+
+
+class ClassroomReflectionSubmitRequest(BaseModel):
+    reflection: str = Field(..., min_length=50, max_length=5000)
+    unresolved_questions: List[str] = Field(default_factory=list)
+    next_action: str = Field(default="", max_length=1000)
+
+
 class DailyPlanItemRead(BaseModel):
     id: int
     day_index: int

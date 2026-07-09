@@ -47,13 +47,15 @@ const router = useRouter()
 const user = ref<User | null>(readStoredUser())
 const checkingAuth = ref(Boolean(user.value))
 const selectedProjectId = computed(() => normalizeProjectId(route.params.projectId))
+const selectedItemId = computed(() => normalizeProjectId(route.params.itemId))
 const currentPage = computed(() => String(route.meta.page || 'directions'))
 const currentMeta = computed(() => pageMeta[currentPage.value] || pageMeta.directions)
 const routeProps = computed(() => {
   if (currentPage.value === 'projects') return { selectedProjectId: selectedProjectId.value }
   if (currentPage.value === 'syllabus') return { projectId: selectedProjectId.value }
+  if (currentPage.value === 'classroom') return { projectId: selectedProjectId.value, itemId: selectedItemId.value }
   if (currentPage.value === 'settings') return { user: user.value }
-  if (!['directions', 'projects', 'syllabus', 'settings', 'signin'].includes(currentPage.value)) {
+  if (!['directions', 'projects', 'syllabus', 'classroom', 'settings', 'signin'].includes(currentPage.value)) {
     return {
       title: currentMeta.value.title,
       description: currentMeta.value.description,
