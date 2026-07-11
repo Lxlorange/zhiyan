@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import html
 import json
 import re
 import socket
@@ -11,6 +12,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
@@ -26,14 +30,17 @@ from app.models.learning import (
 )
 from app.models.user import User
 from app.schemas import (
+    ClassroomDialogueRequest,
     ClassroomPracticeSubmitRequest,
     ClassroomQuizSubmitRequest,
     ClassroomReflectionSubmitRequest,
     ClassroomSlidesCompleteRequest,
+    ClassroomVisualizationGenerateRequest,
+    ClassroomVoiceGenerateRequest,
     SyllabusItemStatusRequest,
 )
 from app.core.config import get_settings
-from app.services.llm_client import LLMResponseError, qwen_chat_json, validate_qwen_config
+from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
 
 
@@ -57,14 +64,108 @@ class _PracticeSpec(BaseModel):
     acceptance_criteria: list[str] = Field(min_length=2, max_length=6)
 
 
+class _ConceptCardSpec(BaseModel):
+    name: str
+    explanation: str
+    scenario: str
+    misconception: str
+    relation_to_project: str
+
+
+class _DiagramSpec(BaseModel):
+    title: str = ""
+    diagram_type: str = "mermaid"
+    mermaid: str = ""
+    explanation: str = ""
+
+
+class _VoiceScriptSpec(BaseModel):
+    one_minute: str = ""
+    five_minutes: str = ""
+    segments: list[str] = Field(default_factory=list)
+
+
+class _ReproductionDemoSpec(BaseModel):
+    title: str = ""
+    task: str = ""
+    input_format: str = ""
+    code_skeleton: str = ""
+    steps: list[str] = Field(default_factory=list)
+    expected_output: str = ""
+    parameters: list[str] = Field(default_factory=list)
+    common_errors: list[str] = Field(default_factory=list)
+    report_suggestions: list[str] = Field(default_factory=list)
+
+
+class _GuidingQuestionSpec(BaseModel):
+    prompt: str
+    intent: str = ""
+    hint: str = ""
+
+
+class _ReadingSpec(BaseModel):
+    title: str
+    why: str = ""
+    source: str = ""
+    keywords: list[str] = Field(default_factory=list)
+
+
 class _ClassroomPackage(BaseModel):
     title: str
     learning_summary: str
     slides: list[_SlideSpec] = Field(min_length=5, max_length=9)
+    concept_cards: list[_ConceptCardSpec] = Field(default_factory=list)
+    diagram: _DiagramSpec = Field(default_factory=_DiagramSpec)
+    guiding_questions: list[_GuidingQuestionSpec] = Field(default_factory=list)
+    voice_script: _VoiceScriptSpec = Field(default_factory=_VoiceScriptSpec)
+    reproduction_demo: _ReproductionDemoSpec = Field(default_factory=_ReproductionDemoSpec)
+    readings: list[_ReadingSpec] = Field(default_factory=list)
     quiz: list[_QuizSpec] = Field(min_length=2, max_length=5)
     practice: _PracticeSpec
     reflection_prompts: list[str] = Field(min_length=3, max_length=6)
     safety_notes: list[str] = Field(default_factory=list)
+
+
+class _VisualizationFrame(BaseModel):
+    label: str
+    metrics: dict[str, float] = Field(default_factory=dict)
+    narrative: str
+
+
+class _VisualizationControl(BaseModel):
+    name: str
+    label: str
+    min_value: float = 0
+    max_value: float = 1
+    default_value: float = 0.5
+    description: str = ""
+
+
+class _VisualizationDemo(BaseModel):
+    title: str
+    demo_type: str
+    learning_goal: str
+    description: str
+    variables: list[str] = Field(min_length=2, max_length=8)
+    frames: list[_VisualizationFrame] = Field(min_length=4, max_length=12)
+    controls: list[_VisualizationControl] = Field(default_factory=list)
+    teaching_points: list[str] = Field(min_length=3, max_length=8)
+    student_tasks: list[str] = Field(min_length=2, max_length=6)
+    safety_notes: list[str] = Field(default_factory=list)
+
+
+class _DialogueCard(BaseModel):
+    card_type: str
+    title: str
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class _DialogueAgentResponse(BaseModel):
+    answer: str
+    cards: list[_DialogueCard] = Field(default_factory=list)
+    suggested_actions: list[str] = Field(default_factory=list)
+    profile_update_suggestion: str = ""
 
 
 class _QuizEvaluation(BaseModel):
@@ -204,6 +305,164 @@ def generate_classroom_ppt(
     _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
+
+
+def generate_classroom_visualization(
+    db: Session,
+    user: User,
+    session_id: int,
+    request: ClassroomVisualizationGenerateRequest,
+) -> ClassroomSession:
+    session = _get_session(db, user, session_id)
+    item = _item_or_404(db, user, session.syllabus_item_id)
+    project = _project_or_404(db, user, session.project_id)
+    package = _classroom_package_or_error(session)
+    demo = _generate_visualization_demo(project, item, package, request.instruction)
+    html_path = _write_visualization_html(session.id, item, demo)
+
+    resource = ClassroomResource(
+        session_id=session.id,
+        syllabus_item_id=item.id,
+        project_id=project.id,
+        user_id=user.id,
+        resource_type="interactive_visualization",
+        title=demo.title,
+        content_data=demo.model_dump(),
+        file_path=str(html_path),
+        source="THU-MAIC/OpenMAIC-inspired MIT",
+        status="ready",
+    )
+    db.add(resource)
+    db.add(
+        AgentTaskRecord(
+            session_id=f"classroom-{session.id}",
+            user_id=user.id,
+            agent="VisualizationAgent",
+            status="completed",
+            input_summary=f"{project.title} / {item.title}",
+            output_summary=f"生成可交互演示：{demo.title}",
+            latency_ms=0,
+        )
+    )
+    _write_event(
+        db,
+        project,
+        user,
+        "classroom_visualization_generated",
+        f"生成可视化演示：{demo.title}",
+        {"session_id": session.id, "demo_type": demo.demo_type},
+    )
+    db.commit()
+    return _get_session(db, user, session.id)
+
+
+def generate_classroom_voice(
+    db: Session,
+    user: User,
+    session_id: int,
+    request: ClassroomVoiceGenerateRequest,
+) -> ClassroomSession:
+    session = _get_session(db, user, session_id)
+    item = _item_or_404(db, user, session.syllabus_item_id)
+    project = _project_or_404(db, user, session.project_id)
+    package = _classroom_package_or_error(session)
+    voice_text = _voice_text_for_scope(package, request.text_scope)
+    voice_path = _write_voice_script_file(session.id, item, request, voice_text)
+    resource = ClassroomResource(
+        session_id=session.id,
+        syllabus_item_id=item.id,
+        project_id=project.id,
+        user_id=user.id,
+        resource_type="voice_script",
+        title=f"{item.title} 语音讲解稿",
+        content_data={
+            "voice_name": request.voice_name,
+            "speed": request.speed,
+            "text_scope": request.text_scope,
+            "text": voice_text,
+            "provider": "browser_speech_synthesis",
+            "xunfei_ready": False,
+        },
+        file_path=str(voice_path),
+        source="Browser SpeechSynthesis; Xunfei TTS adapter pending",
+        status="ready",
+    )
+    db.add(resource)
+    db.add(
+        AgentTaskRecord(
+            session_id=f"classroom-{session.id}",
+            user_id=user.id,
+            agent="VoiceAgent",
+            status="completed",
+            input_summary=f"{request.text_scope} / {request.voice_name}",
+            output_summary=f"生成课堂语音播放稿：{item.title}",
+            latency_ms=0,
+        )
+    )
+    _write_event(db, project, user, "classroom_voice_script_generated", f"生成语音讲解稿：{item.title}", {"resource_id": resource.id})
+    db.commit()
+    return _get_session(db, user, session.id)
+
+
+def send_classroom_dialogue(
+    db: Session,
+    user: User,
+    session_id: int,
+    request: ClassroomDialogueRequest,
+) -> dict[str, Any]:
+    session = _get_session(db, user, session_id)
+    item = _item_or_404(db, user, session.syllabus_item_id)
+    project = _project_or_404(db, user, session.project_id)
+    package = _classroom_package_or_error(session)
+    response = _generate_dialogue_response(project, item, session, package, request)
+
+    _add_submission(
+        db,
+        session=session,
+        user=user,
+        item=item,
+        submission_type="dialogue_user",
+        content={"role": "user", "message": request.message, "quick_action": request.quick_action},
+        score=0,
+        passed=True,
+        feedback="课堂追问已记录",
+    )
+    _add_submission(
+        db,
+        session=session,
+        user=user,
+        item=item,
+        submission_type="dialogue_assistant",
+        content={
+            "role": "assistant",
+            "message": response.answer,
+            "cards": [card.model_dump() for card in response.cards],
+            "suggested_actions": response.suggested_actions,
+            "profile_update_suggestion": response.profile_update_suggestion,
+        },
+        score=0,
+        passed=True,
+        feedback="AI 助教已回答",
+    )
+    db.add(
+        AgentTaskRecord(
+            session_id=f"classroom-{session.id}",
+            user_id=user.id,
+            agent="DialogueAgent",
+            status="completed",
+            input_summary=request.message[:300],
+            output_summary=response.answer[:500],
+            latency_ms=0,
+        )
+    )
+    db.commit()
+    return {
+        "answer": response.answer,
+        "cards": [card.model_dump() for card in response.cards],
+        "suggested_actions": response.suggested_actions,
+        "profile_update_suggestion": response.profile_update_suggestion,
+        "session": _get_session(db, user, session.id),
+    }
 
 
 def submit_quiz(
@@ -376,42 +635,169 @@ def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _Clas
     path = output_dir / f"classroom-{session_id}-item-{item.id}.pptx"
 
     prs = Presentation()
-    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
-    title_slide.shapes.title.text = package.title
-    title_slide.placeholders[1].text = item.title
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    blank_layout = prs.slide_layouts[6]
 
-    for spec in package.slides:
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = spec.title
-        text_frame = slide.placeholders[1].text_frame
-        text_frame.clear()
-        for index, bullet in enumerate(spec.bullets):
-            paragraph = text_frame.paragraphs[0] if index == 0 else text_frame.add_paragraph()
-            paragraph.text = bullet
-            paragraph.font.size = Pt(22)
+    title_slide = prs.slides.add_slide(blank_layout)
+    _paint_slide_background(title_slide, prs)
+    _add_label(title_slide, "AI CLASSROOM", Inches(0.72), Inches(0.58), Inches(2.2), Inches(0.32), Pt(11), RGBColor(79, 70, 229), bold=True)
+    _add_text(
+        title_slide,
+        package.title,
+        Inches(0.72),
+        Inches(1.55),
+        Inches(8.2),
+        Inches(1.4),
+        Pt(36),
+        RGBColor(30, 27, 75),
+        bold=True,
+    )
+    _add_text(title_slide, item.title, Inches(0.76), Inches(3.05), Inches(8.8), Inches(0.55), Pt(18), RGBColor(71, 85, 105))
+    _add_text(title_slide, package.learning_summary, Inches(0.78), Inches(3.85), Inches(6.6), Inches(1.4), Pt(17), RGBColor(49, 46, 129))
+    _add_accent_panel(title_slide, Inches(9.25), Inches(1.12), Inches(3.25), Inches(4.95), "个性化课堂", item.knowledge_points[:4] or [item.title])
+
+    for index, spec in enumerate(package.slides, start=1):
+        slide = prs.slides.add_slide(blank_layout)
+        _paint_slide_background(slide, prs)
+        _add_label(slide, f"SLIDE {index:02d}", Inches(0.7), Inches(0.46), Inches(1.6), Inches(0.3), Pt(10), RGBColor(79, 70, 229), bold=True)
+        _add_text(slide, spec.title, Inches(0.72), Inches(0.92), Inches(8.7), Inches(0.72), Pt(28), RGBColor(30, 27, 75), bold=True)
+        for bullet_index, bullet in enumerate(spec.bullets[:5]):
+            top = Inches(1.95 + bullet_index * 0.78)
+            _add_bullet_card(slide, bullet, Inches(0.9), top, Inches(7.6), Inches(0.58), bullet_index + 1)
+        _add_speaker_panel(slide, spec.speaker_notes)
+        _add_footer(slide, package.title, index, len(package.slides))
         notes = slide.notes_slide.notes_text_frame
         notes.text = spec.speaker_notes
 
-    quiz_slide = prs.slides.add_slide(prs.slide_layouts[5])
-    quiz_slide.shapes.title.text = "课堂例题"
-    box = quiz_slide.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.5), Inches(4.5))
-    frame = box.text_frame
-    for question in package.quiz:
-        paragraph = frame.add_paragraph()
-        paragraph.text = f"{question.id}. {question.prompt}"
-        paragraph.font.size = Pt(18)
+    quiz_slide = prs.slides.add_slide(blank_layout)
+    _paint_slide_background(quiz_slide, prs)
+    _add_text(quiz_slide, "课堂例题", Inches(0.72), Inches(0.72), Inches(4.8), Inches(0.62), Pt(30), RGBColor(30, 27, 75), bold=True)
+    for index, question in enumerate(package.quiz[:4]):
+        left = Inches(0.78 + (index % 2) * 6.0)
+        top = Inches(1.72 + (index // 2) * 2.15)
+        _add_question_card(quiz_slide, f"{question.id}. {question.prompt}", question.explanation, left, top)
 
-    practice_slide = prs.slides.add_slide(prs.slide_layouts[5])
-    practice_slide.shapes.title.text = package.practice.title
-    box = practice_slide.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.5), Inches(4.5))
-    frame = box.text_frame
-    for step in package.practice.steps:
-        paragraph = frame.add_paragraph()
-        paragraph.text = step
-        paragraph.font.size = Pt(18)
+    practice_slide = prs.slides.add_slide(blank_layout)
+    _paint_slide_background(practice_slide, prs)
+    _add_text(practice_slide, package.practice.title, Inches(0.72), Inches(0.72), Inches(7.5), Inches(0.62), Pt(30), RGBColor(30, 27, 75), bold=True)
+    for index, step in enumerate(package.practice.steps[:6]):
+        _add_bullet_card(practice_slide, step, Inches(0.9), Inches(1.68 + index * 0.72), Inches(8.2), Inches(0.52), index + 1)
+    _add_accent_panel(practice_slide, Inches(9.65), Inches(1.45), Inches(2.7), Inches(4.45), "验收标准", package.practice.acceptance_criteria[:4])
 
     prs.save(path)
     return path
+
+
+def _voice_text_for_scope(package: _ClassroomPackage, scope: str) -> str:
+    if scope == "all_slides":
+        return "\n\n".join([f"{slide.title}。{slide.speaker_notes}" for slide in package.slides])
+    if scope == "five_minutes":
+        return package.voice_script.five_minutes or package.voice_script.one_minute
+    if scope == "one_minute":
+        return package.voice_script.one_minute or package.learning_summary
+    first_slide = package.slides[0] if package.slides else None
+    return first_slide.speaker_notes if first_slide else (package.voice_script.one_minute or package.learning_summary)
+
+
+def _write_voice_script_file(
+    session_id: int,
+    item: LearningSyllabusItem,
+    request: ClassroomVoiceGenerateRequest,
+    voice_text: str,
+) -> Path:
+    output_dir = Path(__file__).resolve().parents[2] / "generated" / "voice"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"classroom-{session_id}-item-{item.id}-{request.text_scope}.txt"
+    path.write_text(voice_text, encoding="utf-8")
+    return path
+
+
+def _paint_slide_background(slide: Any, prs: Presentation) -> None:
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height)
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = RGBColor(248, 251, 255)
+    bg.line.fill.background()
+    accent = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(10.4), Inches(-0.45), Inches(3.7), Inches(2.15))
+    accent.fill.solid()
+    accent.fill.fore_color.rgb = RGBColor(224, 231, 255)
+    accent.line.fill.background()
+    bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.72), Inches(6.76), Inches(2.1), Inches(0.09))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = RGBColor(34, 197, 94)
+    bar.line.fill.background()
+
+
+def _add_text(slide: Any, text: str, left: Any, top: Any, width: Any, height: Any, size: Any, color: RGBColor, bold: bool = False) -> Any:
+    shape = slide.shapes.add_textbox(left, top, width, height)
+    frame = shape.text_frame
+    frame.clear()
+    frame.word_wrap = True
+    paragraph = frame.paragraphs[0]
+    paragraph.text = text
+    paragraph.font.size = size
+    paragraph.font.bold = bold
+    paragraph.font.color.rgb = color
+    return shape
+
+
+def _add_label(slide: Any, text: str, left: Any, top: Any, width: Any, height: Any, size: Any, color: RGBColor, bold: bool = False) -> None:
+    shape = _add_text(slide, text, left, top, width, height, size, color, bold)
+    shape.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+
+
+def _add_bullet_card(slide: Any, text: str, left: Any, top: Any, width: Any, height: Any, number: int) -> None:
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    card.fill.solid()
+    card.fill.fore_color.rgb = RGBColor(255, 255, 255)
+    card.line.color.rgb = RGBColor(219, 228, 255)
+    badge = slide.shapes.add_shape(MSO_SHAPE.OVAL, left + Inches(0.12), top + Inches(0.12), Inches(0.34), Inches(0.34))
+    badge.fill.solid()
+    badge.fill.fore_color.rgb = RGBColor(79, 70, 229)
+    badge.line.fill.background()
+    badge_frame = badge.text_frame
+    badge_frame.clear()
+    badge_paragraph = badge_frame.paragraphs[0]
+    badge_paragraph.text = str(number)
+    badge_paragraph.alignment = PP_ALIGN.CENTER
+    badge_paragraph.font.size = Pt(10)
+    badge_paragraph.font.bold = True
+    badge_paragraph.font.color.rgb = RGBColor(255, 255, 255)
+    _add_text(slide, text, left + Inches(0.6), top + Inches(0.11), width - Inches(0.76), height - Inches(0.12), Pt(16), RGBColor(49, 46, 129))
+
+
+def _add_speaker_panel(slide: Any, notes: str) -> None:
+    panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.15), Inches(1.6), Inches(3.35), Inches(4.55))
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = RGBColor(240, 253, 244)
+    panel.line.color.rgb = RGBColor(187, 247, 208)
+    _add_label(slide, "TEACHER NOTES", Inches(9.42), Inches(1.9), Inches(2.4), Inches(0.32), Pt(10), RGBColor(22, 101, 52), bold=True)
+    _add_text(slide, notes, Inches(9.42), Inches(2.34), Inches(2.75), Inches(3.35), Pt(13), RGBColor(22, 101, 52))
+
+
+def _add_accent_panel(slide: Any, left: Any, top: Any, width: Any, height: Any, title: str, items: list[str]) -> None:
+    panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = RGBColor(238, 242, 255)
+    panel.line.color.rgb = RGBColor(199, 210, 254)
+    _add_text(slide, title, left + Inches(0.28), top + Inches(0.28), width - Inches(0.5), Inches(0.4), Pt(17), RGBColor(49, 46, 129), bold=True)
+    for index, item_text in enumerate(items[:5]):
+        _add_text(slide, f"{index + 1}. {item_text}", left + Inches(0.3), top + Inches(0.86 + index * 0.58), width - Inches(0.6), Inches(0.44), Pt(13), RGBColor(71, 85, 105))
+
+
+def _add_question_card(slide: Any, prompt: str, explanation: str, left: Any, top: Any) -> None:
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, Inches(5.35), Inches(1.75))
+    card.fill.solid()
+    card.fill.fore_color.rgb = RGBColor(255, 255, 255)
+    card.line.color.rgb = RGBColor(219, 228, 255)
+    _add_text(slide, prompt, left + Inches(0.28), top + Inches(0.22), Inches(4.75), Inches(0.66), Pt(15), RGBColor(30, 27, 75), bold=True)
+    _add_text(slide, explanation, left + Inches(0.28), top + Inches(0.95), Inches(4.75), Inches(0.52), Pt(12), RGBColor(71, 85, 105))
+
+
+def _add_footer(slide: Any, title: str, index: int, total: int) -> None:
+    _add_text(slide, title[:48], Inches(0.72), Inches(6.92), Inches(5.2), Inches(0.25), Pt(9), RGBColor(100, 116, 139))
+    footer = _add_text(slide, f"{index}/{total}", Inches(12.0), Inches(6.9), Inches(0.55), Inches(0.25), Pt(10), RGBColor(100, 116, 139), bold=True)
+    footer.text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
 
 
 def _classroom_package_or_error(session: ClassroomSession) -> _ClassroomPackage:
@@ -488,6 +874,495 @@ def _write_event(db: Session, project: LearningProject, user: User, event_type: 
     )
 
 
+def _generate_visualization_demo(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    package: _ClassroomPackage,
+    instruction: str,
+) -> _VisualizationDemo:
+    raw = _qwen_chat_raw_json(
+        "你是 VisualizationAgent，负责为高校 AI 课堂生成可交互演示的数据规格。只输出 JSON，不输出 HTML/JS。",
+        (
+            "生成一个可被前端动画模板渲染的演示。允许输出更丰富的变量对象、控制器对象和帧状态，"
+            "但必须表达每一帧发生了什么。\n"
+            "推荐字段：title, demo_type, learning_goal, description, variables, frames, controls, teaching_points, student_tasks, safety_notes。\n"
+            "demo_type 建议从 classification_metrics, confusion_matrix, csi_signal, dataset_split, training_curve, knowledge_flow 中选择。\n"
+            f"项目：{project.title}\n"
+            f"研究方向：{project.research_direction}\n"
+            f"学习项：{item.title}\n"
+            f"学习目标：{item.objective}\n"
+            f"知识点：{item.knowledge_points}\n"
+            f"课堂摘要：{package.learning_summary}\n"
+            f"补充要求：{instruction}\n"
+        ),
+    )
+    normalized = _normalize_visualization_demo(raw, project, item, package)
+    try:
+        return _VisualizationDemo.model_validate(normalized)
+    except Exception as exc:
+        raise LLMResponseError(f"可视化演示 JSON 归一化后仍未通过结构校验：{exc}") from exc
+
+
+def _generate_dialogue_response(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    session: ClassroomSession,
+    package: _ClassroomPackage,
+    request: ClassroomDialogueRequest,
+) -> _DialogueAgentResponse:
+    history = [
+        submission.content
+        for submission in session.submissions
+        if submission.submission_type in {"dialogue_user", "dialogue_assistant"}
+    ][-10:]
+    return qwen_chat_json(
+        (
+            "你是 DialogueAgent，是课堂中的 AI 助教。"
+            "回答必须依托当前课堂上下文，短而可执行；需要时输出 cards 用于前端卡片展示。"
+            "只输出 JSON，不输出 Markdown 外壳。"
+        ),
+        (
+            f"项目：{project.title}\n"
+            f"研究方向：{project.research_direction}\n"
+            f"学习项：{item.title}\n"
+            f"学习目标：{item.objective}\n"
+            f"课堂摘要：{package.learning_summary}\n"
+            f"概念卡：{[card.model_dump() for card in package.concept_cards]}\n"
+            f"引导问题：{[question.model_dump() for question in package.guiding_questions]}\n"
+            f"最近对话：{history}\n"
+            f"快捷动作：{request.quick_action}\n"
+            f"学生问题：{request.message}\n"
+            "输出字段：answer, cards, suggested_actions, profile_update_suggestion。"
+            "cards 每项包含 card_type, title, content, metadata；card_type 可为 concept, example, code, quiz, diagram, next_step。"
+        ),
+        _DialogueAgentResponse,
+    )
+
+
+def _normalize_visualization_demo(
+    raw: Any,
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    package: _ClassroomPackage,
+) -> dict:
+    data = raw if isinstance(raw, dict) else {}
+    variables = [_normalize_visualization_variable(value) for value in _as_list(data.get("variables") or data.get("states") or data.get("layers"))]
+    variables = [value for value in variables if value]
+    if len(variables) < 2:
+        variables.extend(_as_str_list(item.knowledge_points or [item.title, project.research_direction]))
+    variables = variables[:8]
+
+    frames = [
+        _normalize_visualization_frame(frame, index, variables)
+        for index, frame in enumerate(_as_list(data.get("frames") or data.get("steps") or data.get("timeline")), start=1)
+    ]
+    if len(frames) < 4:
+        frames.extend(_default_visualization_frames(item, variables, start=len(frames) + 1))
+    frames = frames[:12]
+
+    controls = [
+        _normalize_visualization_control(control, index)
+        for index, control in enumerate(_as_list(data.get("controls") or data.get("interactions")), start=1)
+    ]
+    safety_notes = _as_str_list(data.get("safety_notes") or data.get("safety") or data.get("notes"))
+    return {
+        "title": _first_text(data.get("title") or data.get("name"), f"{item.title} 互动演示"),
+        "demo_type": _normalize_demo_type(_first_text(data.get("demo_type") or data.get("type"), "knowledge_flow")),
+        "learning_goal": _first_text(data.get("learning_goal") or data.get("goal"), item.objective or package.learning_summary),
+        "description": _first_text(data.get("description") or data.get("summary"), package.learning_summary),
+        "variables": variables,
+        "frames": frames,
+        "controls": controls,
+        "teaching_points": _ensure_min_str_list(data.get("teaching_points") or data.get("key_points"), item.knowledge_points or [item.title], 3)[:8],
+        "student_tasks": _ensure_min_str_list(
+            data.get("student_tasks") or data.get("tasks"),
+            [question.prompt for question in package.guiding_questions],
+            2,
+        )[:6],
+        "safety_notes": safety_notes,
+    }
+
+
+def _normalize_visualization_variable(raw: Any) -> str:
+    if isinstance(raw, dict):
+        return _first_text(raw.get("label") or raw.get("name") or raw.get("title") or raw.get("id"), "")
+    return str(raw).strip()
+
+
+def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -> dict:
+    frame = raw if isinstance(raw, dict) else {"narrative": str(raw)}
+    label = _first_text(frame.get("label") or frame.get("title") or frame.get("name"), "")
+    if not label:
+        step_value = frame.get("t") or frame.get("time") or frame.get("step") or index
+        label = f"Step {step_value}"
+    narrative = _first_text(
+        frame.get("narrative") or frame.get("description") or frame.get("explanation") or frame.get("text") or frame.get("caption"),
+        f"观察 {variables[(index - 1) % max(len(variables), 1)] if variables else '当前状态'} 的变化。",
+    )
+    raw_metrics = frame.get("metrics") if isinstance(frame.get("metrics"), dict) else {}
+    metrics = _numeric_metrics(raw_metrics)
+    reserved = {
+        "label", "title", "name", "narrative", "description", "explanation", "text", "caption",
+        "metrics", "notes", "safety_notes", "events", "controls",
+    }
+    for key, value in frame.items():
+        if key in reserved:
+            continue
+        metric = _metric_value(value)
+        if metric is not None:
+            metrics[str(key)] = metric
+    if not metrics:
+        metrics = {f"progress_{index}": min(1.0, 0.18 * index)}
+    return {"label": label, "metrics": metrics, "narrative": narrative}
+
+
+def _normalize_visualization_control(raw: Any, index: int) -> dict:
+    control = raw if isinstance(raw, dict) else {"label": str(raw)}
+    name = _first_text(control.get("name") or control.get("id") or control.get("type"), f"control_{index}")
+    default_value = control.get("default_value", control.get("default", 0.5))
+    return {
+        "name": name,
+        "label": _first_text(control.get("label") or control.get("title"), name),
+        "min_value": _float_or_default(control.get("min_value") or control.get("min"), 0),
+        "max_value": _float_or_default(control.get("max_value") or control.get("max"), 1),
+        "default_value": _float_or_default(default_value, 0.5),
+        "description": _first_text(control.get("description") or control.get("help"), ""),
+    }
+
+
+def _normalize_demo_type(value: str) -> str:
+    allowed = {
+        "classification_metrics",
+        "confusion_matrix",
+        "csi_signal",
+        "dataset_split",
+        "training_curve",
+        "knowledge_flow",
+    }
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    return normalized if normalized in allowed else "knowledge_flow"
+
+
+def _numeric_metrics(raw: dict[str, Any]) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for key, value in raw.items():
+        metric = _metric_value(value)
+        if metric is not None:
+            result[str(key)] = metric
+    return result
+
+
+def _metric_value(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return (sum(ord(ch) for ch in stripped) % 100) / 100
+    if isinstance(value, list):
+        return min(1.0, len(value) / 10)
+    if isinstance(value, dict):
+        return min(1.0, len(value) / 10)
+    return None
+
+
+def _float_or_default(value: Any, fallback: float) -> float:
+    metric = _metric_value(value)
+    return fallback if metric is None else metric
+
+
+def _default_visualization_frames(item: LearningSyllabusItem, variables: list[str], start: int = 1) -> list[dict]:
+    values = variables or [item.title, "理解", "练习", "复盘"]
+    frames: list[dict] = []
+    for offset in range(start, 5):
+        focus = values[(offset - 1) % len(values)]
+        frames.append({
+            "label": f"Step {offset}",
+            "metrics": {f"progress_{offset}": min(1.0, offset / 4)},
+            "narrative": f"观察 {focus} 在学习流程中的作用，并记录它与当前学习项的关系。",
+        })
+    return frames
+
+
+def _ensure_min_str_list(value: Any, fallback: Any, minimum: int) -> list[str]:
+    result = _as_str_list(value)
+    if len(result) >= minimum:
+        return result
+    result.extend(_as_str_list(fallback))
+    while len(result) < minimum:
+        result.append("结合当前课堂内容完成一次解释、验证和复盘。")
+    return result
+
+
+def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo: _VisualizationDemo) -> Path:
+    output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization.html"
+    data_json = json.dumps(demo.model_dump(), ensure_ascii=False).replace("</", "<\\/")
+    page_title = html.escape(demo.title)
+    html_doc = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{page_title}</title>
+  <style>
+    :root {{
+      color: #1e1b4b;
+      background: #eef2ff;
+      font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #eef2ff 0%, #ffffff 54%, #ecfdf5 100%);
+    }}
+    .demo-shell {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
+      min-height: 100vh;
+      padding: 22px;
+    }}
+    .stage, .side {{
+      border: 1px solid #c7d2fe;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 18px 44px rgba(79, 70, 229, 0.12);
+    }}
+    .stage {{ display: grid; grid-template-rows: auto minmax(360px, 1fr) auto; gap: 16px; padding: 20px; }}
+    h1 {{ margin: 0; color: #1e1b4b; font-size: 24px; line-height: 1.25; }}
+    p {{ margin: 8px 0 0; color: #475569; line-height: 1.65; }}
+    canvas {{ width: 100%; height: 100%; min-height: 420px; border-radius: 16px; background: #f8fbff; }}
+    .controls {{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }}
+    button {{
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid #818cf8;
+      border-radius: 12px;
+      background: #4f46e5;
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+    }}
+    button.secondary {{ background: #fff; color: #3730a3; }}
+    .frame-label {{ color: #3730a3; font-weight: 900; }}
+    .side {{ display: grid; align-content: start; gap: 14px; padding: 18px; }}
+    .side section {{ display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #f8fbff; }}
+    .side strong {{ color: #1e1b4b; }}
+    .side ul {{ margin: 0; padding-left: 18px; color: #475569; line-height: 1.65; }}
+    @media (max-width: 880px) {{
+      .demo-shell {{ grid-template-columns: 1fr; padding: 14px; }}
+      canvas {{ min-height: 320px; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <main class="stage">
+      <header>
+        <h1>{page_title}</h1>
+        <p id="description"></p>
+      </header>
+      <canvas id="canvas" width="1100" height="620"></canvas>
+      <div class="controls">
+        <button id="play">播放动画</button>
+        <button id="prev" class="secondary">上一帧</button>
+        <button id="next" class="secondary">下一帧</button>
+        <span class="frame-label" id="frameLabel"></span>
+      </div>
+    </main>
+    <aside class="side">
+      <section><strong>学习目标</strong><p id="goal"></p></section>
+      <section><strong>变量</strong><ul id="variables"></ul></section>
+      <section><strong>教学点</strong><ul id="points"></ul></section>
+      <section><strong>学生任务</strong><ul id="tasks"></ul></section>
+    </aside>
+  </div>
+  <script id="demo-data" type="application/json">{data_json}</script>
+  <script>
+    const demo = JSON.parse(document.getElementById('demo-data').textContent);
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const state = {{ index: 0, timer: null }};
+    const colors = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+
+    function list(id, values) {{
+      document.getElementById(id).innerHTML = (values || []).map((value) => `<li>${{escapeHtml(String(value))}}</li>`).join('');
+    }}
+    function escapeHtml(value) {{
+      return value.replace(/[&<>"']/g, (ch) => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}}[ch]));
+    }}
+    function setup() {{
+      document.getElementById('description').textContent = demo.description || '';
+      document.getElementById('goal').textContent = demo.learning_goal || '';
+      list('variables', demo.variables);
+      list('points', demo.teaching_points);
+      list('tasks', demo.student_tasks);
+      draw();
+    }}
+    function currentFrame() {{
+      return demo.frames[Math.max(0, Math.min(state.index, demo.frames.length - 1))] || {{ label: '', metrics: {{}}, narrative: '' }};
+    }}
+    function draw() {{
+      const frame = currentFrame();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      roundRect(24, 24, canvas.width - 48, canvas.height - 48, 24, true);
+      document.getElementById('frameLabel').textContent = `${{state.index + 1}} / ${{demo.frames.length}}  ${{frame.label || ''}}`;
+      drawTeachingScene(frame);
+      ctx.fillStyle = '#475569';
+      ctx.font = '22px Microsoft YaHei, sans-serif';
+      wrapText(frame.narrative || '', 62, canvas.height - 112, canvas.width - 124, 30);
+    }}
+    function drawTeachingScene(frame) {{
+      const values = (demo.variables && demo.variables.length ? demo.variables : ['概念输入', '机制拆解', '例题验证', '实操复现', '复盘迁移']).slice(0, 5);
+      const metrics = Object.values(frame.metrics || {{ progress: (state.index + 1) / Math.max(1, demo.frames.length) }}).map(Number);
+      const progress = Math.min(1, Math.max(0.08, metrics.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0.5), 0) / Math.max(1, metrics.length)));
+      ctx.fillStyle = '#f8fbff';
+      roundRect(56, 70, canvas.width - 112, 382, 28, true);
+      ctx.strokeStyle = '#dbe4ff'; ctx.lineWidth = 3; roundRect(56, 70, canvas.width - 112, 382, 28, false);
+
+      const y = 240;
+      values.forEach((value, index) => {{
+        const x = 104 + index * ((canvas.width - 228) / Math.max(1, values.length - 1));
+        const active = index <= Math.round(progress * (values.length - 1));
+        if (index > 0) {{
+          const prevX = 104 + (index - 1) * ((canvas.width - 228) / Math.max(1, values.length - 1));
+          ctx.strokeStyle = active ? '#4f46e5' : '#c7d2fe';
+          ctx.lineWidth = active ? 8 : 5;
+          ctx.beginPath(); ctx.moveTo(prevX + 58, y); ctx.lineTo(x - 58, y); ctx.stroke();
+          const pulseX = prevX + 58 + ((x - prevX - 116) * ((Date.now() / 900 + state.index * 0.25) % 1));
+          ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(pulseX, y, active ? 8 : 0, 0, Math.PI * 2); ctx.fill();
+        }}
+        ctx.fillStyle = active ? colors[index % colors.length] : '#e0e7ff';
+        roundRect(x - 62, y - 58, 124, 116, 24, true);
+        ctx.fillStyle = active ? '#ffffff' : '#3730a3';
+        ctx.font = 'bold 20px Microsoft YaHei, sans-serif';
+        wrapText(String(value), x - 42, y - 10, 84, 24);
+        ctx.fillStyle = active ? '#22c55e' : '#94a3b8';
+        ctx.beginPath(); ctx.arc(x + 42, y - 42, 10, 0, Math.PI * 2); ctx.fill();
+      }});
+
+      ctx.fillStyle = '#1e1b4b';
+      ctx.font = 'bold 30px Microsoft YaHei, sans-serif';
+      wrapText(frame.label || demo.title || '互动演示', 86, 126, canvas.width - 172, 38);
+      ctx.fillStyle = '#4f46e5';
+      roundRect(86, 390, (canvas.width - 172) * progress, 16, 8, true);
+      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 2; roundRect(86, 390, canvas.width - 172, 16, 8, false);
+    }}
+    function drawBars(frame) {{
+      const entries = Object.entries(frame.metrics || {{ accuracy: 0.72, precision: 0.68, recall: 0.64, f1: 0.66 }});
+      entries.forEach(([key, value], index) => {{
+        const x = 92 + index * 210;
+        const h = Math.max(12, Number(value) * 320);
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 430 - h, 120, h, 18, true);
+        ctx.fillStyle = '#1e1b4b';
+        ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(key, x, 470);
+        ctx.fillText(`${{Math.round(Number(value) * 100)}}%`, x, 430 - h - 18);
+      }});
+    }}
+    function drawCurve(frame) {{
+      const values = Object.values(frame.metrics || {{ loss: 0.9, accuracy: 0.3 }}).map(Number);
+      const points = demo.frames.map((f, i) => {{
+        const metricValues = Object.values(f.metrics || {{ value: 0.5 }}).map(Number);
+        return {{ x: 80 + i * ((canvas.width - 180) / Math.max(1, demo.frames.length - 1)), y: 430 - (metricValues[0] || 0.5) * 300 }};
+      }});
+      drawAxis();
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 8; ctx.beginPath();
+      points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+      points.forEach((p, i) => {{ ctx.fillStyle = i === state.index ? '#22c55e' : '#818cf8'; ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill(); }});
+      ctx.fillStyle = '#1e1b4b'; ctx.font = '26px Inter, sans-serif'; ctx.fillText(`当前值：${{values.map(v => v.toFixed(2)).join(' / ')}}`, 80, 90);
+    }}
+    function drawMatrix(frame) {{
+      const vals = Object.values(frame.metrics || {{ TP: 0.65, FP: 0.15, FN: 0.12, TN: 0.08 }}).map(Number);
+      const labels = Object.keys(frame.metrics || {{ TP: 1, FP: 1, FN: 1, TN: 1 }});
+      const size = 160, startX = 270, startY = 120;
+      vals.slice(0, 4).forEach((value, i) => {{
+        const x = startX + (i % 2) * size; const y = startY + Math.floor(i / 2) * size;
+        ctx.fillStyle = `rgba(79, 70, 229, ${{0.18 + Math.min(0.72, value)}})`;
+        roundRect(x, y, size - 12, size - 12, 20, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '30px Inter, sans-serif'; ctx.fillText(labels[i] || `C${{i+1}}`, x + 42, y + 72);
+        ctx.fillText(String(Math.round(value * 100)), x + 56, y + 112);
+      }});
+    }}
+    function drawSignal(frame) {{
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 5; ctx.beginPath();
+      const amp = Number(Object.values(frame.metrics || {{ amplitude: 0.7 }})[0] || 0.7);
+      for (let x = 70; x < canvas.width - 70; x += 8) {{
+        const y = 300 + Math.sin((x + state.index * 42) / 42) * amp * 150 + Math.sin(x / 17) * 18;
+        x === 70 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }}
+      ctx.stroke();
+    }}
+    function drawDataset(frame) {{
+      const entries = Object.entries(frame.metrics || {{ train: 0.7, validation: 0.15, test: 0.15 }});
+      let x = 100;
+      entries.forEach(([key, value], index) => {{
+        const width = Number(value) * 820;
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 250, width, 110, 12, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(`${{key}} ${{Math.round(Number(value) * 100)}}%`, x + 16, 315);
+        x += width;
+      }});
+    }}
+    function drawFlow(frame) {{
+      const values = demo.variables || ['输入', '理解', '练习', '复盘'];
+      values.slice(0, 5).forEach((value, index) => {{
+        const x = 80 + index * 190;
+        ctx.fillStyle = index <= state.index % values.length ? '#4f46e5' : '#dbe4ff';
+        roundRect(x, 220, 140, 90, 18, true);
+        ctx.fillStyle = index <= state.index % values.length ? '#fff' : '#3730a3';
+        ctx.font = '22px Microsoft YaHei, sans-serif';
+        wrapText(String(value), x + 18, 260, 104, 26);
+        if (index < values.length - 1) {{ ctx.fillStyle = '#818cf8'; ctx.fillText('→', x + 152, 275); }}
+      }});
+    }}
+    function drawAxis() {{
+      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(70, 440); ctx.lineTo(canvas.width - 70, 440); ctx.moveTo(70, 80); ctx.lineTo(70, 440); ctx.stroke();
+    }}
+    function wrapText(text, x, y, maxWidth, lineHeight) {{
+      const chars = String(text).split('');
+      let line = '';
+      for (const ch of chars) {{
+        const test = line + ch;
+        if (ctx.measureText(test).width > maxWidth && line) {{
+          ctx.fillText(line, x, y); line = ch; y += lineHeight;
+        }} else line = test;
+      }}
+      if (line) ctx.fillText(line, x, y);
+    }}
+    function roundRect(x, y, w, h, r, fill) {{
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+      if (fill) ctx.fill(); else ctx.stroke();
+    }}
+    document.getElementById('play').onclick = () => {{
+      clearInterval(state.timer);
+      state.timer = setInterval(() => {{ state.index = (state.index + 1) % demo.frames.length; draw(); }}, 900);
+    }};
+    document.getElementById('prev').onclick = () => {{ clearInterval(state.timer); state.index = (state.index - 1 + demo.frames.length) % demo.frames.length; draw(); }};
+    document.getElementById('next').onclick = () => {{ clearInterval(state.timer); state.index = (state.index + 1) % demo.frames.length; draw(); }};
+    setup();
+  </script>
+</body>
+</html>"""
+    path.write_text(html_doc, encoding="utf-8")
+    return path
+
+
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
     system_prompt = (
         "你是 OpenMAIC 风格的多智能体课程生成系统，负责生成可导出 PPT 的课堂资源、例题、实操任务和复盘问题。"
@@ -508,6 +1383,36 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"评估方式：{item.assessment_method}\n"
         f"补充要求：{instruction}\n"
         "请生成 5-9 页 slides、2-5 道 quiz、1 个 practice、至少 3 条 reflection_prompts。"
+    )
+    system_prompt = (
+        "你是面向高校学生的 OpenMAIC 风格多智能体课堂生成系统。"
+        "只输出严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。"
+        "课堂必须由 ClassroomAgent、ExplanationAgent、ExerciseAgent、DemoAgent、SafetyAgent 协同产出，"
+        "避免长文堆叠，内容要适合 Vue 页面分卡片渲染。"
+    )
+    user_prompt = (
+        "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式：slides、quizzes、interactive/practice、PBL/reflection、interactive HTML simulation。\n"
+        "必须输出顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, voice_script, "
+        "reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
+        "slides: 5-9 项，每项包含 title, bullets, speaker_notes，bullets 2-6 条。\n"
+        "concept_cards: 3-6 项，每项包含 name, explanation, scenario, misconception, relation_to_project。\n"
+        "diagram: 包含 title, diagram_type, mermaid, explanation；mermaid 使用 flowchart TD 或 graph TD。\n"
+        "guiding_questions: 3-6 项，每项包含 prompt, intent, hint。\n"
+        "voice_script: 包含 one_minute, five_minutes, segments。\n"
+        "reproduction_demo: 包含 title, task, input_format, code_skeleton, steps, expected_output, parameters, common_errors, report_suggestions。\n"
+        "readings: 2-5 项，每项包含 title, why, source, keywords。\n"
+        "quiz: 2-5 项，每项包含 id, prompt, answer, explanation。\n"
+        "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
+        f"项目：{project.title}\n"
+        f"研究方向：{project.research_direction}\n"
+        f"学习目标：{project.learning_goal}\n"
+        f"学习项：{item.title}\n"
+        f"学习项目标：{item.objective}\n"
+        f"知识点：{item.knowledge_points}\n"
+        f"关联资料：{item.related_documents}\n"
+        f"完成标准：{item.completion_criteria}\n"
+        f"评估方式：{item.assessment_method}\n"
+        f"补充要求：{instruction}\n"
     )
     raw = _qwen_chat_raw_json(system_prompt, user_prompt)
     normalized = _normalize_classroom_package(raw, project, item)
@@ -574,6 +1479,13 @@ def _extract_raw_json(text: str) -> Any:
 
 def _normalize_classroom_package(raw: Any, project: LearningProject, item: LearningSyllabusItem) -> dict:
     data = raw if isinstance(raw, dict) else {"slides": raw if isinstance(raw, list) else []}
+    concept_cards = [_normalize_concept_card(value, item) for value in _as_list(data.get("concept_cards") or data.get("concepts"))]
+    if not concept_cards:
+        concept_cards = _default_concept_cards(item)
+    guiding_questions = [_normalize_guiding_question(value, item) for value in _as_list(data.get("guiding_questions") or data.get("questions_to_think"))]
+    if not guiding_questions:
+        guiding_questions = _default_guiding_questions(item)
+    readings = [_normalize_reading(value, item) for value in _as_list(data.get("readings") or data.get("resources"))]
     slides = [_normalize_slide(slide, index) for index, slide in enumerate(_as_list(data.get("slides") or data.get("ppt") or data.get("deck")), start=1)]
     if len(slides) < 5:
         slides.extend(_fallback_slides(project, item, start=len(slides) + 1))
@@ -597,6 +1509,12 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
         "title": _first_text(data.get("title"), f"{item.title} 课堂课件"),
         "learning_summary": _first_text(data.get("learning_summary") or data.get("summary"), item.objective),
         "slides": slides,
+        "concept_cards": concept_cards[:6],
+        "diagram": _normalize_diagram(data.get("diagram") or data.get("mermaid") or {}, item),
+        "guiding_questions": guiding_questions[:6],
+        "voice_script": _normalize_voice_script(data.get("voice_script") or data.get("script") or {}, item),
+        "reproduction_demo": _normalize_reproduction_demo(data.get("reproduction_demo") or data.get("demo") or {}, item),
+        "readings": readings[:5],
         "quiz": quiz,
         "practice": practice,
         "reflection_prompts": reflection_prompts[:6],
@@ -644,6 +1562,102 @@ def _normalize_practice(raw: Any, item: LearningSyllabusItem) -> dict:
         "expected_artifact": _first_text(practice.get("expected_artifact") or practice.get("artifact"), "实操报告、关键结果或可运行产物链接"),
         "acceptance_criteria": criteria[:6],
     }
+
+
+def _normalize_concept_card(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"name": str(raw)}
+    name = _first_text(value.get("name") or value.get("title"), item.title)
+    return {
+        "name": name,
+        "explanation": _first_text(value.get("explanation") or value.get("description"), f"解释 {name} 的核心含义。"),
+        "scenario": _first_text(value.get("scenario") or value.get("use_case"), f"用于理解 {item.title} 的具体场景。"),
+        "misconception": _first_text(value.get("misconception") or value.get("pitfall"), "注意不要只记结论，需要说明适用条件。"),
+        "relation_to_project": _first_text(value.get("relation_to_project") or value.get("project_relation"), item.objective or item.title),
+    }
+
+
+def _normalize_diagram(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"mermaid": str(raw)}
+    mermaid = _first_text(value.get("mermaid") or value.get("source"), "")
+    if not mermaid:
+        mermaid = f"flowchart TD\n  A[{item.title}] --> B[核心概念]\n  B --> C[例题验证]\n  C --> D[实操复现]\n  D --> E[复盘改进]"
+    return {
+        "title": _first_text(value.get("title"), f"{item.title} 学习图解"),
+        "diagram_type": _first_text(value.get("diagram_type") or value.get("type"), "mermaid"),
+        "mermaid": mermaid,
+        "explanation": _first_text(value.get("explanation"), "沿着概念、验证、实操和复盘推进学习。"),
+    }
+
+
+def _normalize_voice_script(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"one_minute": str(raw)}
+    segments = _as_str_list(value.get("segments"))
+    if not segments:
+        segments = [item.objective or item.title, "用例题检查理解", "用实操形成证据"]
+    return {
+        "one_minute": _first_text(value.get("one_minute"), f"这一节聚焦 {item.title}，先抓住结论，再通过例题和实操验证。"),
+        "five_minutes": _first_text(value.get("five_minutes"), f"围绕 {item.title} 展开：背景、关键概念、常见误区、实践步骤和复盘标准。"),
+        "segments": segments[:8],
+    }
+
+
+def _normalize_reproduction_demo(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"task": str(raw)}
+    steps = _as_str_list(value.get("steps"))
+    if not steps:
+        steps = ["准备最小输入数据", "运行核心流程", "记录输出并解释结果"]
+    return {
+        "title": _first_text(value.get("title") or value.get("name"), f"{item.title} 复现 Demo"),
+        "task": _first_text(value.get("task"), item.completion_criteria or item.objective or item.title),
+        "input_format": _first_text(value.get("input_format"), "文本、表格或代码输入，按课堂要求准备。"),
+        "code_skeleton": _first_text(value.get("code_skeleton") or value.get("code"), ""),
+        "steps": steps[:8],
+        "expected_output": _first_text(value.get("expected_output"), "得到可解释的运行结果或实验记录。"),
+        "parameters": _as_str_list(value.get("parameters"))[:8],
+        "common_errors": _as_str_list(value.get("common_errors") or value.get("errors"))[:8],
+        "report_suggestions": _as_str_list(value.get("report_suggestions") or value.get("report"))[:8],
+    }
+
+
+def _normalize_guiding_question(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"prompt": str(raw)}
+    return {
+        "prompt": _first_text(value.get("prompt") or value.get("question"), f"你如何判断自己已经理解 {item.title}？"),
+        "intent": _first_text(value.get("intent"), "引导学生主动解释核心概念。"),
+        "hint": _first_text(value.get("hint"), "可以结合一个具体输入、输出或反例说明。"),
+    }
+
+
+def _normalize_reading(raw: Any, item: LearningSyllabusItem) -> dict:
+    value = raw if isinstance(raw, dict) else {"title": str(raw)}
+    return {
+        "title": _first_text(value.get("title"), item.title),
+        "why": _first_text(value.get("why") or value.get("reason"), "用于扩展课堂知识来源。"),
+        "source": _first_text(value.get("source") or value.get("uri"), "课程知识库 / 模型推理建议"),
+        "keywords": _as_str_list(value.get("keywords") or item.knowledge_points)[:8],
+    }
+
+
+def _default_concept_cards(item: LearningSyllabusItem) -> list[dict]:
+    points = item.knowledge_points or [item.title]
+    return [
+        {
+            "name": point,
+            "explanation": f"{point} 是理解 {item.title} 的关键概念。",
+            "scenario": item.objective or "用于当前学习项的例题和实操。",
+            "misconception": "不要脱离前提条件直接套用结论。",
+            "relation_to_project": item.completion_criteria or item.title,
+        }
+        for point in points[:4]
+    ]
+
+
+def _default_guiding_questions(item: LearningSyllabusItem) -> list[dict]:
+    return [
+        {"prompt": f"{item.title} 主要解决什么问题？", "intent": "确认学习目标", "hint": "先说应用场景，再说方法。"},
+        {"prompt": "如果输入条件变化，结论是否仍然成立？", "intent": "检查边界条件", "hint": "给出一个反例或限制。"},
+        {"prompt": "你能用实操结果证明自己理解了吗？", "intent": "连接实践证据", "hint": "引用输出、截图或指标。"},
+    ]
 
 
 def _fallback_slides(project: LearningProject, item: LearningSyllabusItem, start: int = 1) -> list[dict]:

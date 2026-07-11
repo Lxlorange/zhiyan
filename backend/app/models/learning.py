@@ -495,3 +495,38 @@ class DailyLearningPlanItem(Base):
     user_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     daily_plan: Mapped[DailyLearningPlan] = relationship(back_populates="items")
+
+
+class LiteraturePaper(Base):
+    __tablename__ = "literature_papers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    authors: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    venue: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    year: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    source_uri: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    abstract: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    keywords: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    reading_status: Mapped[str] = mapped_column(String(32), default="unread", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    citation_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ResearchToolRun(Base):
+    __tablename__ = "research_tool_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_projects.id"), index=True, nullable=True)
+    tool_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_text: Mapped[str] = mapped_column(Text, nullable=False)
+    output_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    agent_trace: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="completed", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -640,6 +640,21 @@ class ClassroomPptGenerateRequest(BaseModel):
     instruction: str = Field(default="", max_length=1200)
 
 
+class ClassroomVisualizationGenerateRequest(BaseModel):
+    instruction: str = Field(default="", max_length=1200)
+
+
+class ClassroomVoiceGenerateRequest(BaseModel):
+    voice_name: str = Field(default="xiaoyan", max_length=64)
+    speed: int = Field(default=50, ge=0, le=100)
+    text_scope: str = Field(default="current_slide", pattern="^(current_slide|one_minute|five_minutes|all_slides)$")
+
+
+class ClassroomDialogueRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=3000)
+    quick_action: str = Field(default="", max_length=64)
+
+
 class ClassroomQuizSubmitRequest(BaseModel):
     answers: Dict[str, str] = Field(..., min_length=1)
 
@@ -660,6 +675,14 @@ class ClassroomReflectionSubmitRequest(BaseModel):
     reflection: str = Field(..., min_length=50, max_length=5000)
     unresolved_questions: List[str] = Field(default_factory=list)
     next_action: str = Field(default="", max_length=1000)
+
+
+class ClassroomDialogueResponse(BaseModel):
+    answer: str
+    cards: List[Dict[str, object]] = Field(default_factory=list)
+    suggested_actions: List[str] = Field(default_factory=list)
+    profile_update_suggestion: str = ""
+    session: ClassroomSessionRead
 
 
 class DailyPlanItemRead(BaseModel):
@@ -693,3 +716,128 @@ class DailyPlanRead(BaseModel):
     items: List[DailyPlanItemRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class ProfileVersionRead(BaseModel):
+    id: int
+    revision: int
+    source: str
+    update_reason: str
+    extracted_features: Dict[str, object]
+    profile_data: Dict[str, object]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProfileCenterResponse(BaseModel):
+    profile_id: Optional[int] = None
+    current_revision: int = 0
+    profile_data: Dict[str, object] = Field(default_factory=dict)
+    entries: List["ProfileEntryRead"] = Field(default_factory=list)
+    versions: List[ProfileVersionRead] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+
+
+class ProfileEntryRead(BaseModel):
+    key: str
+    label: str
+    value: Any = None
+    confidence: int = Field(default=70, ge=0, le=100)
+    source: str = "unknown"
+    source_object_id: Optional[str] = None
+    agent: str = "MemoryAgent"
+    is_confirmed: bool = False
+    is_enabled: bool = True
+    revision: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class ProfileEntryUpdateRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=64)
+    value: Any = None
+    confidence: int = Field(default=90, ge=0, le=100)
+    source: str = Field(default="manual", max_length=64)
+    source_object_id: Optional[str] = Field(default=None, max_length=128)
+    is_confirmed: bool = True
+    is_enabled: bool = True
+    update_reason: str = Field(default="用户手动编辑画像条目", max_length=1000)
+
+
+ProfileCenterResponse.model_rebuild()
+
+
+class LiteraturePaperCreateRequest(BaseModel):
+    project_id: Optional[int] = None
+    title: str = Field(..., min_length=1, max_length=255)
+    authors: List[str] = Field(default_factory=list)
+    venue: str = Field(default="", max_length=255)
+    year: str = Field(default="", max_length=32)
+    source_uri: str = Field(default="", max_length=512)
+    abstract: str = Field(default="", max_length=8000)
+    keywords: List[str] = Field(default_factory=list)
+    reading_status: str = Field(default="unread", pattern="^(unread|reading|read|cited)$")
+    notes: str = Field(default="", max_length=8000)
+
+
+class LiteraturePaperUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    authors: Optional[List[str]] = None
+    venue: Optional[str] = Field(default=None, max_length=255)
+    year: Optional[str] = Field(default=None, max_length=32)
+    source_uri: Optional[str] = Field(default=None, max_length=512)
+    abstract: Optional[str] = Field(default=None, max_length=8000)
+    keywords: Optional[List[str]] = None
+    reading_status: Optional[str] = Field(default=None, pattern="^(unread|reading|read|cited)$")
+    notes: Optional[str] = Field(default=None, max_length=8000)
+
+
+class LiteraturePaperRead(BaseModel):
+    id: int
+    project_id: Optional[int] = None
+    title: str
+    authors: List[str]
+    venue: str
+    year: str
+    source_uri: str
+    abstract: str
+    keywords: List[str]
+    reading_status: str
+    notes: str
+    citation_text: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ResearchToolRunRequest(BaseModel):
+    project_id: Optional[int] = None
+    tool_type: str = Field(..., pattern="^(polish|format|citation|review|method|experiment|reproduce)$")
+    input_text: str = Field(..., min_length=2, max_length=12000)
+    extra_requirement: str = Field(default="", max_length=3000)
+
+
+class ResearchToolRunRead(BaseModel):
+    id: int
+    project_id: Optional[int] = None
+    tool_type: str
+    title: str
+    input_text: str
+    output_data: Dict[str, object]
+    agent_trace: List[Dict[str, object]]
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkspaceOverviewResponse(BaseModel):
+    projects: List[LearningProjectRead] = Field(default_factory=list)
+    profile: ProfileCenterResponse
+    resources: List[ClassroomResourceRead] = Field(default_factory=list)
+    agent_tasks: List[AgentTrace] = Field(default_factory=list)
+    submissions: List[ClassroomSubmissionRead] = Field(default_factory=list)
+    literature: List[LiteraturePaperRead] = Field(default_factory=list)
+    tool_runs: List[ResearchToolRunRead] = Field(default_factory=list)
+    metrics: Dict[str, int] = Field(default_factory=dict)

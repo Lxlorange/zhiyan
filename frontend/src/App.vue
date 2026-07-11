@@ -38,7 +38,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   resources: { title: '资源中心', description: '这里将展示多 Agent 生成的文档、题库、案例、视频脚本和拓展阅读。' },
   tutor: { title: '智能辅导', description: '这里将提供围绕课堂内容的连续对话式辅导。' },
   assessment: { title: '练习评估', description: '这里将展示答题记录、评分反馈和画像更新。' },
-  workflow: { title: '完整链路', description: '完整链路已降级为调试入口，不再放在顶栏作为主操作。' },
+  workflow: { title: '完整链路', description: '完整链路作为调试入口保留，不再放在顶栏作为主操作。' },
   teacher: { title: '教师驾驶舱', description: '这里将面向教师展示班级进度、风险学生和教学建议。' }
 }
 

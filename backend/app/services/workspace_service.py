@@ -1,0 +1,387 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
+from sqlalchemy.orm import Session, selectinload
+
+from app.models.learning import (
+    AgentTaskRecord,
+    ClassroomResource,
+    ClassroomSubmission,
+    LearningProject,
+    LiteraturePaper,
+    ResearchToolRun,
+    StudentProfileRecord,
+    StudentProfileVersion,
+)
+from app.models.user import User
+from app.schemas import (
+    AgentTrace,
+    LiteraturePaperCreateRequest,
+    LiteraturePaperRead,
+    LiteraturePaperUpdateRequest,
+    ProfileCenterResponse,
+    ProfileEntryRead,
+    ProfileEntryUpdateRequest,
+    ProfileVersionRead,
+    ResearchToolRunRead,
+    ResearchToolRunRequest,
+    WorkspaceOverviewResponse,
+)
+from app.services.llm_client import qwen_chat_json
+
+
+PROFILE_ENTRY_LABELS: dict[str, str] = {
+    "knowledge_base": "知识基础",
+    "learning_goal": "学习目标",
+    "cognitive_style": "认知风格",
+    "weak_points": "易错点",
+    "practice_level": "实践能力",
+    "resource_preference": "资源偏好",
+    "learning_pace": "学习节奏",
+    "interest_direction": "兴趣方向",
+    "current_research_direction": "当前科研方向",
+    "mastery": "掌握度分布",
+    "question_habit": "提问习惯",
+    "output_goal": "产出目标",
+    "academic_writing": "学术写作能力",
+    "literature_reading": "文献阅读能力",
+    "coding_practice": "代码实践能力",
+    "experiment_design": "实验设计能力",
+}
+
+
+class _ResearchToolOutput(BaseModel):
+    title: str
+    revised_text: str = ""
+    diagnosis: list[str] = Field(default_factory=list)
+    structure_suggestions: list[str] = Field(default_factory=list)
+    citation_suggestions: list[str] = Field(default_factory=list)
+    method_steps: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+
+
+def get_workspace_overview(db: Session, user: User) -> WorkspaceOverviewResponse:
+    projects = list(
+        db.scalars(
+            select(LearningProject)
+            .where(LearningProject.user_id == user.id)
+            .order_by(desc(LearningProject.updated_at))
+            .limit(12)
+        )
+    )
+    resources = list(
+        db.scalars(
+            select(ClassroomResource)
+            .where(ClassroomResource.user_id == user.id)
+            .order_by(desc(ClassroomResource.created_at))
+            .limit(30)
+        )
+    )
+    tasks = list(
+        db.scalars(
+            select(AgentTaskRecord)
+            .where(AgentTaskRecord.user_id == user.id)
+            .order_by(desc(AgentTaskRecord.created_at))
+            .limit(40)
+        )
+    )
+    submissions = list(
+        db.scalars(
+            select(ClassroomSubmission)
+            .where(ClassroomSubmission.user_id == user.id)
+            .order_by(desc(ClassroomSubmission.created_at))
+            .limit(30)
+        )
+    )
+    literature = list_literature(db, user)
+    tool_runs = list_tool_runs(db, user)
+    profile = get_profile_center(db, user)
+    return WorkspaceOverviewResponse(
+        projects=projects,
+        profile=profile,
+        resources=resources,
+        agent_tasks=[
+            AgentTrace(
+                agent=task.agent,
+                status=task.status,
+                input_summary=task.input_summary,
+                output_summary=task.output_summary,
+                latency_ms=task.latency_ms,
+            )
+            for task in tasks
+        ],
+        submissions=submissions,
+        literature=literature,
+        tool_runs=tool_runs,
+        metrics={
+            "projects": len(projects),
+            "resources": len(resources),
+            "agent_tasks": len(tasks),
+            "submissions": len(submissions),
+            "literature": len(literature),
+            "tool_runs": len(tool_runs),
+        },
+    )
+
+
+def get_profile_center(db: Session, user: User) -> ProfileCenterResponse:
+    record = db.scalar(
+        select(StudentProfileRecord)
+        .options(selectinload(StudentProfileRecord.versions))
+        .where(StudentProfileRecord.user_id == user.id)
+        .order_by(desc(StudentProfileRecord.updated_at))
+    )
+    if record is None:
+        return ProfileCenterResponse(
+            entries=[],
+            recommendations=[
+                "先在学习画像页用自然语言描述专业、目标、基础和偏好。",
+                "完成课堂例题、实操和复盘后，系统会逐步积累画像版本。",
+            ]
+        )
+    profile_data = record.profile_data or {}
+    weak_points = profile_data.get("weak_points") or []
+    preferences = profile_data.get("resource_preference") or []
+    recommendations = [
+        f"优先补齐薄弱点：{', '.join(map(str, weak_points[:3]))}" if weak_points else "继续通过课堂复盘积累薄弱点证据。",
+        f"生成资源时优先使用：{', '.join(map(str, preferences[:3]))}" if preferences else "建议补充资源偏好，便于个性化推荐。",
+    ]
+    return ProfileCenterResponse(
+        profile_id=record.id,
+        current_revision=record.current_revision,
+        profile_data=profile_data,
+        entries=_build_profile_entries(record),
+        versions=[
+            ProfileVersionRead.model_validate(version)
+            for version in sorted(record.versions, key=lambda item: item.revision, reverse=True)[:10]
+        ],
+        recommendations=recommendations,
+    )
+
+
+def update_profile_entry(
+    db: Session,
+    user: User,
+    request: ProfileEntryUpdateRequest,
+) -> ProfileCenterResponse:
+    record = db.scalar(
+        select(StudentProfileRecord)
+        .options(selectinload(StudentProfileRecord.versions))
+        .where(StudentProfileRecord.user_id == user.id)
+        .order_by(desc(StudentProfileRecord.updated_at))
+    )
+    if record is None:
+        record = StudentProfileRecord(user_id=user.id, current_revision=0, profile_data={})
+        db.add(record)
+        db.flush()
+
+    profile_data = dict(record.profile_data or {})
+    meta = dict(profile_data.get("_entry_meta") or {})
+    if request.value in (None, "", [], {}):
+        profile_data.pop(request.key, None)
+    else:
+        profile_data[request.key] = request.value
+
+    meta[request.key] = {
+        "confidence": request.confidence,
+        "source": request.source,
+        "source_object_id": request.source_object_id,
+        "agent": "MemoryAgent",
+        "is_confirmed": request.is_confirmed,
+        "is_enabled": request.is_enabled,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    profile_data["_entry_meta"] = meta
+
+    record.current_revision += 1
+    record.profile_data = profile_data
+    record.updated_at = datetime.utcnow()
+    db.add(
+        StudentProfileVersion(
+            profile_id=record.id,
+            revision=record.current_revision,
+            source=request.source,
+            update_reason=request.update_reason,
+            extracted_features={
+                "key": request.key,
+                "value": request.value,
+                "confidence": request.confidence,
+                "is_enabled": request.is_enabled,
+            },
+            profile_data=profile_data,
+        )
+    )
+    db.add(
+        AgentTaskRecord(
+            session_id=f"profile-entry-{user.id}",
+            user_id=user.id,
+            agent="MemoryAgent",
+            status="completed",
+            input_summary=f"更新画像条目：{PROFILE_ENTRY_LABELS.get(request.key, request.key)}",
+            output_summary=request.update_reason,
+            latency_ms=0,
+        )
+    )
+    db.commit()
+    db.refresh(record)
+    return get_profile_center(db, user)
+
+
+def _build_profile_entries(record: StudentProfileRecord) -> list[ProfileEntryRead]:
+    profile_data = record.profile_data or {}
+    meta = profile_data.get("_entry_meta") or {}
+    entries: list[ProfileEntryRead] = []
+    for key, label in PROFILE_ENTRY_LABELS.items():
+        value = profile_data.get(key)
+        entry_meta = meta.get(key) or {}
+        if value in (None, "", [], {}) and not entry_meta:
+            continue
+        updated_at = _parse_datetime(entry_meta.get("updated_at")) or record.updated_at
+        entries.append(
+            ProfileEntryRead(
+                key=key,
+                label=label,
+                value=value,
+                confidence=int(entry_meta.get("confidence", 70)),
+                source=str(entry_meta.get("source", "dialogue")),
+                source_object_id=entry_meta.get("source_object_id"),
+                agent=str(entry_meta.get("agent", "ProfileAgent")),
+                is_confirmed=bool(entry_meta.get("is_confirmed", False)),
+                is_enabled=bool(entry_meta.get("is_enabled", True)),
+                revision=record.current_revision,
+                updated_at=updated_at,
+            )
+        )
+    return entries
+
+
+def list_literature(db: Session, user: User) -> list[LiteraturePaperRead]:
+    papers = db.scalars(
+        select(LiteraturePaper)
+        .where(LiteraturePaper.user_id == user.id)
+        .order_by(desc(LiteraturePaper.updated_at))
+        .limit(100)
+    )
+    return [LiteraturePaperRead.model_validate(paper) for paper in papers]
+
+
+def create_literature(db: Session, user: User, request: LiteraturePaperCreateRequest) -> LiteraturePaperRead:
+    paper = LiteraturePaper(
+        user_id=user.id,
+        project_id=request.project_id,
+        title=request.title,
+        authors=request.authors,
+        venue=request.venue,
+        year=request.year,
+        source_uri=request.source_uri,
+        abstract=request.abstract,
+        keywords=request.keywords,
+        reading_status=request.reading_status,
+        notes=request.notes,
+        citation_text=_build_citation_text(request.title, request.authors, request.venue, request.year),
+    )
+    db.add(paper)
+    db.commit()
+    db.refresh(paper)
+    return LiteraturePaperRead.model_validate(paper)
+
+
+def update_literature(db: Session, user: User, paper_id: int, request: LiteraturePaperUpdateRequest) -> LiteraturePaperRead:
+    paper = db.scalar(select(LiteraturePaper).where(LiteraturePaper.id == paper_id, LiteraturePaper.user_id == user.id))
+    if paper is None:
+        raise KeyError("literature paper not found")
+    updates = request.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(paper, key, value)
+    paper.citation_text = _build_citation_text(paper.title, paper.authors, paper.venue, paper.year)
+    paper.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(paper)
+    return LiteraturePaperRead.model_validate(paper)
+
+
+def list_tool_runs(db: Session, user: User) -> list[ResearchToolRunRead]:
+    runs = db.scalars(
+        select(ResearchToolRun)
+        .where(ResearchToolRun.user_id == user.id)
+        .order_by(desc(ResearchToolRun.created_at))
+        .limit(80)
+    )
+    return [ResearchToolRunRead.model_validate(run) for run in runs]
+
+
+def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) -> ResearchToolRunRead:
+    system_prompt = (
+        "你是高校科研学习平台的 ResearchToolAgent。"
+        "请严格输出 JSON，帮助学生完成论文修改、引用规范、综述写作、科研方法学习或实验设计。"
+        "不要编造不存在的论文事实；需要提示用户补充来源时写入 safety_notes。"
+    )
+    user_prompt = (
+        f"工具类型：{request.tool_type}\n"
+        f"输入内容：{request.input_text}\n"
+        f"补充要求：{request.extra_requirement}\n"
+        "输出字段：title, revised_text, diagnosis, structure_suggestions, citation_suggestions, method_steps, safety_notes, next_actions。"
+    )
+    output = qwen_chat_json(system_prompt, user_prompt, _ResearchToolOutput)
+    run = ResearchToolRun(
+        user_id=user.id,
+        project_id=request.project_id,
+        tool_type=request.tool_type,
+        title=output.title,
+        input_text=request.input_text,
+        output_data=output.model_dump(),
+        agent_trace=[
+            {
+                "agent": "ResearchToolAgent",
+                "status": "completed",
+                "input_summary": request.input_text[:300],
+                "output_summary": output.title,
+                "latency_ms": 0,
+            },
+            {
+                "agent": "SafetyAgent",
+                "status": "completed",
+                "input_summary": "检查是否存在无来源事实、过度承诺和引用风险",
+                "output_summary": "已生成 safety_notes",
+                "latency_ms": 0,
+            },
+        ],
+        status="completed",
+    )
+    db.add(run)
+    db.add(
+        AgentTaskRecord(
+            session_id=f"research-tool-{user.id}",
+            user_id=user.id,
+            agent="ResearchToolAgent",
+            status="completed",
+            input_summary=request.input_text[:300],
+            output_summary=output.title,
+            latency_ms=0,
+        )
+    )
+    db.commit()
+    db.refresh(run)
+    return ResearchToolRunRead.model_validate(run)
+
+
+def _build_citation_text(title: str, authors: list[str], venue: str, year: str) -> str:
+    author_text = ", ".join(authors) if authors else "Unknown Author"
+    suffix = f"{venue}, {year}" if venue and year else venue or year or "未填写来源"
+    return f"{author_text}. {title}. {suffix}."
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None

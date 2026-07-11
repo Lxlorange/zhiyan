@@ -41,6 +41,22 @@
 
         <p class="project-goal">{{ activeProject.learning_goal }}</p>
 
+        <section class="project-next-learning">
+          <div>
+            <span>今日继续</span>
+            <strong>{{ activeProject.next_step || '从学习清单继续推进下一项课堂' }}</strong>
+            <p>{{ nextLearningHint }}</p>
+          </div>
+          <div class="project-next-actions">
+            <el-button @click="router.push({ name: 'project-daily-plan', params: { projectId: activeProject.id } })">
+              今日计划
+            </el-button>
+            <el-button type="primary" @click="emit('openSyllabus', activeProject.id)">
+              继续学习
+            </el-button>
+          </div>
+        </section>
+
         <div class="project-dashboard-grid">
           <div>
             <span>整体进度</span>
@@ -70,6 +86,31 @@
             <el-tag v-for="point in activeProject.related_knowledge_points.slice(0, 10)" :key="point" effect="plain">
               {{ point }}
             </el-tag>
+          </div>
+        </section>
+
+        <section class="project-section">
+          <div class="section-title">
+            <span>Personalization</span>
+            <h4>个性化提醒</h4>
+          </div>
+          <div class="project-insight-grid">
+            <div>
+              <span>当前薄弱点</span>
+              <p>{{ activeProject.current_weak_points.length ? activeProject.current_weak_points.join(' / ') : '课堂复盘后会自动更新。' }}</p>
+            </div>
+            <div>
+              <span>产出清单</span>
+              <p>{{ activeProject.output_checklist.length ? activeProject.output_checklist.slice(0, 4).join(' / ') : '学习清单生成后会补充项目产出。' }}</p>
+            </div>
+            <div>
+              <span>推荐策略</span>
+              <p>{{ activeProject.personalization_strategy.length ? activeProject.personalization_strategy.slice(0, 3).join(' / ') : '根据画像偏好生成讲解、图解、实操和练习。' }}</p>
+            </div>
+            <div>
+              <span>资源积累</span>
+              <p>已生成 {{ activeProject.generated_resource_count }} 个资源，完成 {{ activeProject.completed_item_count }} 个学习项。</p>
+            </div>
           </div>
         </section>
 
@@ -112,6 +153,13 @@ const loading = ref(false)
 const router = useRouter()
 const activeProjectId = ref<number | null>(props.selectedProjectId)
 const activeProject = computed(() => projects.value.find((project) => project.id === activeProjectId.value) || null)
+const nextLearningHint = computed(() => {
+  const project = activeProject.value
+  if (!project) return ''
+  if (project.today_recommendations.length) return project.today_recommendations.slice(0, 2).join('；')
+  if (project.current_weak_points.length) return `建议先补齐：${project.current_weak_points.slice(0, 3).join(' / ')}`
+  return '系统会根据学习清单、每日计划和课堂完成情况推荐下一步。'
+})
 
 onMounted(loadProjects)
 

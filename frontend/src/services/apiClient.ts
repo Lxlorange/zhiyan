@@ -241,6 +241,14 @@ export interface ClassroomSessionRead {
   submissions: ClassroomSubmissionRead[]
 }
 
+export interface ClassroomDialogueResponse {
+  answer: string
+  cards: Record<string, any>[]
+  suggested_actions: string[]
+  profile_update_suggestion: string
+  session: ClassroomSessionRead
+}
+
 export interface DailyPlanItemRead {
   id: number
   day_index: number
@@ -268,6 +276,133 @@ export interface DailyPlanRead {
   status: string
   created_at: string
   items: DailyPlanItemRead[]
+}
+
+export interface ProfileVersionRead {
+  id: number
+  revision: number
+  source: string
+  update_reason: string
+  extracted_features: Record<string, any>
+  profile_data: Record<string, any>
+  created_at: string
+}
+
+export interface ProfileCenterResponse {
+  profile_id?: number | null
+  current_revision: number
+  profile_data: Record<string, any>
+  entries: ProfileEntryRead[]
+  versions: ProfileVersionRead[]
+  recommendations: string[]
+}
+
+export interface ProfileEntryRead {
+  key: string
+  label: string
+  value: any
+  confidence: number
+  source: string
+  source_object_id?: string | null
+  agent: string
+  is_confirmed: boolean
+  is_enabled: boolean
+  revision: number
+  updated_at?: string | null
+}
+
+export interface ProfileDialogueResponse {
+  profile_id: number
+  profile: Record<string, any>
+  update_reason: string
+  extracted_features: Record<string, any>
+  revision: number
+}
+
+export interface LiteraturePaperRead {
+  id: number
+  project_id?: number | null
+  title: string
+  authors: string[]
+  venue: string
+  year: string
+  source_uri: string
+  abstract: string
+  keywords: string[]
+  reading_status: string
+  notes: string
+  citation_text: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ResearchToolRunRead {
+  id: number
+  project_id?: number | null
+  tool_type: string
+  title: string
+  input_text: string
+  output_data: Record<string, any>
+  agent_trace: Record<string, any>[]
+  status: string
+  created_at: string
+}
+
+export interface AgentTraceRead {
+  agent: string
+  status: string
+  input_summary: string
+  output_summary: string
+  latency_ms: number
+}
+
+export interface WorkspaceOverviewResponse {
+  projects: LearningProjectRead[]
+  profile: ProfileCenterResponse
+  resources: ClassroomResourceRead[]
+  agent_tasks: AgentTraceRead[]
+  submissions: ClassroomSubmissionRead[]
+  literature: LiteraturePaperRead[]
+  tool_runs: ResearchToolRunRead[]
+  metrics: Record<string, number>
+}
+
+export interface DashboardMetric {
+  label: string
+  value: string
+  trend: string
+}
+
+export interface TeacherDashboardResponse {
+  metrics: DashboardMetric[]
+  weak_point_distribution: Record<string, number>
+  resource_type_distribution: Record<string, number>
+  at_risk_students: Array<{
+    session_id: string
+    title: string
+    profile_revision: number
+    weak_points: string[]
+  }>
+  teaching_suggestions: string[]
+}
+
+export interface KnowledgePointRead {
+  id: number
+  name: string
+  description: string
+  chapter: string
+  prerequisites: string[]
+  tags: string[]
+  difficulty: string
+}
+
+export interface KnowledgeSearchHit {
+  document_title: string
+  document_type: string
+  knowledge_point: string
+  content: string
+  source_uri: string
+  keywords: string[]
 }
 
 export function saveAuth(payload: TokenResponse) {
@@ -492,6 +627,31 @@ export function generateClassroomPpt(sessionId: number, instruction = '') {
   })
 }
 
+export function generateClassroomVisualization(sessionId: number, instruction = '') {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/visualization`, { instruction }, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function generateClassroomVoice(sessionId: number, payload: {
+  voice_name?: string
+  speed?: number
+  text_scope?: 'current_slide' | 'one_minute' | 'five_minutes' | 'all_slides'
+} = {}) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/voice`, payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function sendClassroomDialogue(sessionId: number, payload: {
+  message: string
+  quick_action?: string
+}) {
+  return api.post<ClassroomDialogueResponse>(`/classroom-sessions/${sessionId}/dialogue`, payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
 export function submitClassroomQuiz(sessionId: number, answers: Record<string, string>) {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/quiz`, { answers })
 }
@@ -524,4 +684,97 @@ export function downloadClassroomResource(resourceId: number) {
   return api.get<Blob>(`/classroom-resources/${resourceId}/download`, {
     responseType: 'blob'
   })
+}
+
+export function viewClassroomResource(resourceId: number) {
+  return api.get<Blob>(`/classroom-resources/${resourceId}/view`, {
+    responseType: 'blob'
+  })
+}
+
+export function getWorkspaceOverview() {
+  return api.get<WorkspaceOverviewResponse>('/workspace/overview')
+}
+
+export function getProfileCenter() {
+  return api.get<ProfileCenterResponse>('/workspace/profile')
+}
+
+export function updateProfileByDialogue(message: string) {
+  return api.post<ProfileDialogueResponse>('/profile/dialogue', { message }, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function updateProfileEntry(payload: {
+  key: string
+  value: any
+  confidence?: number
+  source?: string
+  source_object_id?: string | null
+  is_confirmed?: boolean
+  is_enabled?: boolean
+  update_reason?: string
+}) {
+  return api.patch<ProfileCenterResponse>('/workspace/profile/entries', payload)
+}
+
+export function listLiterature() {
+  return api.get<LiteraturePaperRead[]>('/workspace/literature')
+}
+
+export function createLiterature(payload: {
+  project_id?: number | null
+  title: string
+  authors?: string[]
+  venue?: string
+  year?: string
+  source_uri?: string
+  abstract?: string
+  keywords?: string[]
+  reading_status?: string
+  notes?: string
+}) {
+  return api.post<LiteraturePaperRead>('/workspace/literature', payload)
+}
+
+export function updateLiterature(paperId: number, payload: Partial<{
+  title: string
+  authors: string[]
+  venue: string
+  year: string
+  source_uri: string
+  abstract: string
+  keywords: string[]
+  reading_status: string
+  notes: string
+}>) {
+  return api.patch<LiteraturePaperRead>(`/workspace/literature/${paperId}`, payload)
+}
+
+export function listResearchToolRuns() {
+  return api.get<ResearchToolRunRead[]>('/workspace/research-tools/runs')
+}
+
+export function runResearchTool(payload: {
+  project_id?: number | null
+  tool_type: 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce'
+  input_text: string
+  extra_requirement?: string
+}) {
+  return api.post<ResearchToolRunRead>('/workspace/research-tools/run', payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function listKnowledgePoints() {
+  return api.get<KnowledgePointRead[]>('/course/knowledge-points')
+}
+
+export function searchKnowledge(query: string, limit = 6) {
+  return api.post<KnowledgeSearchHit[]>('/course/knowledge/search', { query, limit })
+}
+
+export function getTeacherDashboard() {
+  return api.get<TeacherDashboardResponse>('/teacher/dashboard')
 }

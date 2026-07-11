@@ -39,9 +39,17 @@ def upsert_profile_from_dialogue(
         db.add(current)
         db.flush()
     else:
+        existing_data = dict(current.profile_data or {})
+        existing_meta = dict(existing_data.get("_entry_meta") or {})
+        for key, meta in existing_meta.items():
+            if meta.get("source") == "manual" and meta.get("is_confirmed"):
+                if key in existing_data:
+                    profile_data[key] = existing_data[key]
+        if existing_meta:
+            profile_data["_entry_meta"] = existing_meta
         current.current_revision = max(current.current_revision + 1, profile.revision)
         profile.revision = current.current_revision
-        profile_data = _dump_model(profile)
+        profile_data["revision"] = profile.revision
         current.profile_data = profile_data
 
     db.add(

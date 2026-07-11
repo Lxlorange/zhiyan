@@ -70,7 +70,13 @@
           <strong>{{ groupedDays.length }} 天</strong>
         </div>
         <div v-if="loadingPlans" class="daily-plan-loading">正在加载计划...</div>
-        <el-empty v-else-if="!activePlan" description="当前项目还没有每日计划。" />
+        <div v-else-if="!activePlan" class="daily-plan-empty-state">
+          <strong>当前项目还没有每日计划</strong>
+          <p>系统会按学习清单顺序、每日学习时长和学习日自动排期。</p>
+          <el-button type="primary" :loading="generating" :disabled="!selectedProjectId" @click="handleGeneratePlan">
+            立即生成计划
+          </el-button>
+        </div>
         <div v-else class="daily-plan-day-list">
           <button
             v-for="day in groupedDays"
@@ -138,6 +144,16 @@
             </div>
           </article>
         </TransitionGroup>
+
+        <section v-if="activePlan && nextDayPreview.length" class="daily-next-preview">
+          <span>后续预告</span>
+          <div>
+            <button v-for="day in nextDayPreview" :key="day.date" type="button" @click="selectedDate = day.date">
+              <strong>{{ formatDayTitle(day.date) }}</strong>
+              <small>{{ day.items.map((item) => item.title).join(' / ') }}</small>
+            </button>
+          </div>
+        </section>
       </main>
     </section>
   </div>
@@ -208,6 +224,10 @@ const groupedDays = computed(() => {
 const selectedDay = computed(() => groupedDays.value.find((day) => day.date === selectedDate.value) || null)
 const selectedDayItems = computed(() => selectedDay.value?.items || [])
 const selectedDayMinutes = computed(() => selectedDay.value?.minutes || 0)
+const nextDayPreview = computed(() => {
+  if (!selectedDate.value) return groupedDays.value.slice(0, 2)
+  return groupedDays.value.filter((day) => day.date > selectedDate.value).slice(0, 2)
+})
 
 onMounted(loadProjects)
 

@@ -24,10 +24,13 @@
     "src/components/AppTopbar.vue",
     "src/pages/AccountSettings.vue",
     "src/pages/ClassroomLearningPage.vue",
+    "src/pages/ClassroomUnifiedPlayerPage.vue",
+    "src/pages/DailyPlanPage.vue",
     "src/pages/DirectionPlanner.vue",
     "src/pages/LoginPage.vue",
     "src/pages/ModulePlaceholder.vue",
     "src/pages/ProjectHomePage.vue",
-    "src/pages/SyllabusPage.vue"
+    "src/pages/SyllabusPage.vue",
+    "src/pages/WorkspaceModulePage.vue"
   ]
 }

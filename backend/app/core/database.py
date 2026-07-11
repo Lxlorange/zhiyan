@@ -43,6 +43,41 @@ def _apply_lightweight_migrations() -> None:
         "ALTER TABLE daily_learning_plans ADD COLUMN IF NOT EXISTS study_weekends BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE daily_learning_plans ADD COLUMN IF NOT EXISTS study_weekdays JSONB NOT NULL DEFAULT '[0, 1, 2, 3, 4]'::jsonb",
         "ALTER TABLE daily_learning_plan_items ADD COLUMN IF NOT EXISTS planned_date TIMESTAMP NOT NULL DEFAULT now()",
+        """
+        CREATE TABLE IF NOT EXISTS literature_papers (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            project_id INTEGER NULL REFERENCES learning_projects(id),
+            title VARCHAR(255) NOT NULL,
+            authors JSONB NOT NULL DEFAULT '[]'::jsonb,
+            venue VARCHAR(255) NOT NULL DEFAULT '',
+            year VARCHAR(32) NOT NULL DEFAULT '',
+            source_uri VARCHAR(512) NOT NULL DEFAULT '',
+            abstract TEXT NOT NULL DEFAULT '',
+            keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+            reading_status VARCHAR(32) NOT NULL DEFAULT 'unread',
+            notes TEXT NOT NULL DEFAULT '',
+            citation_text TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            updated_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_literature_papers_user_id ON literature_papers(user_id)",
+        """
+        CREATE TABLE IF NOT EXISTS research_tool_runs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            project_id INTEGER NULL REFERENCES learning_projects(id),
+            tool_type VARCHAR(64) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            input_text TEXT NOT NULL,
+            output_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            agent_trace JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(32) NOT NULL DEFAULT 'completed',
+            created_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_research_tool_runs_user_id ON research_tool_runs(user_id)",
     ]
     with engine.begin() as connection:
         for statement in statements:

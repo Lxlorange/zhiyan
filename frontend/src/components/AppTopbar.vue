@@ -6,8 +6,8 @@
     </div>
 
     <div class="topbar-actions">
-      <el-button class="ghost-button" disabled>语言切换</el-button>
-      <el-button class="ghost-button" disabled>Light / Dark</el-button>
+      <el-button class="ghost-button" @click="notifyComingSoon('语言切换')">中文</el-button>
+      <el-button class="ghost-button" @click="notifyComingSoon('Light / Dark')">Light</el-button>
 
       <el-dropdown trigger="click" @command="handleCommand">
         <button class="user-card" type="button">
@@ -30,6 +30,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { User } from '../services/apiClient'
 
 const props = defineProps<{
@@ -54,5 +55,9 @@ const userMeta = computed(() => {
 function handleCommand(command: string) {
   if (command === 'settings') emit('navigate', 'settings')
   if (command === 'logout') emit('logout')
+}
+
+function notifyComingSoon(feature: string) {
+  ElMessage.info(`${feature} 已预留入口，当前版本先保持中文浅色界面。`)
 }
 </script>

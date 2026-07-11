@@ -8,6 +8,7 @@ from app.api.routes_profile import router as profile_router
 from app.api.routes_syllabus import router as syllabus_router
 from app.api.routes_teacher import router as teacher_router
 from app.api.routes_workflow import router as workflow_router
+from app.api.routes_workspace import router as workspace_router
 
 router = APIRouter(prefix="/api")
 router.include_router(auth_router)
@@ -18,3 +19,4 @@ router.include_router(workflow_router)
 router.include_router(course_router)
 router.include_router(teacher_router)
 router.include_router(syllabus_router)
+router.include_router(workspace_router)

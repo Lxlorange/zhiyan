@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenHarmony 分布式能力分层协同动画演示</title>
+  <style>
+    :root {
+      color: #1e1b4b;
+      background: #eef2ff;
+      font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #eef2ff 0%, #ffffff 54%, #ecfdf5 100%);
+    }
+    .demo-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
+      min-height: 100vh;
+      padding: 22px;
+    }
+    .stage, .side {
+      border: 1px solid #c7d2fe;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 18px 44px rgba(79, 70, 229, 0.12);
+    }
+    .stage { display: grid; grid-template-rows: auto minmax(360px, 1fr) auto; gap: 16px; padding: 20px; }
+    h1 { margin: 0; color: #1e1b4b; font-size: 24px; line-height: 1.25; }
+    p { margin: 8px 0 0; color: #475569; line-height: 1.65; }
+    canvas { width: 100%; height: 100%; min-height: 420px; border-radius: 16px; background: #f8fbff; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid #818cf8;
+      border-radius: 12px;
+      background: #4f46e5;
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button.secondary { background: #fff; color: #3730a3; }
+    .frame-label { color: #3730a3; font-weight: 900; }
+    .side { display: grid; align-content: start; gap: 14px; padding: 18px; }
+    .side section { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #f8fbff; }
+    .side strong { color: #1e1b4b; }
+    .side ul { margin: 0; padding-left: 18px; color: #475569; line-height: 1.65; }
+    @media (max-width: 880px) {
+      .demo-shell { grid-template-columns: 1fr; padding: 14px; }
+      canvas { min-height: 320px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <main class="stage">
+      <header>
+        <h1>OpenHarmony 分布式能力分层协同动画演示</h1>
+        <p id="description"></p>
+      </header>
+      <canvas id="canvas" width="1100" height="620"></canvas>
+      <div class="controls">
+        <button id="play">播放动画</button>
+        <button id="prev" class="secondary">上一帧</button>
+        <button id="next" class="secondary">下一帧</button>
+        <span class="frame-label" id="frameLabel"></span>
+      </div>
+    </main>
+    <aside class="side">
+      <section><strong>学习目标</strong><p id="goal"></p></section>
+      <section><strong>变量</strong><ul id="variables"></ul></section>
+      <section><strong>教学点</strong><ul id="points"></ul></section>
+      <section><strong>学生任务</strong><ul id="tasks"></ul></section>
+    </aside>
+  </div>
+  <script id="demo-data" type="application/json">{"title": "OpenHarmony 分布式能力分层协同动画演示", "demo_type": "knowledge_flow", "learning_goal": "能准确绘制OpenHarmony分布式能力分层图，并说明各层在跨设备状态同步中的作用", "description": "本交互式动画以‘用户点击手机端按钮触发平板端UI更新’为典型场景，逐帧可视化OpenHarmony分布式架构中软总线、DDS、WantAgent与设备发现认证四大核心组件的协作时序与数据流向，清晰呈现‘设备即服务’范式的分层抽象与职责边界。", "variables": ["软总线（SoftBus）通信抽象层", "分布式数据服务（DDS）", "WantAgent与分布式任务启动机制", "设备发现与认证流程"], "frames": [{"label": "初始状态：双设备在线待协同", "metrics": {"frame_id": 0.0, "timestamp_ms": 0.0, "highlighted_layers": 0.0, "active_devices": 0.2, "data_flow": 0.0, "ui_changes": 0.2, "annotations": 0.4}, "narrative": "手机与平板均已接入同一局域网，完成基础网络配置，但尚未建立分布式会话。"}, {"label": "Step 1：设备发现与认证启动", "metrics": {"frame_id": 1.0, "timestamp_ms": 300.0, "highlighted_layers": 0.1, "active_devices": 0.2, "data_flow": 0.1, "ui_changes": 0.2, "annotations": 0.3}, "narrative": "手机端调用DeviceManager API发起设备发现请求；双方通过HiChain进行轻量级身份认证与密钥协商。"}, {"label": "Step 2：软总线连接建立", "metrics": {"frame_id": 2.0, "timestamp_ms": 800.0, "highlighted_layers": 0.2, "active_devices": 0.2, "data_flow": 0.1, "ui_changes": 0.2, "annotations": 0.3}, "narrative": "认证通过后，软总线层自动协商通信通道（Wi-Fi Direct / BLE / Ethernet），构建低延迟、高可靠的数据传输管道。"}, {"label": "Step 3：DDS注册与数据订阅", "metrics": {"frame_id": 3.0, "timestamp_ms": 1400.0, "highlighted_layers": 0.3, "active_devices": 0.2, "data_flow": 0.2, "ui_changes": 0.2, "annotations": 0.3}, "narrative": "手机端通过DDS API注册名为'counter_sync'的分布式数据项；平板端订阅该数据项，建立双向同步通道。"}, {"label": "Step 4：WantAgent触发跨设备任务", "metrics": {"frame_id": 4.0, "timestamp_ms": 2100.0, "highlighted_layers": 0.4, "active_devices": 0.2, "data_flow": 0.1, "ui_changes": 0.2, "annotations": 0.3}, "narrative": "用户点击手机按钮，WantAgent封装意图（Intent）并调度至平板端执行UI更新逻辑，体现‘任务即服务’范式。"}, {"label": "最终状态：跨设备状态同步完成", "metrics": {"frame_id": 5.0, "timestamp_ms": 2800.0, "highlighted_layers": 0.4, "active_devices": 0.2, "data_flow": 0.0, "ui_changes": 0.2, "annotations": 0.3}, "narrative": "平板UI实时响应更新，DDS后台持续监听变更；整个流程体现四层协同：认证→连接→数据→任务。"}], "controls": [{"name": "control_1", "label": "control_1", "min_value": 0.0, "max_value": 1.0, "default_value": 0.5, "description": ""}], "teaching_points": ["设备发现与认证是分布式协同的前提，确保设备可信与通信安全", "软总线作为通信底座，实现‘一次开发，多端部署’的网络透明性", "DDS将数据抽象为分布式键值对，屏蔽设备位置与生命周期差异", "WantAgent将跨设备操作建模为意图（Want），是‘设备即服务’的关键抽象"], "student_tasks": ["在帧2暂停时，指出HiChain认证过程中交换的核心参数", "对比帧3与帧4：DDS数据同步与WantAgent任务调度在时序与语义上的本质区别", "修改帧5的sync_state，模拟‘计数器: 3’，并推演DDS如何保证最终一致性", "绘制四层架构图，标注每层对应帧号及关键API（如DeviceManager、SoftBusSession、DistributedKvManager、Want）"], "safety_notes": ["本演示严格遵循OpenHarmony 4.1 LTS官方文档规范；所有通信模拟均不真实发送网络包；设备IP与密钥为示意性占位符，不含真实敏感信息；动画中设备状态变化仅用于教学理解，不替代实际开发调试。"]}</script>
+  <script>
+    const demo = JSON.parse(document.getElementById('demo-data').textContent);
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const state = { index: 0, timer: null };
+    const colors = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+
+    function list(id, values) {
+      document.getElementById(id).innerHTML = (values || []).map((value) => `<li>${escapeHtml(String(value))}</li>`).join('');
+    }
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+    }
+    function setup() {
+      document.getElementById('description').textContent = demo.description || '';
+      document.getElementById('goal').textContent = demo.learning_goal || '';
+      list('variables', demo.variables);
+      list('points', demo.teaching_points);
+      list('tasks', demo.student_tasks);
+      draw();
+    }
+    function currentFrame() {
+      return demo.frames[Math.max(0, Math.min(state.index, demo.frames.length - 1))] || { label: '', metrics: {}, narrative: '' };
+    }
+    function draw() {
+      const frame = currentFrame();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      roundRect(24, 24, canvas.width - 48, canvas.height - 48, 24, true);
+      document.getElementById('frameLabel').textContent = `${state.index + 1} / ${demo.frames.length}  ${frame.label || ''}`;
+      drawTeachingScene(frame);
+      ctx.fillStyle = '#475569';
+      ctx.font = '22px Microsoft YaHei, sans-serif';
+      wrapText(frame.narrative || '', 62, canvas.height - 112, canvas.width - 124, 30);
+    }
+    function drawTeachingScene(frame) {
+      const values = (demo.variables && demo.variables.length ? demo.variables : ['概念输入', '机制拆解', '例题验证', '实操复现', '复盘迁移']).slice(0, 5);
+      const metrics = Object.values(frame.metrics || { progress: (state.index + 1) / Math.max(1, demo.frames.length) }).map(Number);
+      const progress = Math.min(1, Math.max(0.08, metrics.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0.5), 0) / Math.max(1, metrics.length)));
+      ctx.fillStyle = '#f8fbff';
+      roundRect(56, 70, canvas.width - 112, 382, 28, true);
+      ctx.strokeStyle = '#dbe4ff'; ctx.lineWidth = 3; roundRect(56, 70, canvas.width - 112, 382, 28, false);
+
+      const y = 240;
+      values.forEach((value, index) => {
+        const x = 104 + index * ((canvas.width - 228) / Math.max(1, values.length - 1));
+        const active = index <= Math.round(progress * (values.length - 1));
+        if (index > 0) {
+          const prevX = 104 + (index - 1) * ((canvas.width - 228) / Math.max(1, values.length - 1));
+          ctx.strokeStyle = active ? '#4f46e5' : '#c7d2fe';
+          ctx.lineWidth = active ? 8 : 5;
+          ctx.beginPath(); ctx.moveTo(prevX + 58, y); ctx.lineTo(x - 58, y); ctx.stroke();
+          const pulseX = prevX + 58 + ((x - prevX - 116) * ((Date.now() / 900 + state.index * 0.25) % 1));
+          ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(pulseX, y, active ? 8 : 0, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = active ? colors[index % colors.length] : '#e0e7ff';
+        roundRect(x - 62, y - 58, 124, 116, 24, true);
+        ctx.fillStyle = active ? '#ffffff' : '#3730a3';
+        ctx.font = 'bold 20px Microsoft YaHei, sans-serif';
+        wrapText(String(value), x - 42, y - 10, 84, 24);
+        ctx.fillStyle = active ? '#22c55e' : '#94a3b8';
+        ctx.beginPath(); ctx.arc(x + 42, y - 42, 10, 0, Math.PI * 2); ctx.fill();
+      });
+
+      ctx.fillStyle = '#1e1b4b';
+      ctx.font = 'bold 30px Microsoft YaHei, sans-serif';
+      wrapText(frame.label || demo.title || '互动演示', 86, 126, canvas.width - 172, 38);
+      ctx.fillStyle = '#4f46e5';
+      roundRect(86, 390, (canvas.width - 172) * progress, 16, 8, true);
+      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 2; roundRect(86, 390, canvas.width - 172, 16, 8, false);
+    }
+    function drawBars(frame) {
+      const entries = Object.entries(frame.metrics || { accuracy: 0.72, precision: 0.68, recall: 0.64, f1: 0.66 });
+      entries.forEach(([key, value], index) => {
+        const x = 92 + index * 210;
+        const h = Math.max(12, Number(value) * 320);
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 430 - h, 120, h, 18, true);
+        ctx.fillStyle = '#1e1b4b';
+        ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(key, x, 470);
+        ctx.fillText(`${Math.round(Number(value) * 100)}%`, x, 430 - h - 18);
+      });
+    }
+    function drawCurve(frame) {
+      const values = Object.values(frame.metrics || { loss: 0.9, accuracy: 0.3 }).map(Number);
+      const points = demo.frames.map((f, i) => {
+        const metricValues = Object.values(f.metrics || { value: 0.5 }).map(Number);
+        return { x: 80 + i * ((canvas.width - 180) / Math.max(1, demo.frames.length - 1)), y: 430 - (metricValues[0] || 0.5) * 300 };
+      });
+      drawAxis();
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 8; ctx.beginPath();
+      points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+      points.forEach((p, i) => { ctx.fillStyle = i === state.index ? '#22c55e' : '#818cf8'; ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = '#1e1b4b'; ctx.font = '26px Inter, sans-serif'; ctx.fillText(`当前值：${values.map(v => v.toFixed(2)).join(' / ')}`, 80, 90);
+    }
+    function drawMatrix(frame) {
+      const vals = Object.values(frame.metrics || { TP: 0.65, FP: 0.15, FN: 0.12, TN: 0.08 }).map(Number);
+      const labels = Object.keys(frame.metrics || { TP: 1, FP: 1, FN: 1, TN: 1 });
+      const size = 160, startX = 270, startY = 120;
+      vals.slice(0, 4).forEach((value, i) => {
+        const x = startX + (i % 2) * size; const y = startY + Math.floor(i / 2) * size;
+        ctx.fillStyle = `rgba(79, 70, 229, ${0.18 + Math.min(0.72, value)})`;
+        roundRect(x, y, size - 12, size - 12, 20, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '30px Inter, sans-serif'; ctx.fillText(labels[i] || `C${i+1}`, x + 42, y + 72);
+        ctx.fillText(String(Math.round(value * 100)), x + 56, y + 112);
+      });
+    }
+    function drawSignal(frame) {
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 5; ctx.beginPath();
+      const amp = Number(Object.values(frame.metrics || { amplitude: 0.7 })[0] || 0.7);
+      for (let x = 70; x < canvas.width - 70; x += 8) {
+        const y = 300 + Math.sin((x + state.index * 42) / 42) * amp * 150 + Math.sin(x / 17) * 18;
+        x === 70 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    function drawDataset(frame) {
+      const entries = Object.entries(frame.metrics || { train: 0.7, validation: 0.15, test: 0.15 });
+      let x = 100;
+      entries.forEach(([key, value], index) => {
+        const width = Number(value) * 820;
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 250, width, 110, 12, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(`${key} ${Math.round(Number(value) * 100)}%`, x + 16, 315);
+        x += width;
+      });
+    }
+    function drawFlow(frame) {
+      const values = demo.variables || ['输入', '理解', '练习', '复盘'];
+      values.slice(0, 5).forEach((value, index) => {
+        const x = 80 + index * 190;
+        ctx.fillStyle = index <= state.index % values.length ? '#4f46e5' : '#dbe4ff';
+        roundRect(x, 220, 140, 90, 18, true);
+        ctx.fillStyle = index <= state.index % values.length ? '#fff' : '#3730a3';
+        ctx.font = '22px Microsoft YaHei, sans-serif';
+        wrapText(String(value), x + 18, 260, 104, 26);
+        if (index < values.length - 1) { ctx.fillStyle = '#818cf8'; ctx.fillText('→', x + 152, 275); }
+      });
+    }
+    function drawAxis() {
+      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(70, 440); ctx.lineTo(canvas.width - 70, 440); ctx.moveTo(70, 80); ctx.lineTo(70, 440); ctx.stroke();
+    }
+    function wrapText(text, x, y, maxWidth, lineHeight) {
+      const chars = String(text).split('');
+      let line = '';
+      for (const ch of chars) {
+        const test = line + ch;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          ctx.fillText(line, x, y); line = ch; y += lineHeight;
+        } else line = test;
+      }
+      if (line) ctx.fillText(line, x, y);
+    }
+    function roundRect(x, y, w, h, r, fill) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+      if (fill) ctx.fill(); else ctx.stroke();
+    }
+    document.getElementById('play').onclick = () => {
+      clearInterval(state.timer);
+      state.timer = setInterval(() => { state.index = (state.index + 1) % demo.frames.length; draw(); }, 900);
+    };
+    document.getElementById('prev').onclick = () => { clearInterval(state.timer); state.index = (state.index - 1 + demo.frames.length) % demo.frames.length; draw(); };
+    document.getElementById('next').onclick = () => { clearInterval(state.timer); state.index = (state.index + 1) % demo.frames.length; draw(); };
+    setup();
+  </script>
+</body>
+</html>

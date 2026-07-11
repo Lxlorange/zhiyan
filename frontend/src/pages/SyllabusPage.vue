@@ -66,6 +66,16 @@
         <section v-else-if="!syllabus" class="panel-like syllabus-empty">
           <h3>{{ generationState === 'failed' ? '学习清单生成失败' : '学习清单正在准备' }}</h3>
           <p>{{ generationMessage || '系统会在后台基于项目目标、知识库资料和用户画像自动生成阶段化目录。' }}</p>
+          <div v-if="generationState !== 'failed'" class="generation-steps">
+            <div v-for="step in generationSteps" :key="step.name" :class="{ active: step.active }">
+              <span>{{ step.name }}</span>
+              <strong>{{ step.text }}</strong>
+            </div>
+          </div>
+          <div v-else class="syllabus-empty-actions">
+            <el-button type="primary" @click="selectedProjectId && ensureAndLoadSyllabus(selectedProjectId)">重新生成</el-button>
+            <el-button @click="router.push({ name: 'projects' })">返回项目主页</el-button>
+          </div>
         </section>
 
         <template v-else>
@@ -248,6 +258,12 @@ const generationLabel = computed(() => {
   if (generationState.value === 'ready') return '已生成'
   return '后台生成中'
 })
+const generationSteps = computed(() => [
+  { name: 'SyllabusAgent', text: '拆解阶段、知识点和学习项', active: ['started', 'generating'].includes(generationState.value) },
+  { name: 'KnowledgeBaseAgent', text: '绑定课程知识库和资料来源', active: generationState.value === 'generating' },
+  { name: 'PlannerAgent', text: '计算预计时长和推荐顺序', active: generationState.value === 'generating' },
+  { name: 'SafetyAgent', text: '检查来源、边界和生成质量', active: generationState.value === 'generating' }
+])
 const groupedStages = computed(() => {
   const groups = new Map<string, SyllabusItemRead[]>()
   for (const item of activeItems.value) {

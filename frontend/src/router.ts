@@ -1,11 +1,13 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AccountSettings from './pages/AccountSettings.vue'
-import ClassroomLearningPage from './pages/ClassroomLearningPage.vue'
+import ClassroomUnifiedPlayerPage from './pages/ClassroomUnifiedPlayerPage.vue'
 import DailyPlanPage from './pages/DailyPlanPage.vue'
+import DashboardModulePage from './pages/DashboardModulePage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
-import ModulePlaceholder from './pages/ModulePlaceholder.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
+import SigninRoute from './pages/SigninRoute.vue'
 import SyllabusPage from './pages/SyllabusPage.vue'
+import WorkspaceModulePage from './pages/WorkspaceModulePage.vue'
 
 export interface PageMeta {
   title: string
@@ -93,6 +95,18 @@ export const pageMeta: Record<string, PageMeta> = {
     description: '这里将沉淀科研方法课，包括如何复现论文、设计实验和评价结果。',
     highlights: ['实验设计', '论文复现', '学术规范']
   },
+  agents: {
+    title: '任务中心',
+    subtitle: '查看多智能体编排、生成轨迹和失败状态',
+    description: '集中展示 DirectionAgent、SyllabusAgent、ClassroomAgent、VisualizationAgent、EvaluationAgent 等执行轨迹。',
+    highlights: ['Agent轨迹', '任务状态', '编排流程']
+  },
+  teacher: {
+    title: '教师驾驶舱',
+    subtitle: '查看班级短板、资源使用和教学建议',
+    description: '为教师或课程管理员提供方向分布、短板聚合、资源统计和高风险学生提示。',
+    highlights: ['班级短板', '资源统计', '教学建议']
+  },
   settings: {
     title: '账号设置',
     subtitle: '管理头像、姓名、学校专业和简介',
@@ -112,26 +126,30 @@ export const pageRouteNames: Record<string, string> = {
   literature: 'literature',
   writing: 'writing',
   methods: 'methods',
+  agents: 'agents',
+  teacher: 'teacher',
   settings: 'settings'
 }
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/directions' },
-  { path: '/signin', name: 'signin', component: ModulePlaceholder, meta: { page: 'signin', public: true } },
+  { path: '/signin', name: 'signin', component: SigninRoute, meta: { page: 'signin', public: true } },
   { path: '/directions', name: 'directions', component: DirectionPlanner, meta: { page: 'directions' } },
   { path: '/projects', name: 'projects', component: ProjectHomePage, meta: { page: 'projects' } },
   { path: '/projects/:projectId(\\d+)', name: 'project-detail', component: ProjectHomePage, meta: { page: 'projects' } },
   { path: '/projects/:projectId(\\d+)/syllabus', name: 'project-syllabus', component: SyllabusPage, meta: { page: 'syllabus' } },
-  { path: '/projects/:projectId(\\d+)/syllabus/items/:itemId(\\d+)/classroom', name: 'project-classroom', component: ClassroomLearningPage, meta: { page: 'classroom' } },
+  { path: '/projects/:projectId(\\d+)/syllabus/items/:itemId(\\d+)/classroom', name: 'project-classroom', component: ClassroomUnifiedPlayerPage, meta: { page: 'classroom' } },
   { path: '/daily-plan', name: 'daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
   { path: '/projects/:projectId(\\d+)/daily-plan', name: 'project-daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
-  { path: '/profile', name: 'profile', component: ModulePlaceholder, meta: { page: 'profile' } },
-  { path: '/resources', name: 'resources', component: ModulePlaceholder, meta: { page: 'resources' } },
-  { path: '/tutor', name: 'tutor', component: ModulePlaceholder, meta: { page: 'tutor' } },
-  { path: '/assessment', name: 'assessment', component: ModulePlaceholder, meta: { page: 'assessment' } },
-  { path: '/literature', name: 'literature', component: ModulePlaceholder, meta: { page: 'literature' } },
-  { path: '/writing', name: 'writing', component: ModulePlaceholder, meta: { page: 'writing' } },
-  { path: '/methods', name: 'methods', component: ModulePlaceholder, meta: { page: 'methods' } },
+  { path: '/profile', name: 'profile', component: WorkspaceModulePage, props: { mode: 'profile' }, meta: { page: 'profile' } },
+  { path: '/resources', name: 'resources', component: WorkspaceModulePage, props: { mode: 'resources' }, meta: { page: 'resources' } },
+  { path: '/tutor', name: 'tutor', component: WorkspaceModulePage, props: { mode: 'tutor' }, meta: { page: 'tutor' } },
+  { path: '/assessment', name: 'assessment', component: WorkspaceModulePage, props: { mode: 'assessment' }, meta: { page: 'assessment' } },
+  { path: '/literature', name: 'literature', component: WorkspaceModulePage, props: { mode: 'literature' }, meta: { page: 'literature' } },
+  { path: '/writing', name: 'writing', component: WorkspaceModulePage, props: { mode: 'writing' }, meta: { page: 'writing' } },
+  { path: '/methods', name: 'methods', component: WorkspaceModulePage, props: { mode: 'methods' }, meta: { page: 'methods' } },
+  { path: '/agents', name: 'agents', component: DashboardModulePage, props: { mode: 'agents' }, meta: { page: 'agents' } },
+  { path: '/teacher', name: 'teacher', component: DashboardModulePage, props: { mode: 'teacher' }, meta: { page: 'teacher' } },
   { path: '/settings', name: 'settings', component: AccountSettings, meta: { page: 'settings' } },
   { path: '/:pathMatch(.*)*', redirect: '/directions' }
 ]

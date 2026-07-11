@@ -46,6 +46,8 @@
         <template #title>
           <span>系统</span>
         </template>
+        <el-menu-item index="agents">任务中心</el-menu-item>
+        <el-menu-item index="teacher">教师驾驶舱</el-menu-item>
         <el-menu-item index="settings">账号设置</el-menu-item>
       </el-sub-menu>
     </el-menu>

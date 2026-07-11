@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ArkTS计数器应用：单设备响应式状态与UI生命周期演示</title>
+  <style>
+    :root {
+      color: #1e1b4b;
+      background: #eef2ff;
+      font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #eef2ff 0%, #ffffff 54%, #ecfdf5 100%);
+    }
+    .demo-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
+      min-height: 100vh;
+      padding: 22px;
+    }
+    .stage, .side {
+      border: 1px solid #c7d2fe;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 18px 44px rgba(79, 70, 229, 0.12);
+    }
+    .stage { display: grid; grid-template-rows: auto minmax(360px, 1fr) auto; gap: 16px; padding: 20px; }
+    h1 { margin: 0; color: #1e1b4b; font-size: 24px; line-height: 1.25; }
+    p { margin: 8px 0 0; color: #475569; line-height: 1.65; }
+    canvas { width: 100%; height: 100%; min-height: 420px; border-radius: 16px; background: #f8fbff; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid #818cf8;
+      border-radius: 12px;
+      background: #4f46e5;
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button.secondary { background: #fff; color: #3730a3; }
+    .frame-label { color: #3730a3; font-weight: 900; }
+    .side { display: grid; align-content: start; gap: 14px; padding: 18px; }
+    .side section { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #f8fbff; }
+    .side strong { color: #1e1b4b; }
+    .side ul { margin: 0; padding-left: 18px; color: #475569; line-height: 1.65; }
+    @media (max-width: 880px) {
+      .demo-shell { grid-template-columns: 1fr; padding: 14px; }
+      canvas { min-height: 320px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <main class="stage">
+      <header>
+        <h1>ArkTS计数器应用：单设备响应式状态与UI生命周期演示</h1>
+        <p id="description"></p>
+      </header>
+      <canvas id="canvas" width="1100" height="620"></canvas>
+      <div class="controls">
+        <button id="play">播放动画</button>
+        <button id="prev" class="secondary">上一帧</button>
+        <button id="next" class="secondary">下一帧</button>
+        <span class="frame-label" id="frameLabel"></span>
+      </div>
+    </main>
+    <aside class="side">
+      <section><strong>学习目标</strong><p id="goal"></p></section>
+      <section><strong>变量</strong><ul id="variables"></ul></section>
+      <section><strong>教学点</strong><ul id="points"></ul></section>
+      <section><strong>学生任务</strong><ul id="tasks"></ul></section>
+    </aside>
+  </div>
+  <script id="demo-data" type="application/json">{"title": "ArkTS计数器应用：单设备响应式状态与UI生命周期演示", "demo_type": "knowledge_flow", "learning_goal": "理解@Entry/@Component装饰器作用域、State响应式更新机制、UI组件挂载/更新/卸载生命周期事件，以及DevEco Studio中单设备模拟器运行流程", "description": "本演示以一个最小可行ArkTS计数器应用为载体，逐帧可视化其从代码声明→编译→模拟器加载→用户交互→状态更新→UI重渲染的全过程。每帧精确标注变量快照、关键生命周期钩子触发点、UI树变化及DevEco Studio控制台日志映射。", "variables": ["@Entry/@Component装饰器语义", "State与Prop状态管理", "UI组件生命周期", "模拟器双设备启动配置"], "frames": [{"label": "Step 1", "metrics": {"frame_id": 0.0, "timestamp_ms": 0.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.0, "devstudio_console_log": 0.1}, "narrative": "初始状态：ArkTS源码声明完成，@Entry与@Component装饰器解析完毕，但组件尚未实例化"}, {"label": "Step 2", "metrics": {"frame_id": 1.0, "timestamp_ms": 120.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.1, "devstudio_console_log": 0.2}, "narrative": "组件实例化并首次挂载：aboutToAppear触发，isMounted设为true，render()首次执行"}, {"label": "Step 3", "metrics": {"frame_id": 2.0, "timestamp_ms": 350.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.1, "devstudio_console_log": 0.2}, "narrative": "用户点击按钮：onClick事件触发，counter值+1，触发State响应式更新"}, {"label": "Step 4", "metrics": {"frame_id": 3.0, "timestamp_ms": 380.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.1, "devstudio_console_log": 0.2}, "narrative": "响应式重渲染：render()第二次执行，UI文本同步更新为'点击次数：1'"}, {"label": "Step 5", "metrics": {"frame_id": 4.0, "timestamp_ms": 720.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.1, "devstudio_console_log": 0.2}, "narrative": "再次点击按钮：counter→2，触发新一轮响应式更新与重渲染"}, {"label": "Step 6", "metrics": {"frame_id": 5.0, "timestamp_ms": 750.0, "variables_snapshot": 0.3, "ui_tree": 0.5, "lifecycle_events": 0.1, "devstudio_console_log": 0.2}, "narrative": "最终稳定态：UI显示'点击次数：2'，renderCount=3，组件持续挂载等待下一次交互"}], "controls": [{"name": "control_1", "label": "control_1", "min_value": 0.0, "max_value": 1.0, "default_value": 0.5, "description": ""}], "teaching_points": ["装饰器语义：@Entry标识应用入口组件，@Component定义可复用UI单元，二者共同构建声明式UI树", "State响应性：@State变量变更自动触发所属组件render()，无需手动setState或DOM操作", "生命周期锚点：aboutToAppear是组件可见前最后钩子，适合初始化；无onDestroy，因OpenHarmony采用轻量级组件模型", "DevEco Studio协同：模拟器启动即触发组件挂载，控制台日志与帧状态严格对齐，体现‘代码→日志→UI’闭环"], "student_tasks": ["观察帧2与帧3之间变量counter未变但UI仍显示旧值——解释此现象（渲染异步性）", "预测帧4中renderCount值，并说明为何不是2而是2（注意：renderCount在render函数内自增）", "修改代码将State替换为Prop，观察帧序列变化并总结Prop与State核心差异"], "safety_notes": ["本演示仅模拟单设备场景，双设备协同需额外配置分布式能力（后续课时展开）", "模拟器中aboutToDisappear不会自动触发，需手动关闭页面或切换Tab模拟卸载", "真实部署至真机前，须确认API Version兼容性（本例基于API 9）"]}</script>
+  <script>
+    const demo = JSON.parse(document.getElementById('demo-data').textContent);
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const state = { index: 0, timer: null };
+    const colors = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+
+    function list(id, values) {
+      document.getElementById(id).innerHTML = (values || []).map((value) => `<li>${escapeHtml(String(value))}</li>`).join('');
+    }
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+    }
+    function setup() {
+      document.getElementById('description').textContent = demo.description || '';
+      document.getElementById('goal').textContent = demo.learning_goal || '';
+      list('variables', demo.variables);
+      list('points', demo.teaching_points);
+      list('tasks', demo.student_tasks);
+      draw();
+    }
+    function currentFrame() {
+      return demo.frames[Math.max(0, Math.min(state.index, demo.frames.length - 1))] || { label: '', metrics: {}, narrative: '' };
+    }
+    function draw() {
+      const frame = currentFrame();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      roundRect(24, 24, canvas.width - 48, canvas.height - 48, 24, true);
+      document.getElementById('frameLabel').textContent = `${state.index + 1} / ${demo.frames.length}  ${frame.label || ''}`;
+      const type = demo.demo_type || 'knowledge_flow';
+      if (type === 'training_curve') drawCurve(frame);
+      else if (type === 'confusion_matrix') drawMatrix(frame);
+      else if (type === 'csi_signal') drawSignal(frame);
+      else if (type === 'dataset_split') drawDataset(frame);
+      else if (type === 'classification_metrics') drawBars(frame);
+      else drawFlow(frame);
+      ctx.fillStyle = '#475569';
+      ctx.font = '22px Microsoft YaHei, sans-serif';
+      wrapText(frame.narrative || '', 62, canvas.height - 112, canvas.width - 124, 30);
+    }
+    function drawBars(frame) {
+      const entries = Object.entries(frame.metrics || { accuracy: 0.72, precision: 0.68, recall: 0.64, f1: 0.66 });
+      entries.forEach(([key, value], index) => {
+        const x = 92 + index * 210;
+        const h = Math.max(12, Number(value) * 320);
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 430 - h, 120, h, 18, true);
+        ctx.fillStyle = '#1e1b4b';
+        ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(key, x, 470);
+        ctx.fillText(`${Math.round(Number(value) * 100)}%`, x, 430 - h - 18);
+      });
+    }
+    function drawCurve(frame) {
+      const values = Object.values(frame.metrics || { loss: 0.9, accuracy: 0.3 }).map(Number);
+      const points = demo.frames.map((f, i) => {
+        const metricValues = Object.values(f.metrics || { value: 0.5 }).map(Number);
+        return { x: 80 + i * ((canvas.width - 180) / Math.max(1, demo.frames.length - 1)), y: 430 - (metricValues[0] || 0.5) * 300 };
+      });
+      drawAxis();
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 8; ctx.beginPath();
+      points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+      points.forEach((p, i) => { ctx.fillStyle = i === state.index ? '#22c55e' : '#818cf8'; ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = '#1e1b4b'; ctx.font = '26px Inter, sans-serif'; ctx.fillText(`当前值：${values.map(v => v.toFixed(2)).join(' / ')}`, 80, 90);
+    }
+    function drawMatrix(frame) {
+      const vals = Object.values(frame.metrics || { TP: 0.65, FP: 0.15, FN: 0.12, TN: 0.08 }).map(Number);
+      const labels = Object.keys(frame.metrics || { TP: 1, FP: 1, FN: 1, TN: 1 });
+      const size = 160, startX = 270, startY = 120;
+      vals.slice(0, 4).forEach((value, i) => {
+        const x = startX + (i % 2) * size; const y = startY + Math.floor(i / 2) * size;
+        ctx.fillStyle = `rgba(79, 70, 229, ${0.18 + Math.min(0.72, value)})`;
+        roundRect(x, y, size - 12, size - 12, 20, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '30px Inter, sans-serif'; ctx.fillText(labels[i] || `C${i+1}`, x + 42, y + 72);
+        ctx.fillText(String(Math.round(value * 100)), x + 56, y + 112);
+      });
+    }
+    function drawSignal(frame) {
+      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 5; ctx.beginPath();
+      const amp = Number(Object.values(frame.metrics || { amplitude: 0.7 })[0] || 0.7);
+      for (let x = 70; x < canvas.width - 70; x += 8) {
+        const y = 300 + Math.sin((x + state.index * 42) / 42) * amp * 150 + Math.sin(x / 17) * 18;
+        x === 70 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    function drawDataset(frame) {
+      const entries = Object.entries(frame.metrics || { train: 0.7, validation: 0.15, test: 0.15 });
+      let x = 100;
+      entries.forEach(([key, value], index) => {
+        const width = Number(value) * 820;
+        ctx.fillStyle = colors[index % colors.length];
+        roundRect(x, 250, width, 110, 12, true);
+        ctx.fillStyle = '#1e1b4b'; ctx.font = '24px Inter, sans-serif';
+        ctx.fillText(`${key} ${Math.round(Number(value) * 100)}%`, x + 16, 315);
+        x += width;
+      });
+    }
+    function drawFlow(frame) {
+      const values = demo.variables || ['输入', '理解', '练习', '复盘'];
+      values.slice(0, 5).forEach((value, index) => {
+        const x = 80 + index * 190;
+        ctx.fillStyle = index <= state.index % values.length ? '#4f46e5' : '#dbe4ff';
+        roundRect(x, 220, 140, 90, 18, true);
+        ctx.fillStyle = index <= state.index % values.length ? '#fff' : '#3730a3';
+        ctx.font = '22px Microsoft YaHei, sans-serif';
+        wrapText(String(value), x + 18, 260, 104, 26);
+        if (index < values.length - 1) { ctx.fillStyle = '#818cf8'; ctx.fillText('→', x + 152, 275); }
+      });
+    }
+    function drawAxis() {
+      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(70, 440); ctx.lineTo(canvas.width - 70, 440); ctx.moveTo(70, 80); ctx.lineTo(70, 440); ctx.stroke();
+    }
+    function wrapText(text, x, y, maxWidth, lineHeight) {
+      const chars = String(text).split('');
+      let line = '';
+      for (const ch of chars) {
+        const test = line + ch;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          ctx.fillText(line, x, y); line = ch; y += lineHeight;
+        } else line = test;
+      }
+      if (line) ctx.fillText(line, x, y);
+    }
+    function roundRect(x, y, w, h, r, fill) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+      if (fill) ctx.fill(); else ctx.stroke();
+    }
+    document.getElementById('play').onclick = () => {
+      clearInterval(state.timer);
+      state.timer = setInterval(() => { state.index = (state.index + 1) % demo.frames.length; draw(); }, 900);
+    };
+    document.getElementById('prev').onclick = () => { clearInterval(state.timer); state.index = (state.index - 1 + demo.frames.length) % demo.frames.length; draw(); };
+    document.getElementById('next').onclick = () => { clearInterval(state.timer); state.index = (state.index + 1) % demo.frames.length; draw(); };
+    setup();
+  </script>
+</body>
+</html>
