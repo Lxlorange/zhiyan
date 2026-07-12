@@ -73,72 +73,72 @@ class _ConceptCardSpec(BaseModel):
 
 
 class _DiagramSpec(BaseModel):
-    title: str = ""
-    diagram_type: str = "mermaid"
-    mermaid: str = ""
-    explanation: str = ""
+    title: str
+    diagram_type: str
+    mermaid: str
+    explanation: str
 
 
 class _VoiceScriptSpec(BaseModel):
-    one_minute: str = ""
-    five_minutes: str = ""
-    segments: list[str] = Field(default_factory=list)
+    one_minute: str
+    five_minutes: str
+    segments: list[str] = Field(min_length=1, max_length=8)
 
 
 class _ReproductionDemoSpec(BaseModel):
-    title: str = ""
-    task: str = ""
-    input_format: str = ""
+    title: str
+    task: str
+    input_format: str
     code_skeleton: str = ""
-    steps: list[str] = Field(default_factory=list)
-    expected_output: str = ""
-    parameters: list[str] = Field(default_factory=list)
-    common_errors: list[str] = Field(default_factory=list)
-    report_suggestions: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(min_length=1, max_length=8)
+    expected_output: str
+    parameters: list[str] = Field(min_length=1, max_length=8)
+    common_errors: list[str] = Field(min_length=1, max_length=8)
+    report_suggestions: list[str] = Field(min_length=1, max_length=8)
 
 
 class _GuidingQuestionSpec(BaseModel):
     prompt: str
-    intent: str = ""
-    hint: str = ""
+    intent: str
+    hint: str
 
 
 class _ReadingSpec(BaseModel):
     title: str
-    why: str = ""
-    source: str = ""
-    keywords: list[str] = Field(default_factory=list)
+    why: str
+    source: str
+    keywords: list[str] = Field(min_length=1, max_length=8)
 
 
 class _ClassroomPackage(BaseModel):
     title: str
     learning_summary: str
     slides: list[_SlideSpec] = Field(min_length=5, max_length=9)
-    concept_cards: list[_ConceptCardSpec] = Field(default_factory=list)
-    diagram: _DiagramSpec = Field(default_factory=_DiagramSpec)
-    guiding_questions: list[_GuidingQuestionSpec] = Field(default_factory=list)
-    voice_script: _VoiceScriptSpec = Field(default_factory=_VoiceScriptSpec)
-    reproduction_demo: _ReproductionDemoSpec = Field(default_factory=_ReproductionDemoSpec)
-    readings: list[_ReadingSpec] = Field(default_factory=list)
+    concept_cards: list[_ConceptCardSpec] = Field(min_length=3, max_length=6)
+    diagram: _DiagramSpec
+    guiding_questions: list[_GuidingQuestionSpec] = Field(min_length=3, max_length=6)
+    voice_script: _VoiceScriptSpec
+    reproduction_demo: _ReproductionDemoSpec
+    readings: list[_ReadingSpec] = Field(min_length=2, max_length=5)
     quiz: list[_QuizSpec] = Field(min_length=2, max_length=5)
     practice: _PracticeSpec
     reflection_prompts: list[str] = Field(min_length=3, max_length=6)
-    safety_notes: list[str] = Field(default_factory=list)
+    safety_notes: list[str]
 
 
 class _VisualizationFrame(BaseModel):
     label: str
-    metrics: dict[str, float] = Field(default_factory=dict)
+    metrics: dict[str, float]
     narrative: str
 
 
 class _VisualizationControl(BaseModel):
     name: str
     label: str
-    min_value: float = 0
-    max_value: float = 1
-    default_value: float = 0.5
-    description: str = ""
+    min_value: float
+    max_value: float
+    default_value: float
+    description: str
 
 
 class _VisualizationDemo(BaseModel):
@@ -148,24 +148,24 @@ class _VisualizationDemo(BaseModel):
     description: str
     variables: list[str] = Field(min_length=2, max_length=8)
     frames: list[_VisualizationFrame] = Field(min_length=4, max_length=12)
-    controls: list[_VisualizationControl] = Field(default_factory=list)
+    controls: list[_VisualizationControl]
     teaching_points: list[str] = Field(min_length=3, max_length=8)
     student_tasks: list[str] = Field(min_length=2, max_length=6)
-    safety_notes: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(min_length=1)
 
 
 class _DialogueCard(BaseModel):
     card_type: str
     title: str
     content: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any]
 
 
 class _DialogueAgentResponse(BaseModel):
     answer: str
-    cards: list[_DialogueCard] = Field(default_factory=list)
-    suggested_actions: list[str] = Field(default_factory=list)
-    profile_update_suggestion: str = ""
+    cards: list[_DialogueCard]
+    suggested_actions: list[str]
+    profile_update_suggestion: str
 
 
 class _QuizEvaluation(BaseModel):
@@ -945,11 +945,13 @@ def _normalize_visualization_demo(
     item: LearningSyllabusItem,
     package: _ClassroomPackage,
 ) -> dict:
-    data = raw if isinstance(raw, dict) else {}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("可视化演示 JSON 顶层必须是对象")
+    data = raw
     variables = [_normalize_visualization_variable(value) for value in _as_list(data.get("variables") or data.get("states") or data.get("layers"))]
     variables = [value for value in variables if value]
     if len(variables) < 2:
-        variables.extend(_as_str_list(item.knowledge_points or [item.title, project.research_direction]))
+        raise LLMResponseError("可视化演示 JSON 缺少 variables，至少需要 2 个变量")
     variables = variables[:8]
 
     frames = [
@@ -957,47 +959,52 @@ def _normalize_visualization_demo(
         for index, frame in enumerate(_as_list(data.get("frames") or data.get("steps") or data.get("timeline")), start=1)
     ]
     if len(frames) < 4:
-        frames.extend(_default_visualization_frames(item, variables, start=len(frames) + 1))
+        raise LLMResponseError("可视化演示 JSON 缺少 frames，至少需要 4 帧")
     frames = frames[:12]
 
     controls = [
         _normalize_visualization_control(control, index)
         for index, control in enumerate(_as_list(data.get("controls") or data.get("interactions")), start=1)
     ]
+    if not controls:
+        raise LLMResponseError("可视化演示 JSON 缺少 controls，至少需要 1 个控制器")
     safety_notes = _as_str_list(data.get("safety_notes") or data.get("safety") or data.get("notes"))
+    if not safety_notes:
+        raise LLMResponseError("可视化演示 JSON 缺少 safety_notes")
+    teaching_points = _as_str_list(data.get("teaching_points") or data.get("key_points"))
+    if len(teaching_points) < 3:
+        raise LLMResponseError("可视化演示 JSON 缺少 teaching_points，至少需要 3 条")
+    student_tasks = _as_str_list(data.get("student_tasks") or data.get("tasks"))
+    if len(student_tasks) < 2:
+        raise LLMResponseError("可视化演示 JSON 缺少 student_tasks，至少需要 2 条")
     return {
-        "title": _first_text(data.get("title") or data.get("name"), f"{item.title} 互动演示"),
-        "demo_type": _normalize_demo_type(_first_text(data.get("demo_type") or data.get("type"), "knowledge_flow")),
-        "learning_goal": _first_text(data.get("learning_goal") or data.get("goal"), item.objective or package.learning_summary),
-        "description": _first_text(data.get("description") or data.get("summary"), package.learning_summary),
+        "title": _require_text(data.get("title") or data.get("name"), "visualization.title"),
+        "demo_type": _normalize_demo_type(_require_text(data.get("demo_type") or data.get("type"), "visualization.demo_type")),
+        "learning_goal": _require_text(data.get("learning_goal") or data.get("goal"), "visualization.learning_goal"),
+        "description": _require_text(data.get("description") or data.get("summary"), "visualization.description"),
         "variables": variables,
         "frames": frames,
         "controls": controls,
-        "teaching_points": _ensure_min_str_list(data.get("teaching_points") or data.get("key_points"), item.knowledge_points or [item.title], 3)[:8],
-        "student_tasks": _ensure_min_str_list(
-            data.get("student_tasks") or data.get("tasks"),
-            [question.prompt for question in package.guiding_questions],
-            2,
-        )[:6],
+        "teaching_points": teaching_points[:8],
+        "student_tasks": student_tasks[:6],
         "safety_notes": safety_notes,
     }
 
 
 def _normalize_visualization_variable(raw: Any) -> str:
     if isinstance(raw, dict):
-        return _first_text(raw.get("label") or raw.get("name") or raw.get("title") or raw.get("id"), "")
+        return _require_text(raw.get("label") or raw.get("name") or raw.get("title") or raw.get("id"), "visualization.variables[]")
     return str(raw).strip()
 
 
 def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -> dict:
-    frame = raw if isinstance(raw, dict) else {"narrative": str(raw)}
-    label = _first_text(frame.get("label") or frame.get("title") or frame.get("name"), "")
-    if not label:
-        step_value = frame.get("t") or frame.get("time") or frame.get("step") or index
-        label = f"Step {step_value}"
-    narrative = _first_text(
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"可视化演示 JSON frames[{index}] 必须是对象")
+    frame = raw
+    label = _require_text(frame.get("label") or frame.get("title") or frame.get("name"), f"visualization.frames[{index}].label")
+    narrative = _require_text(
         frame.get("narrative") or frame.get("description") or frame.get("explanation") or frame.get("text") or frame.get("caption"),
-        f"观察 {variables[(index - 1) % max(len(variables), 1)] if variables else '当前状态'} 的变化。",
+        f"visualization.frames[{index}].narrative",
     )
     raw_metrics = frame.get("metrics") if isinstance(frame.get("metrics"), dict) else {}
     metrics = _numeric_metrics(raw_metrics)
@@ -1012,21 +1019,21 @@ def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -
         if metric is not None:
             metrics[str(key)] = metric
     if not metrics:
-        metrics = {f"progress_{index}": min(1.0, 0.18 * index)}
+        raise LLMResponseError(f"可视化演示 JSON frames[{index}] 缺少可渲染的 metrics 或数值状态")
     return {"label": label, "metrics": metrics, "narrative": narrative}
 
 
 def _normalize_visualization_control(raw: Any, index: int) -> dict:
-    control = raw if isinstance(raw, dict) else {"label": str(raw)}
-    name = _first_text(control.get("name") or control.get("id") or control.get("type"), f"control_{index}")
-    default_value = control.get("default_value", control.get("default", 0.5))
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"可视化演示 JSON controls[{index}] 必须是对象")
+    control = raw
     return {
-        "name": name,
-        "label": _first_text(control.get("label") or control.get("title"), name),
-        "min_value": _float_or_default(control.get("min_value") or control.get("min"), 0),
-        "max_value": _float_or_default(control.get("max_value") or control.get("max"), 1),
-        "default_value": _float_or_default(default_value, 0.5),
-        "description": _first_text(control.get("description") or control.get("help"), ""),
+        "name": _require_text(control.get("name") or control.get("id") or control.get("type"), f"visualization.controls[{index}].name"),
+        "label": _require_text(control.get("label") or control.get("title"), f"visualization.controls[{index}].label"),
+        "min_value": _require_metric(control.get("min_value", control.get("min")), f"visualization.controls[{index}].min_value"),
+        "max_value": _require_metric(control.get("max_value", control.get("max")), f"visualization.controls[{index}].max_value"),
+        "default_value": _require_metric(control.get("default_value", control.get("default")), f"visualization.controls[{index}].default_value"),
+        "description": _require_text(control.get("description") or control.get("help"), f"visualization.controls[{index}].description"),
     }
 
 
@@ -1072,32 +1079,11 @@ def _metric_value(value: Any) -> Optional[float]:
     return None
 
 
-def _float_or_default(value: Any, fallback: float) -> float:
+def _require_metric(value: Any, field_path: str) -> float:
     metric = _metric_value(value)
-    return fallback if metric is None else metric
-
-
-def _default_visualization_frames(item: LearningSyllabusItem, variables: list[str], start: int = 1) -> list[dict]:
-    values = variables or [item.title, "理解", "练习", "复盘"]
-    frames: list[dict] = []
-    for offset in range(start, 5):
-        focus = values[(offset - 1) % len(values)]
-        frames.append({
-            "label": f"Step {offset}",
-            "metrics": {f"progress_{offset}": min(1.0, offset / 4)},
-            "narrative": f"观察 {focus} 在学习流程中的作用，并记录它与当前学习项的关系。",
-        })
-    return frames
-
-
-def _ensure_min_str_list(value: Any, fallback: Any, minimum: int) -> list[str]:
-    result = _as_str_list(value)
-    if len(result) >= minimum:
-        return result
-    result.extend(_as_str_list(fallback))
-    while len(result) < minimum:
-        result.append("结合当前课堂内容完成一次解释、验证和复盘。")
-    return result
+    if metric is None:
+        raise LLMResponseError(f"模型 JSON 字段 {field_path} 必须是可解析数值")
+    return metric
 
 
 def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo: _VisualizationDemo) -> Path:
@@ -1364,26 +1350,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
 
 
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
-    system_prompt = (
-        "你是 OpenMAIC 风格的多智能体课程生成系统，负责生成可导出 PPT 的课堂资源、例题、实操任务和复盘问题。"
-        "只输出 JSON，不要 Markdown。"
-    )
-    user_prompt = (
-        "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式：slides、quizzes、interactive/practice、PBL/reflection。\n"
-        "必须输出这些顶层字段：title, learning_summary, slides, quiz, practice, reflection_prompts, safety_notes。\n"
-        "slides 每项必须包含 title, bullets, speaker_notes。quiz 每项必须包含 id, prompt, answer, explanation。\n"
-        "practice 必须包含 title, steps, expected_artifact, acceptance_criteria。\n"
-        f"项目：{project.title}\n"
-        f"研究方向：{project.research_direction}\n"
-        f"学习目标：{project.learning_goal}\n"
-        f"学习项：{item.title}\n"
-        f"学习项目标：{item.objective}\n"
-        f"知识点：{item.knowledge_points}\n"
-        f"完成标准：{item.completion_criteria}\n"
-        f"评估方式：{item.assessment_method}\n"
-        f"补充要求：{instruction}\n"
-        "请生成 5-9 页 slides、2-5 道 quiz、1 个 practice、至少 3 条 reflection_prompts。"
-    )
+    mode_hint = _classroom_mode_hint(project, item)
     system_prompt = (
         "你是面向高校学生的 OpenMAIC 风格多智能体课堂生成系统。"
         "只输出严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。"
@@ -1403,6 +1370,14 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "readings: 2-5 项，每项包含 title, why, source, keywords。\n"
         "quiz: 2-5 项，每项包含 id, prompt, answer, explanation。\n"
         "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
+        "reflection_prompts: 3-6 条。safety_notes: 至少 1 条。\n"
+        "严禁省略字段，严禁只返回 slides。字段缺失会被系统直接判定为生成失败。\n"
+        "如果某字段暂时无法确定，必须基于学习项生成可执行内容；不得返回空字符串、空数组或占位符。\n"
+        "文献综述模式必须给出论文/资料列表、摘要要点、来源字段、对比矩阵和阅读任务；不得编造已发表事实。\n"
+        "选题凝练模式必须形成具体题目、研究问题、方法边界、数据与指标、预期贡献和不可做事项。\n"
+        "实验助手模式必须生成技术路线、数据采集方案、评价指标、实验变量、图表规范建议和阶段计划。\n"
+        "论文写作模式必须围绕课程论文结构、引用规范、图表规范和防幻觉边界设计练习。\n"
+        "模拟答辩模式必须在 slides/guiding_questions/quiz/practice/reflection_prompts 中体现开题、中期、答辩问题、追问、评分和修改建议。\n"
         f"项目：{project.title}\n"
         f"研究方向：{project.research_direction}\n"
         f"学习目标：{project.learning_goal}\n"
@@ -1412,6 +1387,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"关联资料：{item.related_documents}\n"
         f"完成标准：{item.completion_criteria}\n"
         f"评估方式：{item.assessment_method}\n"
+        f"mode_hint：{mode_hint}\n"
         f"补充要求：{instruction}\n"
     )
     raw = _qwen_chat_raw_json(system_prompt, user_prompt)
@@ -1420,6 +1396,31 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         return _ClassroomPackage.model_validate(normalized)
     except Exception as exc:
         raise LLMResponseError(f"课堂包 JSON 归一化后仍未通过结构校验：{exc}") from exc
+
+
+def _classroom_mode_hint(project: LearningProject, item: LearningSyllabusItem) -> str:
+    text = " ".join(
+        [
+            project.title,
+            project.research_direction,
+            project.learning_goal,
+            item.title,
+            item.item_type,
+            " ".join(item.classroom_types or []),
+            " ".join(item.knowledge_points or []),
+        ]
+    ).lower()
+    if any(keyword in text for keyword in ["答辩", "defense", "interview", "面试"]):
+        return "mock_defense"
+    if any(keyword in text for keyword in ["实验助手", "experiment", "数据采集", "技术路线", "变量"]):
+        return "experiment_assistant"
+    if any(keyword in text for keyword in ["选题", "topic", "研究问题"]):
+        return "topic_selection"
+    if any(keyword in text for keyword in ["文献", "literature", "综述", "paper"]):
+        return "literature_review"
+    if any(keyword in text for keyword in ["论文", "写作", "格式", "引用"]):
+        return "paper_writing"
+    return "general_ai4s_lesson"
 
 
 def _qwen_chat_raw_json(system_prompt: str, user_prompt: str) -> Any:
@@ -1478,211 +1479,194 @@ def _extract_raw_json(text: str) -> Any:
 
 
 def _normalize_classroom_package(raw: Any, project: LearningProject, item: LearningSyllabusItem) -> dict:
-    data = raw if isinstance(raw, dict) else {"slides": raw if isinstance(raw, list) else []}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON 顶层必须是对象")
+    data = raw
     concept_cards = [_normalize_concept_card(value, item) for value in _as_list(data.get("concept_cards") or data.get("concepts"))]
-    if not concept_cards:
-        concept_cards = _default_concept_cards(item)
+    if len(concept_cards) < 3:
+        raise LLMResponseError("课堂包 JSON 缺少 concept_cards，至少需要 3 张概念卡")
     guiding_questions = [_normalize_guiding_question(value, item) for value in _as_list(data.get("guiding_questions") or data.get("questions_to_think"))]
-    if not guiding_questions:
-        guiding_questions = _default_guiding_questions(item)
+    if len(guiding_questions) < 3:
+        raise LLMResponseError("课堂包 JSON 缺少 guiding_questions，至少需要 3 个引导问题")
     readings = [_normalize_reading(value, item) for value in _as_list(data.get("readings") or data.get("resources"))]
+    if len(readings) < 2:
+        raise LLMResponseError("课堂包 JSON 缺少 readings，至少需要 2 条阅读资源")
     slides = [_normalize_slide(slide, index) for index, slide in enumerate(_as_list(data.get("slides") or data.get("ppt") or data.get("deck")), start=1)]
     if len(slides) < 5:
-        slides.extend(_fallback_slides(project, item, start=len(slides) + 1))
+        raise LLMResponseError("课堂包 JSON 缺少 slides，至少需要 5 页")
     slides = slides[:9]
 
     quiz_raw = data.get("quiz") or data.get("quizzes") or data.get("questions") or data.get("exercises")
     quiz = [_normalize_quiz(question, index, item) for index, question in enumerate(_as_list(quiz_raw), start=1)]
     if len(quiz) < 2:
-        quiz.extend(_fallback_quiz(item, start=len(quiz) + 1))
+        raise LLMResponseError("课堂包 JSON 缺少 quiz，至少需要 2 道题")
     quiz = quiz[:5]
 
-    practice = _normalize_practice(data.get("practice") or data.get("interactive") or data.get("lab") or {}, item)
+    practice_source = data.get("practice") or data.get("interactive") or data.get("lab")
+    if practice_source is None:
+        raise LLMResponseError("课堂包 JSON 缺少 practice")
+    practice = _normalize_practice(practice_source, item)
     reflection_prompts = _as_str_list(data.get("reflection_prompts") or data.get("reflection") or data.get("pbl"))
     if len(reflection_prompts) < 3:
-        reflection_prompts.extend([
-            f"解释本节 {item.title} 与项目目标的关系。",
-            "列出一个已经掌握的证据和一个仍然不确定的问题。",
-            "写出下一步要验证或复现的具体行动。",
-        ])
+        raise LLMResponseError("课堂包 JSON 缺少 reflection_prompts，至少需要 3 条")
+    safety_notes = _as_str_list(data.get("safety_notes") or data.get("notes"))
+    if not safety_notes:
+        raise LLMResponseError("课堂包 JSON 缺少 safety_notes")
     return {
-        "title": _first_text(data.get("title"), f"{item.title} 课堂课件"),
-        "learning_summary": _first_text(data.get("learning_summary") or data.get("summary"), item.objective),
+        "title": _require_text(data.get("title"), "classroom.title"),
+        "learning_summary": _require_text(data.get("learning_summary") or data.get("summary"), "classroom.learning_summary"),
         "slides": slides,
         "concept_cards": concept_cards[:6],
-        "diagram": _normalize_diagram(data.get("diagram") or data.get("mermaid") or {}, item),
+        "diagram": _normalize_diagram(data.get("diagram") or data.get("mermaid"), item),
         "guiding_questions": guiding_questions[:6],
-        "voice_script": _normalize_voice_script(data.get("voice_script") or data.get("script") or {}, item),
-        "reproduction_demo": _normalize_reproduction_demo(data.get("reproduction_demo") or data.get("demo") or {}, item),
+        "voice_script": _normalize_voice_script(data.get("voice_script") or data.get("script"), item),
+        "reproduction_demo": _normalize_reproduction_demo(data.get("reproduction_demo") or data.get("demo"), item),
         "readings": readings[:5],
         "quiz": quiz,
         "practice": practice,
         "reflection_prompts": reflection_prompts[:6],
-        "safety_notes": _as_str_list(data.get("safety_notes") or data.get("notes")),
+        "safety_notes": safety_notes,
     }
 
 
 def _normalize_slide(raw: Any, index: int) -> dict:
-    slide = raw if isinstance(raw, dict) else {"title": f"Slide {index}", "bullets": _as_str_list(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"课堂包 JSON slides[{index}] 必须是对象")
+    slide = raw
     bullets = _as_str_list(slide.get("bullets") or slide.get("points") or slide.get("content") or slide.get("items"))
     if len(bullets) < 2:
-        bullets.extend(["核心概念与背景", "关键方法与应用场景"])
+        raise LLMResponseError(f"课堂包 JSON slides[{index}].bullets 至少需要 2 条")
     return {
-        "title": _first_text(slide.get("title"), f"课堂要点 {index}"),
+        "title": _require_text(slide.get("title"), f"classroom.slides[{index}].title"),
         "bullets": bullets[:6],
-        "speaker_notes": _first_text(slide.get("speaker_notes") or slide.get("notes"), "结合学生项目目标讲解本页内容。"),
+        "speaker_notes": _require_text(slide.get("speaker_notes") or slide.get("notes"), f"classroom.slides[{index}].speaker_notes"),
     }
 
 
 def _normalize_quiz(raw: Any, index: int, item: LearningSyllabusItem) -> dict:
-    question = raw if isinstance(raw, dict) else {"prompt": str(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"课堂包 JSON quiz[{index}] 必须是对象")
+    question = raw
     return {
-        "id": _first_text(question.get("id"), f"q{index}"),
-        "prompt": _first_text(question.get("prompt") or question.get("question"), f"请解释 {item.title} 的核心思想。"),
-        "answer": _first_text(question.get("answer") or question.get("expected_answer"), item.knowledge_points[0] if item.knowledge_points else item.title),
-        "explanation": _first_text(question.get("explanation") or question.get("analysis"), "答案需要覆盖核心概念、适用场景和关键限制。"),
+        "id": _require_text(question.get("id"), f"classroom.quiz[{index}].id"),
+        "prompt": _require_text(question.get("prompt") or question.get("question"), f"classroom.quiz[{index}].prompt"),
+        "answer": _require_text(question.get("answer") or question.get("expected_answer"), f"classroom.quiz[{index}].answer"),
+        "explanation": _require_text(question.get("explanation") or question.get("analysis"), f"classroom.quiz[{index}].explanation"),
     }
 
 
 def _normalize_practice(raw: Any, item: LearningSyllabusItem) -> dict:
-    practice = raw if isinstance(raw, dict) else {"steps": _as_str_list(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON practice 必须是对象")
+    practice = raw
     steps = _as_str_list(practice.get("steps") or practice.get("tasks") or practice.get("workflow"))
     if len(steps) < 3:
-        steps.extend([
-            f"搭建与 {item.title} 相关的最小实验环境。",
-            "运行一个可复现的示例并记录输入输出。",
-            "对照完成标准整理结果和问题。",
-        ])
+        raise LLMResponseError("课堂包 JSON practice.steps 至少需要 3 条")
     criteria = _as_str_list(practice.get("acceptance_criteria") or practice.get("criteria"))
     if len(criteria) < 2:
-        criteria.extend(["提交可复现步骤", "说明结果是否满足学习目标"])
+        raise LLMResponseError("课堂包 JSON practice.acceptance_criteria 至少需要 2 条")
     return {
-        "title": _first_text(practice.get("title") or practice.get("name"), f"{item.title} 实操任务"),
+        "title": _require_text(practice.get("title") or practice.get("name"), "classroom.practice.title"),
         "steps": steps[:8],
-        "expected_artifact": _first_text(practice.get("expected_artifact") or practice.get("artifact"), "实操报告、关键结果或可运行产物链接"),
+        "expected_artifact": _require_text(practice.get("expected_artifact") or practice.get("artifact"), "classroom.practice.expected_artifact"),
         "acceptance_criteria": criteria[:6],
     }
 
 
 def _normalize_concept_card(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"name": str(raw)}
-    name = _first_text(value.get("name") or value.get("title"), item.title)
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON concept_cards[] 必须是对象")
+    value = raw
+    name = _require_text(value.get("name") or value.get("title"), "classroom.concept_cards[].name")
     return {
         "name": name,
-        "explanation": _first_text(value.get("explanation") or value.get("description"), f"解释 {name} 的核心含义。"),
-        "scenario": _first_text(value.get("scenario") or value.get("use_case"), f"用于理解 {item.title} 的具体场景。"),
-        "misconception": _first_text(value.get("misconception") or value.get("pitfall"), "注意不要只记结论，需要说明适用条件。"),
-        "relation_to_project": _first_text(value.get("relation_to_project") or value.get("project_relation"), item.objective or item.title),
+        "explanation": _require_text(value.get("explanation") or value.get("description"), "classroom.concept_cards[].explanation"),
+        "scenario": _require_text(value.get("scenario") or value.get("use_case"), "classroom.concept_cards[].scenario"),
+        "misconception": _require_text(value.get("misconception") or value.get("pitfall"), "classroom.concept_cards[].misconception"),
+        "relation_to_project": _require_text(value.get("relation_to_project") or value.get("project_relation"), "classroom.concept_cards[].relation_to_project"),
     }
 
 
 def _normalize_diagram(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"mermaid": str(raw)}
-    mermaid = _first_text(value.get("mermaid") or value.get("source"), "")
-    if not mermaid:
-        mermaid = f"flowchart TD\n  A[{item.title}] --> B[核心概念]\n  B --> C[例题验证]\n  C --> D[实操复现]\n  D --> E[复盘改进]"
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON diagram 必须是对象")
+    value = raw
+    mermaid = _require_text(value.get("mermaid") or value.get("source"), "classroom.diagram.mermaid")
     return {
-        "title": _first_text(value.get("title"), f"{item.title} 学习图解"),
-        "diagram_type": _first_text(value.get("diagram_type") or value.get("type"), "mermaid"),
+        "title": _require_text(value.get("title"), "classroom.diagram.title"),
+        "diagram_type": _require_text(value.get("diagram_type") or value.get("type"), "classroom.diagram.diagram_type"),
         "mermaid": mermaid,
-        "explanation": _first_text(value.get("explanation"), "沿着概念、验证、实操和复盘推进学习。"),
+        "explanation": _require_text(value.get("explanation"), "classroom.diagram.explanation"),
     }
 
 
 def _normalize_voice_script(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"one_minute": str(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON voice_script 必须是对象")
+    value = raw
     segments = _as_str_list(value.get("segments"))
     if not segments:
-        segments = [item.objective or item.title, "用例题检查理解", "用实操形成证据"]
+        raise LLMResponseError("课堂包 JSON voice_script.segments 至少需要 1 条")
     return {
-        "one_minute": _first_text(value.get("one_minute"), f"这一节聚焦 {item.title}，先抓住结论，再通过例题和实操验证。"),
-        "five_minutes": _first_text(value.get("five_minutes"), f"围绕 {item.title} 展开：背景、关键概念、常见误区、实践步骤和复盘标准。"),
+        "one_minute": _require_text(value.get("one_minute"), "classroom.voice_script.one_minute"),
+        "five_minutes": _require_text(value.get("five_minutes"), "classroom.voice_script.five_minutes"),
         "segments": segments[:8],
     }
 
 
 def _normalize_reproduction_demo(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"task": str(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON reproduction_demo 必须是对象")
+    value = raw
     steps = _as_str_list(value.get("steps"))
     if not steps:
-        steps = ["准备最小输入数据", "运行核心流程", "记录输出并解释结果"]
+        raise LLMResponseError("课堂包 JSON reproduction_demo.steps 至少需要 1 条")
+    parameters = _as_str_list(value.get("parameters"))
+    if not parameters:
+        raise LLMResponseError("课堂包 JSON reproduction_demo.parameters 至少需要 1 条")
+    common_errors = _as_str_list(value.get("common_errors") or value.get("errors"))
+    if not common_errors:
+        raise LLMResponseError("课堂包 JSON reproduction_demo.common_errors 至少需要 1 条")
+    report_suggestions = _as_str_list(value.get("report_suggestions") or value.get("report"))
+    if not report_suggestions:
+        raise LLMResponseError("课堂包 JSON reproduction_demo.report_suggestions 至少需要 1 条")
     return {
-        "title": _first_text(value.get("title") or value.get("name"), f"{item.title} 复现 Demo"),
-        "task": _first_text(value.get("task"), item.completion_criteria or item.objective or item.title),
-        "input_format": _first_text(value.get("input_format"), "文本、表格或代码输入，按课堂要求准备。"),
-        "code_skeleton": _first_text(value.get("code_skeleton") or value.get("code"), ""),
+        "title": _require_text(value.get("title") or value.get("name"), "classroom.reproduction_demo.title"),
+        "task": _require_text(value.get("task"), "classroom.reproduction_demo.task"),
+        "input_format": _require_text(value.get("input_format"), "classroom.reproduction_demo.input_format"),
+        "code_skeleton": str(value.get("code_skeleton") or value.get("code") or ""),
         "steps": steps[:8],
-        "expected_output": _first_text(value.get("expected_output"), "得到可解释的运行结果或实验记录。"),
-        "parameters": _as_str_list(value.get("parameters"))[:8],
-        "common_errors": _as_str_list(value.get("common_errors") or value.get("errors"))[:8],
-        "report_suggestions": _as_str_list(value.get("report_suggestions") or value.get("report"))[:8],
+        "expected_output": _require_text(value.get("expected_output"), "classroom.reproduction_demo.expected_output"),
+        "parameters": parameters[:8],
+        "common_errors": common_errors[:8],
+        "report_suggestions": report_suggestions[:8],
     }
 
 
 def _normalize_guiding_question(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"prompt": str(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON guiding_questions[] 必须是对象")
+    value = raw
     return {
-        "prompt": _first_text(value.get("prompt") or value.get("question"), f"你如何判断自己已经理解 {item.title}？"),
-        "intent": _first_text(value.get("intent"), "引导学生主动解释核心概念。"),
-        "hint": _first_text(value.get("hint"), "可以结合一个具体输入、输出或反例说明。"),
+        "prompt": _require_text(value.get("prompt") or value.get("question"), "classroom.guiding_questions[].prompt"),
+        "intent": _require_text(value.get("intent"), "classroom.guiding_questions[].intent"),
+        "hint": _require_text(value.get("hint"), "classroom.guiding_questions[].hint"),
     }
 
 
 def _normalize_reading(raw: Any, item: LearningSyllabusItem) -> dict:
-    value = raw if isinstance(raw, dict) else {"title": str(raw)}
+    if not isinstance(raw, dict):
+        raise LLMResponseError("课堂包 JSON readings[] 必须是对象")
+    value = raw
+    keywords = _as_str_list(value.get("keywords"))
+    if not keywords:
+        raise LLMResponseError("课堂包 JSON readings[].keywords 至少需要 1 条")
     return {
-        "title": _first_text(value.get("title"), item.title),
-        "why": _first_text(value.get("why") or value.get("reason"), "用于扩展课堂知识来源。"),
-        "source": _first_text(value.get("source") or value.get("uri"), "课程知识库 / 模型推理建议"),
-        "keywords": _as_str_list(value.get("keywords") or item.knowledge_points)[:8],
+        "title": _require_text(value.get("title"), "classroom.readings[].title"),
+        "why": _require_text(value.get("why") or value.get("reason"), "classroom.readings[].why"),
+        "source": _require_text(value.get("source") or value.get("uri"), "classroom.readings[].source"),
+        "keywords": keywords[:8],
     }
-
-
-def _default_concept_cards(item: LearningSyllabusItem) -> list[dict]:
-    points = item.knowledge_points or [item.title]
-    return [
-        {
-            "name": point,
-            "explanation": f"{point} 是理解 {item.title} 的关键概念。",
-            "scenario": item.objective or "用于当前学习项的例题和实操。",
-            "misconception": "不要脱离前提条件直接套用结论。",
-            "relation_to_project": item.completion_criteria or item.title,
-        }
-        for point in points[:4]
-    ]
-
-
-def _default_guiding_questions(item: LearningSyllabusItem) -> list[dict]:
-    return [
-        {"prompt": f"{item.title} 主要解决什么问题？", "intent": "确认学习目标", "hint": "先说应用场景，再说方法。"},
-        {"prompt": "如果输入条件变化，结论是否仍然成立？", "intent": "检查边界条件", "hint": "给出一个反例或限制。"},
-        {"prompt": "你能用实操结果证明自己理解了吗？", "intent": "连接实践证据", "hint": "引用输出、截图或指标。"},
-    ]
-
-
-def _fallback_slides(project: LearningProject, item: LearningSyllabusItem, start: int = 1) -> list[dict]:
-    base = [
-        ("学习目标与任务背景", [item.objective, project.learning_goal]),
-        ("核心知识点", item.knowledge_points or [item.title, project.research_direction]),
-        ("方法拆解", [item.recommendation_reason, item.completion_criteria]),
-        ("例题与误区", [item.assessment_method, "说明常见错误和检查方式"]),
-        ("实操与复盘", ["完成实践任务", "提交证据和下一步行动"]),
-    ]
-    return [
-        {"title": title, "bullets": bullets[:6], "speaker_notes": "根据当前学习项展开讲解。"}
-        for title, bullets in base[start - 1 :]
-    ]
-
-
-def _fallback_quiz(item: LearningSyllabusItem, start: int = 1) -> list[dict]:
-    questions = [
-        {"prompt": f"{item.title} 主要解决什么问题？", "answer": item.title},
-        {"prompt": f"完成 {item.title} 后应该能产出什么证据？", "answer": item.completion_criteria or item.assessment_method or item.title},
-    ]
-    return [
-        {"id": f"q{start + index}", "prompt": q["prompt"], "answer": q["answer"], "explanation": "围绕学习目标和完成标准作答。"}
-        for index, q in enumerate(questions)
-    ]
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -1706,6 +1690,8 @@ def _as_str_list(value: Any) -> list[str]:
     return result
 
 
-def _first_text(value: Any, fallback: str) -> str:
+def _require_text(value: Any, field_path: str) -> str:
     texts = _as_str_list(value)
-    return texts[0] if texts else fallback
+    if not texts:
+        raise LLMResponseError(f"模型 JSON 缺少必填字段 {field_path}")
+    return texts[0]

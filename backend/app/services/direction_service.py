@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.learning import (
@@ -38,7 +38,34 @@ from app.services.knowledge_service import search_knowledge
 from app.services.llm_client import qwen_chat_json
 
 
-DIRECTION_TEMPLATE_SEEDS: list[dict] = []
+DIRECTION_TEMPLATE_SEEDS: list[dict] = [
+    {
+        "title": "AI4S 课程论文完整训练",
+        "description": "从一个可验证的 AI4S 方向出发，完成资料检索、问题定义、实验设计、论文写作和答辩演练。",
+        "suitable_users": ["需要完成课程论文的学生", "需要将工程项目整理为论文表达的学生"],
+        "prerequisites": ["基础编程能力", "机器学习入门", "阅读英文摘要的能力"],
+        "recommended_period": "3-6 周",
+        "resource_types": ["课程知识库", "论文综述", "实验助手", "写作助手", "模拟答辩"],
+        "stage_outputs": ["选题卡片", "文献矩阵", "实验计划", "论文大纲", "答辩问题清单"],
+        "related_chapters": ["科研选题与文献综述", "论文写作与模拟答辩"],
+        "related_documents": ["A3 赛题要求摘要", "课程论文写作与引用规范"],
+        "tags": ["AI4S", "论文写作", "科研训练"],
+        "is_teacher_recommended": True,
+    },
+    {
+        "title": "通用科研项目学习路径",
+        "description": "用户输入任意科研方向后，由 AI 生成文献综述、选题凝练、实验方案、论文写作和模拟答辩路径。",
+        "suitable_users": ["希望从零搭建科研项目的学生", "需要完成课程项目或竞赛方案的学生"],
+        "prerequisites": ["基础编程能力", "基础论文阅读能力", "愿意补充真实资料来源"],
+        "recommended_period": "3-8 周",
+        "resource_types": ["综述论文清单", "动态课件", "实验路线", "数据采集表", "论文写作模板", "模拟答辩题库"],
+        "stage_outputs": ["带来源的综述阅读矩阵", "具体选题与研究问题", "技术路线图和实验方案", "课程论文初稿", "答辩问答记录"],
+        "related_chapters": ["科研选题与文献综述", "数据采集与实验设计", "论文写作与模拟答辩"],
+        "related_documents": ["科研学习通用资料规范", "实验助手通用检查清单", "课程论文写作与引用规范"],
+        "tags": ["科研项目", "课程论文", "多智能体"],
+        "is_teacher_recommended": True,
+    },
+]
 
 
 class ProjectSuggestion(BaseModel):
@@ -79,12 +106,42 @@ class DirectionAgentResult(BaseModel):
 
 
 def seed_direction_templates(db: Session) -> None:
-    return
+    seed_titles = [seed["title"] for seed in DIRECTION_TEMPLATE_SEEDS]
+    for stale in db.scalars(
+        select(ResearchDirectionTemplate).where(
+            ResearchDirectionTemplate.created_by_user_id.is_(None),
+            ResearchDirectionTemplate.is_teacher_recommended.is_(True),
+            ResearchDirectionTemplate.title.notin_(seed_titles),
+        )
+    ).all():
+        reference_count = db.scalar(
+            select(func.count(ResearchDirection.id)).where(ResearchDirection.template_id == stale.id)
+        ) or 0
+        if reference_count:
+            stale.is_teacher_recommended = False
+            stale.tags = sorted({*(stale.tags or []), "archived"})
+        else:
+            db.delete(stale)
+    for seed in DIRECTION_TEMPLATE_SEEDS:
+        template = db.scalar(select(ResearchDirectionTemplate).where(ResearchDirectionTemplate.title == seed["title"]))
+        if template is None:
+            db.add(ResearchDirectionTemplate(**seed))
+        else:
+            for key, value in seed.items():
+                setattr(template, key, value)
+    db.commit()
 
 
 def list_direction_templates(db: Session) -> list[DirectionTemplateRead]:
     seed_direction_templates(db)
-    rows = db.scalars(select(ResearchDirectionTemplate).order_by(ResearchDirectionTemplate.id)).all()
+    rows = db.scalars(
+        select(ResearchDirectionTemplate)
+        .where(
+            (ResearchDirectionTemplate.created_by_user_id.is_not(None))
+            | (ResearchDirectionTemplate.is_teacher_recommended.is_(True))
+        )
+        .order_by(ResearchDirectionTemplate.id)
+    ).all()
     return [DirectionTemplateRead.model_validate(row) for row in rows]
 
 

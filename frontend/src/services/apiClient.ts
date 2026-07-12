@@ -758,7 +758,7 @@ export function listResearchToolRuns() {
 
 export function runResearchTool(payload: {
   project_id?: number | null
-  tool_type: 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce'
+  tool_type: 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce' | 'topic' | 'defense' | 'paper_reading'
   input_text: string
   extra_requirement?: string
 }) {

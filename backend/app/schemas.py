@@ -813,7 +813,7 @@ class LiteraturePaperRead(BaseModel):
 
 class ResearchToolRunRequest(BaseModel):
     project_id: Optional[int] = None
-    tool_type: str = Field(..., pattern="^(polish|format|citation|review|method|experiment|reproduce)$")
+    tool_type: str = Field(..., pattern="^(polish|format|citation|review|method|experiment|reproduce|topic|defense|paper_reading)$")
     input_text: str = Field(..., min_length=2, max_length=12000)
     extra_requirement: str = Field(default="", max_length=3000)
 

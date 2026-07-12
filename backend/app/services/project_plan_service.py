@@ -22,6 +22,13 @@ from app.services.knowledge_service import COURSE_TITLE, search_knowledge
 from app.services.llm_client import qwen_chat_json, qwen_chat_stream_text
 
 
+class RecommendedResource(BaseModel):
+    title: str
+    url: str = ""
+    source: str = ""
+    reason: str = ""
+
+
 class ProjectPlanAgentResult(BaseModel):
     title: str
     summary: str
@@ -30,6 +37,7 @@ class ProjectPlanAgentResult(BaseModel):
     key_questions: list[str]
     knowledge_points: list[str]
     resource_plan: list[str]
+    recommended_resources: list[RecommendedResource] = Field(default_factory=list)
     milestones: list[str]
     expected_outputs: list[str]
     risk_notes: list[str]
@@ -119,6 +127,7 @@ def _build_project_plan_prompt(
 6. 不要给出预设模板答案，不要声称已完成真实实验或已引用不存在论文。
 7. 如果用户要求代写、虚构实验、虚构引用，必须写入 risk_notes 并改成合规学习支持方案。
 
+8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；优先使用可公开访问的课程、论文、文档、工具官网或资料来源链接。没有可靠链接时 url 留空，不要编造不存在的链接。
 schema:
 {json.dumps(ProjectPlanAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
 """

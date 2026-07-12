@@ -28,8 +28,8 @@ COURSE_CHAPTERS = [
     "Python 数据处理基础",
     "机器学习分类任务",
     "深度学习基础",
-    "信号处理与无线感知入门",
-    "WiFi CSI 跌倒检测案例",
+    "数据采集与实验设计",
+    "科研选题与文献综述",
     "实验评价指标与结果分析",
     "课程项目报告与展示规范",
 ]
@@ -40,9 +40,11 @@ KNOWLEDGE_POINTS = [
     "召回率",
     "F1 值",
     "类别不平衡",
-    "CSI 特征",
     "数据集划分",
     "Python 指标计算",
+    "选题凝练",
+    "文献综述",
+    "实验变量控制",
     "实验报告规范",
 ]
 
@@ -87,7 +89,7 @@ def _trace(agent: str, input_summary: str, fn: Callable[[], str]) -> AgentTrace:
 
 
 def create_profile(message: str) -> StudentProfile:
-    weak_points = ["混淆矩阵", "召回率与准确率", "数据集划分", "CSI 特征理解"]
+    weak_points = ["混淆矩阵", "召回率与准确率", "数据集划分", "选题边界"]
     resource_preference = ["讲解文档", "思维导图", "分层练习", "代码案例", "论文导读"]
     cognitive_style = "案例驱动 + 图解说明 + 代码实践"
     practice_level = "Python 基础一般，能阅读简单代码"
@@ -102,19 +104,19 @@ def create_profile(message: str) -> StudentProfile:
 
     return StudentProfile(
         knowledge_base="具备计算机专业基础，机器学习和信号处理知识不系统",
-        learning_goal="完成 AI4S 课程项目并理解 WiFi CSI 跌倒检测案例",
+        learning_goal=message[:120] or "完成 AI4S 课程项目并形成课程论文或实践报告",
         cognitive_style=cognitive_style,
         weak_points=weak_points,
         practice_level=practice_level,
         resource_preference=resource_preference,
         learning_pace="每周 6-8 小时，适合短路径分阶段推进",
-        interest_direction="无线感知与智慧健康 AI4S 应用",
+        interest_direction="由用户输入的科研方向动态决定",
         mastery={
             "混淆矩阵": 35,
             "召回率": 40,
             "准确率": 55,
             "数据集划分": 42,
-            "CSI 特征": 38,
+            "选题凝练": 38,
             "Python 指标计算": 58,
         },
     )
@@ -137,11 +139,11 @@ def diagnose_gaps(profile: StudentProfile) -> List[KnowledgeGap]:
             related_points=["数据集划分", "实验评价指标"],
         ),
         KnowledgeGap(
-            id="gap-csi",
-            title="CSI 特征与应用场景连接较弱",
+            id="gap-topic",
+            title="研究方向与方法路线连接较弱",
             severity="medium",
-            evidence="学生关注 WiFi CSI 跌倒检测，但缺少 CSI 振幅/相位与人体活动的关系理解。",
-            related_points=["CSI 特征", "无线感知", "人体活动识别"],
+            evidence="学生描述了研究兴趣，但尚未说明数据来源、方法路线和可验证产出。",
+            related_points=["选题凝练", "文献综述", "技术路线设计"],
         ),
     ]
 
@@ -158,16 +160,16 @@ def plan_path(profile: StudentProfile, gaps: List[KnowledgeGap]) -> List[Learnin
             status="active",
         ),
         LearningStep(
-            id="step-csi",
-            title="理解 WiFi CSI 数据与人体活动识别",
-            objective="能解释 CSI 特征为什么可用于跌倒检测",
-            reason="项目兴趣集中在无线感知，需要先建立 CSI 特征和场景约束的基本认识。",
+            id="step-topic",
+            title="把研究兴趣凝练为具体选题",
+            objective="能说明研究对象、数据来源、方法路线、评价指标和预期产出",
+            reason="项目兴趣需要先转化为可验证、可写作、可答辩的研究问题。",
             resources=["res-reading", "res-video"],
             estimated_minutes=50,
         ),
         LearningStep(
             id="step-code",
-            title="完成跌倒检测评价指标代码实操",
+            title="完成评价指标代码实操",
             objective="能用 Python 计算并解释评价指标",
             reason=f"画像显示学生偏好 {profile.cognitive_style}，代码实践能连接概念和实验结果。",
             resources=["res-code"],
@@ -189,10 +191,10 @@ def generate_resources(profile: StudentProfile) -> List[ResourceCard]:
         ResourceCard(
             id="res-doc",
             type="课程讲解文档",
-            title="召回率、准确率与跌倒检测风险",
+            title="召回率、准确率与少数类漏检风险",
             target_profile=profile.cognitive_style,
             knowledge_points=["混淆矩阵", "召回率", "准确率"],
-            content="用宿舍跌倒检测场景解释漏检风险，强调召回率在安全预警任务中的意义。",
+            content="用高风险少数类识别场景解释漏检风险，强调召回率在风险控制任务中的意义。",
             format_hint="Markdown 讲义",
             sources=["第 7 章 实验评价指标与结果分析"],
             safety_notes=["不替学生生成可直接提交的实验结论"],
@@ -203,7 +205,7 @@ def generate_resources(profile: StudentProfile) -> List[ResourceCard]:
             title="分类评价指标知识图谱",
             target_profile="偏图解理解的学生",
             knowledge_points=["TP/FP/FN/TN", "Precision", "Recall", "F1"],
-            content="graph TD; A[混淆矩阵]-->B[准确率]; A-->C[召回率]; A-->D[精确率]; C-->E[安全预警漏检风险];",
+            content="graph TD; A[混淆矩阵]-->B[准确率]; A-->C[召回率]; A-->D[精确率]; C-->E[少数类漏检风险];",
             format_hint="Mermaid",
             sources=["第 3 章 机器学习分类任务"],
         ),
@@ -220,17 +222,17 @@ def generate_resources(profile: StudentProfile) -> List[ResourceCard]:
         ResourceCard(
             id="res-reading",
             type="拓展阅读材料",
-            title="WiFi CSI 人体活动识别论文导读",
+            title="用户研究方向论文导读",
             target_profile="希望从课程学习过渡到科研入门的学生",
-            knowledge_points=["CSI", "人体活动识别", "无线感知"],
-            content="整理问题背景、常见模型、数据采集难点和可复现实验建议。",
+            knowledge_points=["文献综述", "研究问题", "方法对比"],
+            content="整理问题背景、常见方法、数据采集难点和可复现实验建议。具体论文由用户导入文献库或 AI 检索后补充来源。",
             format_hint="论文导读卡",
-            sources=["第 6 章 WiFi CSI 跌倒检测案例"],
+            sources=["第 6 章 科研选题与文献综述"],
         ),
         ResourceCard(
             id="res-code",
             type="代码类实操案例",
-            title="跌倒检测评价指标 Python 代码骨架",
+            title="分类评价指标 Python 代码骨架",
             target_profile=profile.practice_level,
             knowledge_points=["Python 实践", "指标计算", "实验复现"],
             content="提供 y_true/y_pred 输入、混淆矩阵计算和指标输出的代码骨架。",
@@ -240,17 +242,17 @@ def generate_resources(profile: StudentProfile) -> List[ResourceCard]:
         ResourceCard(
             id="res-video",
             type="多模态教学视频脚本",
-            title="为什么跌倒检测更怕漏检",
+            title="为什么高风险少数类任务更怕漏检",
             target_profile="偏视频和案例说明的学生",
-            knowledge_points=["召回率", "应用风险", "智慧健康"],
-            content="30 秒动画分镜：正常活动、跌倒样本、漏检后果、指标选择。",
+            knowledge_points=["召回率", "应用风险", "类别不平衡"],
+            content="30 秒动画分镜：多数类样本、少数类样本、漏检后果、指标选择。",
             format_hint="视频脚本/动画分镜",
-            sources=["第 6 章 WiFi CSI 跌倒检测案例"],
+            sources=["第 7 章 实验评价指标与结果分析"],
         ),
         ResourceCard(
             id="res-project",
             type="课程项目学习材料",
-            title="WiFi CSI 跌倒检测实验报告检查清单",
+            title="课程项目实验报告检查清单",
             target_profile="目标为课程项目的学生",
             knowledge_points=["实验报告规范", "数据集划分", "评价指标"],
             content="检查背景、数据、方法、指标、对比实验、局限性和引用来源是否完整。",
@@ -265,16 +267,16 @@ def generate_quiz() -> List[QuizQuestion]:
     return [
         QuizQuestion(
             id="q1",
-            prompt="真实跌倒 10 次，模型识别出 8 次。召回率是多少？",
+            prompt="真实正类 10 次，模型识别出 8 次。召回率是多少？",
             options=["60%", "70%", "80%", "90%"],
             answer="80%",
             knowledge_point="召回率",
         ),
         QuizQuestion(
             id="q2",
-            prompt="正常活动样本远多于跌倒样本时，只看准确率最大的风险是什么？",
-            options=["训练更快", "可能掩盖跌倒漏检", "一定过拟合", "无法计算混淆矩阵"],
-            answer="可能掩盖跌倒漏检",
+            prompt="负类样本远多于正类样本时，只看准确率最大的风险是什么？",
+            options=["训练更快", "可能掩盖正类漏检", "一定过拟合", "无法计算混淆矩阵"],
+            answer="可能掩盖正类漏检",
             knowledge_point="类别不平衡",
         ),
         QuizQuestion(
@@ -339,7 +341,7 @@ def _set_profile(target: Dict[str, StudentProfile], message: str) -> str:
 
 def _set_gaps(target: Dict[str, List[KnowledgeGap]], profile: StudentProfile) -> str:
     target["value"] = diagnose_gaps(profile)
-    return "识别混淆矩阵、数据集划分、CSI 特征 3 类短板"
+    return "识别混淆矩阵、数据集划分、选题边界 3 类短板"
 
 
 def _set_path(target: Dict[str, List[LearningStep]], profile: StudentProfile, gaps: List[KnowledgeGap]) -> str:
@@ -364,13 +366,13 @@ def tutor_answer(request: TutorRequest) -> TutorResponse:
 
     return TutorResponse(
         answer=(
-            "在跌倒检测这类安全预警任务中，漏检一次真实跌倒的代价通常高于误报。"
-            "准确率会受到正常样本数量影响，当正常活动远多于跌倒样本时，模型即使漏掉不少跌倒也可能保持较高准确率。"
-            "召回率直接衡量真实跌倒中有多少被识别出来，因此更能反映安全场景的核心风险。"
+            "在高风险少数类识别任务中，漏检一次真实正类的代价通常高于普通误报。"
+            "准确率会受到多数类样本数量影响，当负类样本远多于正类样本时，模型即使漏掉不少正类也可能保持较高准确率。"
+            "召回率直接衡量真实正类中有多少被识别出来，因此更能反映漏检风险。"
         ),
         knowledge_points=["召回率", "准确率", "混淆矩阵", "类别不平衡"],
-        sources=["第 7 章 实验评价指标与结果分析", "第 6 章 WiFi CSI 跌倒检测案例"],
-        follow_up_exercise="给定 10 次真实跌倒中模型识别出 8 次、误报 3 次，计算召回率并解释它的含义。",
+        sources=["第 7 章 实验评价指标与结果分析", "第 3 章 机器学习分类任务"],
+        follow_up_exercise="给定 10 次真实正类中模型识别出 8 次、误报 3 次，计算召回率并解释它的含义。",
         strategy=strategy,
     )
 
@@ -480,7 +482,7 @@ def build_teacher_dashboard() -> TeacherDashboardResponse:
             "混淆矩阵": 3,
             "召回率与准确率": 3,
             "数据集划分": 2,
-            "CSI 特征理解": 2,
+            "选题边界": 2,
         }
         resource_type_distribution = {
             "课程讲解文档": 1,
@@ -503,8 +505,8 @@ def build_teacher_dashboard() -> TeacherDashboardResponse:
         resource_type_distribution=resource_type_distribution,
         at_risk_students=sessions[:5],
         teaching_suggestions=[
-            "下节课优先讲解混淆矩阵与召回率，减少学生在安全预警指标上的误用。",
+            "下节课优先讲解混淆矩阵与召回率，减少学生在少数类识别指标上的误用。",
             "为课程项目补充训练集、验证集、测试集划分示例，强化实验可信度。",
-            "把 WiFi CSI 特征解释做成图解卡片，帮助学生从信号数据过渡到 AI4S 应用。",
+            "把用户研究方向拆成研究问题、数据来源、技术路线和评价指标四张图解卡片。",
         ],
     )

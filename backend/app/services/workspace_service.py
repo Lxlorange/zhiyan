@@ -32,6 +32,7 @@ from app.schemas import (
     WorkspaceOverviewResponse,
 )
 from app.services.llm_client import qwen_chat_json
+from app.services.knowledge_service import search_knowledge
 
 
 PROFILE_ENTRY_LABELS: dict[str, str] = {
@@ -61,6 +62,12 @@ class _ResearchToolOutput(BaseModel):
     structure_suggestions: list[str] = Field(default_factory=list)
     citation_suggestions: list[str] = Field(default_factory=list)
     method_steps: list[str] = Field(default_factory=list)
+    topic_options: list[str] = Field(default_factory=list)
+    final_topic: str = ""
+    experiment_plan: list[str] = Field(default_factory=list)
+    defense_questions: list[dict[str, Any]] = Field(default_factory=list)
+    scoring_rubric: list[str] = Field(default_factory=list)
+    source_notes: list[str] = Field(default_factory=list)
     safety_notes: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
 
@@ -316,16 +323,24 @@ def list_tool_runs(db: Session, user: User) -> list[ResearchToolRunRead]:
 
 
 def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) -> ResearchToolRunRead:
+    source_context = _research_source_context(db, user, request)
     system_prompt = (
         "你是高校科研学习平台的 ResearchToolAgent。"
-        "请严格输出 JSON，帮助学生完成论文修改、引用规范、综述写作、科研方法学习或实验设计。"
-        "不要编造不存在的论文事实；需要提示用户补充来源时写入 safety_notes。"
+        "请严格输出 JSON，帮助学生完成选题凝练、文献综述、实验设计、论文写作、复现规划和模拟答辩。"
+        "必须优先使用 source_context 中给出的来源；不要编造不存在的论文、数据或实验结果；需要提示用户补充来源时写入 safety_notes。"
     )
     user_prompt = (
         f"工具类型：{request.tool_type}\n"
         f"输入内容：{request.input_text}\n"
         f"补充要求：{request.extra_requirement}\n"
-        "输出字段：title, revised_text, diagnosis, structure_suggestions, citation_suggestions, method_steps, safety_notes, next_actions。"
+        f"source_context:\n{source_context}\n\n"
+        "工具行为要求："
+        "topic 输出 3-5 个可行选题、最终具体选题、依据、风险和下一步；"
+        "paper_reading/review 输出论文摘要矩阵、研究脉络、方法对比、局限性和带来源的综述段落建议；"
+        "experiment 输出技术路线、数据采集方案、评价指标、实验变量、图表规范建议和阶段计划；"
+        "defense 输出开题/中期/答辩问题、追问、参考回答要点、评分量表和修改建议。"
+        "输出字段：title, revised_text, diagnosis, structure_suggestions, citation_suggestions, method_steps, "
+        "topic_options, final_topic, experiment_plan, defense_questions, scoring_rubric, source_notes, safety_notes, next_actions。"
     )
     output = qwen_chat_json(system_prompt, user_prompt, _ResearchToolOutput)
     run = ResearchToolRun(
@@ -368,6 +383,34 @@ def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) 
     db.commit()
     db.refresh(run)
     return ResearchToolRunRead.model_validate(run)
+
+
+def _research_source_context(db: Session, user: User, request: ResearchToolRunRequest) -> str:
+    query = f"{request.input_text} {request.extra_requirement}"
+    hits = search_knowledge(db, query, limit=8)
+    filters = [LiteraturePaper.user_id == user.id]
+    if request.project_id:
+        filters.append(LiteraturePaper.project_id == request.project_id)
+    papers = list(
+        db.scalars(
+            select(LiteraturePaper)
+            .where(*filters)
+            .order_by(desc(LiteraturePaper.updated_at))
+            .limit(12)
+        )
+    )
+    knowledge_lines = [
+        f"- knowledge: {hit.document_title} [{hit.document_type}] {hit.content} source={hit.source_uri}"
+        for hit in hits
+    ]
+    paper_lines = [
+        f"- literature: {paper.title}; authors={paper.authors}; venue={paper.venue}; year={paper.year}; "
+        f"abstract={paper.abstract[:800]}; source={paper.source_uri or paper.citation_text}"
+        for paper in papers
+    ]
+    if not knowledge_lines and not paper_lines:
+        return "暂无可用来源。回答必须明确提示用户先补充论文、课程规范或实验室资料。"
+    return "\n".join([*knowledge_lines, *paper_lines])
 
 
 def _build_citation_text(title: str, authors: list[str], venue: str, year: str) -> str:

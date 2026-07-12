@@ -86,7 +86,7 @@
             <div v-for="hit in knowledgeHits" :key="`${hit.document_title}-${hit.content.slice(0, 16)}`">
               <strong>{{ hit.knowledge_point }} · {{ hit.document_title }}</strong>
               <p>{{ hit.content }}</p>
-              <small>{{ hit.document_type }} · {{ hit.keywords.join(' / ') }}</small>
+              <small>{{ hit.document_type }} · {{ hit.source_uri }}</small>
             </div>
             <el-empty v-if="knowledgeQuery && !knowledgeHits.length && !searchingKnowledge" description="没有检索到资料片段，请换一个知识点或关键词。" />
           </div>
@@ -95,12 +95,7 @@
         <article class="panel-like workspace-panel">
           <header><strong>课程知识点总览</strong><span>{{ knowledgePoints.length }} points</span></header>
           <div class="knowledge-point-scroll">
-            <button
-              v-for="point in knowledgePoints"
-              :key="point.id"
-              type="button"
-              @click="searchByPoint(point.name)"
-            >
+            <button v-for="point in knowledgePoints" :key="point.id" type="button" @click="searchByPoint(point.name)">
               <strong>{{ point.name }}</strong>
               <span>{{ point.chapter }} · {{ point.difficulty }}</span>
               <small>{{ point.description }}</small>
@@ -160,9 +155,9 @@
 
       <section v-else-if="mode === 'tutor'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
-          <header><strong>如何使用智能辅导</strong><span>Tutor Flow</span></header>
+          <header><strong>智能辅导入口</strong><span>Tutor Flow</span></header>
           <div class="workspace-list">
-            <p>从项目学习清单进入任意课堂，在左侧课堂追问中持续对话。</p>
+            <p>从项目学习清单进入任意课堂，在课堂左侧追问中持续对话。</p>
             <p>课堂上下文会自动携带课件、例题、实操、复盘和画像建议。</p>
             <p>辅导回答会进入课堂提交记录，后续用于评估和画像更新。</p>
           </div>
@@ -177,7 +172,10 @@
 
       <section v-else-if="mode === 'literature'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
-          <header><strong>新增文献</strong><span>Personal Library</span></header>
+          <header>
+            <strong>新增文献</strong>
+            <span>Personal Library</span>
+          </header>
           <el-form label-position="top" class="compact-form">
             <el-form-item label="标题">
               <el-input v-model="literatureForm.title" placeholder="论文或资料标题" />
@@ -207,8 +205,8 @@
           <div class="literature-list">
             <div v-for="paper in overview?.literature || []" :key="paper.id">
               <strong>{{ paper.title }}</strong>
-              <p>{{ paper.citation_text }}</p>
-              <small>{{ readingStatusLabel(paper.reading_status) }} · {{ paper.keywords.join(' / ') }}</small>
+              <p>{{ paper.abstract || paper.citation_text }}</p>
+              <small>{{ readingStatusLabel(paper.reading_status) }} · {{ paper.source_uri || paper.citation_text }}</small>
               <div class="literature-actions">
                 <el-select :model-value="paper.reading_status" size="small" @change="(status: string) => handleUpdateLiteratureStatus(paper.id, status)">
                   <el-option label="未读" value="unread" />
@@ -225,7 +223,7 @@
 
       <section v-else class="research-workflow-grid">
         <article class="panel-like workspace-panel research-tool-catalog">
-          <header><strong>{{ toolTitle }}</strong><span>Tool Workflow</span></header>
+          <header><strong>{{ toolTitle }}</strong><span>ResearchToolAgent</span></header>
           <button
             v-for="item in visibleToolOptions"
             :key="item.value"
@@ -239,13 +237,13 @@
         </article>
 
         <article class="panel-like workspace-panel research-tool-runner">
-          <header><strong>{{ selectedTool?.label || '科研工具' }}</strong><span>ResearchToolAgent</span></header>
+          <header><strong>{{ selectedTool?.label || '科研工具' }}</strong><span>{{ selectedTool?.agent || 'ResearchToolAgent' }}</span></header>
           <el-form label-position="top" class="compact-form">
             <el-form-item label="输入内容">
-              <el-input v-model="toolForm.input_text" type="textarea" :rows="8" placeholder="粘贴论文段落、实验方案、综述提纲或引用信息" />
+              <el-input v-model="toolForm.input_text" type="textarea" :rows="8" :placeholder="selectedTool?.placeholder || '粘贴论文段落、实验方案、综述提纲或引用信息'" />
             </el-form-item>
             <el-form-item label="补充要求">
-              <el-input v-model="toolForm.extra_requirement" placeholder="例如：更学术、更简洁、按 GB/T 7714 检查引用" />
+              <el-input v-model="toolForm.extra_requirement" placeholder="例如：围绕我的研究方向，输出可直接用于课程论文的结构化结果" />
             </el-form-item>
             <el-button type="primary" :loading="runningTool" :disabled="!toolForm.input_text.trim()" @click="handleRunTool">
               运行科研工具
@@ -261,9 +259,15 @@
               <el-collapse>
                 <el-collapse-item title="查看生成结果" :name="String(run.id)">
                   <p v-if="run.output_data.revised_text">{{ run.output_data.revised_text }}</p>
+                  <p v-if="run.output_data.final_topic"><strong>最终选题：</strong>{{ run.output_data.final_topic }}</p>
                   <ul>
                     <li v-for="item in compactOutput(run.output_data)" :key="item">{{ item }}</li>
                   </ul>
+                  <div v-if="Array.isArray(run.output_data.defense_questions) && run.output_data.defense_questions.length" class="workspace-list">
+                    <p v-for="question in run.output_data.defense_questions" :key="JSON.stringify(question)">
+                      {{ renderDefenseQuestion(question) }}
+                    </p>
+                  </div>
                 </el-collapse-item>
               </el-collapse>
             </div>
@@ -321,7 +325,7 @@ import {
 } from '../services/apiClient'
 
 type Mode = 'profile' | 'resources' | 'tutor' | 'assessment' | 'literature' | 'writing' | 'methods'
-type ToolType = 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce'
+type ToolType = 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce' | 'topic' | 'defense' | 'paper_reading'
 
 const props = defineProps<{ mode: Mode }>()
 const router = useRouter()
@@ -354,10 +358,10 @@ const profileEntryForm = reactive({
 const metaMap: Record<Mode, { eyebrow: string; title: string; description: string }> = {
   profile: { eyebrow: 'Profile', title: '学习画像', description: '后台化维护画像条目、版本和个性化调用建议。' },
   resources: { eyebrow: 'Resources', title: '资源中心', description: '集中查看课堂 PPT、互动演示、语音稿和多智能体生成记录。' },
-  tutor: { eyebrow: 'Tutor', title: '智能辅导', description: '查看辅导入口和最近 DialogueAgent 行为，课堂内持续追问。' },
+  tutor: { eyebrow: 'Tutor', title: '智能辅导', description: '课堂内持续追问，回答会进入学习证据。' },
   assessment: { eyebrow: 'Assessment', title: '练习评估', description: '汇总课堂测验、实操和复盘反馈，形成下一步优化建议。' },
   literature: { eyebrow: 'Literature', title: '文献知识库', description: '保存论文、资料、摘要、引用文本和阅读状态。' },
-  writing: { eyebrow: 'Writing', title: '论文写作', description: '提供论文润色、结构诊断、引用规范和综述写作辅助。' },
+  writing: { eyebrow: 'Writing', title: '论文写作', description: '提供选题凝练、综述写作、论文润色、引用规范和模拟答辩。' },
   methods: { eyebrow: 'Methods', title: '科研方法', description: '围绕实验设计、论文复现、评估指标和学术规范生成学习建议。' }
 }
 const currentMeta = computed(() => metaMap[props.mode])
@@ -379,24 +383,27 @@ const assessmentSuggestions = computed(() => {
   return failed.map((item) => `${item.submission_type} 需要改进：${item.feedback}`)
 })
 const toolOptions = [
-  { label: '论文润色', value: 'polish' as ToolType, description: '保留原意，优化学术表达、逻辑衔接和措辞边界。' },
-  { label: '格式规范', value: 'format' as ToolType, description: '检查标题层级、图表编号、摘要关键词和课程报告格式。' },
-  { label: '引用检查', value: 'citation' as ToolType, description: '生成 GB/T 7714、APA、IEEE 建议并提醒缺失来源。' },
-  { label: '综述提纲', value: 'review' as ToolType, description: '拆解研究脉络、方法对比、挑战和章节草稿。' },
-  { label: '科研方法', value: 'method' as ToolType, description: '解释研究设计、变量控制、指标选择和学术规范。' },
-  { label: '实验设计', value: 'experiment' as ToolType, description: '生成实验流程、评价指标、消融和风险检查清单。' },
-  { label: '论文复现', value: 'reproduce' as ToolType, description: '拆解复现步骤、代码骨架、数据准备和验收证据。' }
+  { label: '选题凝练', value: 'topic' as ToolType, agent: 'TopicAgent', description: '把宽泛方向压缩成具体题目、研究问题、边界和预期贡献。', placeholder: '输入你的科研兴趣、课程要求、已有资料和期望产出，AI 会形成具体选题。' },
+  { label: '论文精读', value: 'paper_reading' as ToolType, agent: 'PaperAgent', description: '输出论文摘要、方法、创新点、局限性和可引用要点。', placeholder: '粘贴论文标题、摘要、链接或你的阅读笔记。' },
+  { label: '综述提纲', value: 'review' as ToolType, agent: 'ReviewAgent', description: '拆解研究脉络、方法对比、挑战和章节草稿。', placeholder: '输入研究方向或文献列表，生成综述结构。' },
+  { label: '论文润色', value: 'polish' as ToolType, agent: 'WritingAgent', description: '保留原意，优化学术表达、逻辑衔接和措辞边界。', placeholder: '粘贴需要润色的论文段落。' },
+  { label: '格式规范', value: 'format' as ToolType, agent: 'FormatAgent', description: '检查标题层级、图表编号、摘要关键词和课程报告格式。', placeholder: '粘贴论文结构或全文片段。' },
+  { label: '引用检查', value: 'citation' as ToolType, agent: 'CitationAgent', description: '生成 GB/T 7714、APA、IEEE 建议并提醒缺失来源。', placeholder: '粘贴参考文献、URL、DOI 或引用段落。' },
+  { label: '科研方法', value: 'method' as ToolType, agent: 'MethodAgent', description: '解释研究设计、变量控制、指标选择和学术规范。', placeholder: '输入你的研究问题或方法疑问。' },
+  { label: '实验助手', value: 'experiment' as ToolType, agent: 'ExperimentAgent', description: '生成技术路线、数据采集、指标、变量、图表规范和阶段计划。', placeholder: '输入你的选题、数据条件和实验目标，生成完整实验方案。' },
+  { label: '论文复现', value: 'reproduce' as ToolType, agent: 'ReproduceAgent', description: '拆解复现步骤、代码骨架、数据准备和验收证据。', placeholder: '输入论文或开源项目链接，生成复现计划。' },
+  { label: '模拟答辩', value: 'defense' as ToolType, agent: 'DefenseAgent', description: '生成开题、中期、答辩问题、追问、评分和修改建议。', placeholder: '粘贴你的题目、摘要或论文初稿，生成模拟答辩。' }
 ]
 const toolTitle = computed(() => props.mode === 'methods' ? '科研方法工具' : '论文写作工具')
 const visibleToolOptions = computed(() => {
-  if (props.mode === 'methods') return toolOptions.filter((item) => ['method', 'experiment', 'reproduce'].includes(item.value))
-  return toolOptions.filter((item) => ['polish', 'format', 'citation', 'review'].includes(item.value))
+  if (props.mode === 'methods') return toolOptions.filter((item) => ['method', 'experiment', 'reproduce', 'defense'].includes(item.value))
+  return toolOptions.filter((item) => ['topic', 'paper_reading', 'review', 'polish', 'format', 'citation', 'defense'].includes(item.value))
 })
 const selectedTool = computed(() => toolOptions.find((item) => item.value === toolForm.tool_type))
 const visibleToolRuns = computed(() => {
   const runs = overview.value?.tool_runs || []
-  if (props.mode === 'methods') return runs.filter((run) => ['method', 'experiment', 'reproduce'].includes(run.tool_type))
-  return runs.filter((run) => ['polish', 'format', 'citation', 'review'].includes(run.tool_type))
+  if (props.mode === 'methods') return runs.filter((run) => ['method', 'experiment', 'reproduce', 'defense'].includes(run.tool_type))
+  return runs.filter((run) => ['topic', 'paper_reading', 'review', 'polish', 'format', 'citation', 'defense'].includes(run.tool_type))
 })
 const profileEntryOptions = [
   { key: 'knowledge_base', label: '知识基础' },
@@ -418,7 +425,7 @@ onMounted(async () => {
   await Promise.all([loadOverview(), loadKnowledgePoints()])
 })
 watch(() => props.mode, () => {
-  toolForm.tool_type = props.mode === 'methods' ? 'method' : 'polish'
+  toolForm.tool_type = props.mode === 'methods' ? 'experiment' : 'topic'
 })
 
 async function loadOverview() {
@@ -469,13 +476,14 @@ async function handleUpdateLiteratureStatus(paperId: number, status: string) {
 
 function usePaperForTool(paper: LiteraturePaperRead) {
   const draft = {
-    tool_type: 'review',
+    tool_type: 'paper_reading' as ToolType,
     input_text: [
-    `标题：${paper.title}`,
-    `作者：${paper.authors.join(', ')}`,
-    `来源：${paper.venue} ${paper.year}`,
-    `摘要：${paper.abstract}`,
-    `笔记：${paper.notes}`
+      `标题：${paper.title}`,
+      `作者：${paper.authors.join(', ')}`,
+      `来源：${paper.venue} ${paper.year}`,
+      `链接/来源：${paper.source_uri}`,
+      `摘要：${paper.abstract}`,
+      `笔记：${paper.notes}`
     ].filter(Boolean).join('\n'),
     extra_requirement: '请按论文精读助手要求输出研究问题、方法概述、创新点、局限性和推荐阅读顺序。'
   }
@@ -588,7 +596,7 @@ function hydratePendingToolDraft() {
   if (!raw) return
   sessionStorage.removeItem('research_tool_draft')
   const draft = JSON.parse(raw) as { tool_type?: ToolType; input_text?: string; extra_requirement?: string }
-  toolForm.tool_type = draft.tool_type || 'review'
+  toolForm.tool_type = draft.tool_type || 'paper_reading'
   toolForm.input_text = draft.input_text || ''
   toolForm.extra_requirement = draft.extra_requirement || ''
   ElMessage.success('已载入文献精读草稿')
@@ -596,13 +604,24 @@ function hydratePendingToolDraft() {
 
 function compactOutput(data: Record<string, any>) {
   return [
+    ...(data.topic_options || []),
     ...(data.diagnosis || []),
     ...(data.structure_suggestions || []),
     ...(data.citation_suggestions || []),
     ...(data.method_steps || []),
+    ...(data.experiment_plan || []),
+    ...(data.scoring_rubric || []),
+    ...(data.source_notes || []),
     ...(data.safety_notes || []),
     ...(data.next_actions || [])
-  ].slice(0, 8)
+  ].map((item) => typeof item === 'string' ? item : JSON.stringify(item)).slice(0, 14)
+}
+
+function renderDefenseQuestion(value: Record<string, any>) {
+  const stage = value.stage || value.type || '答辩'
+  const question = value.question || value.prompt || JSON.stringify(value)
+  const followUp = value.follow_up || value.followup || value.follow_up_question
+  return followUp ? `${stage}：${question} 追问：${followUp}` : `${stage}：${question}`
 }
 
 function formatDate(value: string) {

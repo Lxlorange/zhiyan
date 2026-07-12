@@ -154,7 +154,7 @@
                     <section class="visualization-panel">
                       <div v-if="!visualizationResource" class="classroom-generate">
                         <h4>生成互动演示动画</h4>
-                        <el-input v-model="visualizationInstruction" type="textarea" :rows="4" placeholder="可选：指定演示类型，例如训练曲线、混淆矩阵、CSI 信号变化..." />
+                        <el-input v-model="visualizationInstruction" type="textarea" :rows="4" placeholder="可选：指定演示类型，例如训练曲线、混淆矩阵、数据流转或模型结构..." />
                         <el-button type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
                           生成可视化演示
                         </el-button>

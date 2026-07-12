@@ -114,7 +114,7 @@ def _course_context() -> str:
     return (
         f"课程章节：{COURSE_CHAPTERS}\n"
         f"核心知识点：{KNOWLEDGE_POINTS}\n"
-        "主示例场景可围绕 WiFi CSI 跌倒检测、AI4S 课程项目、分类评价指标和实验报告规范展开。"
+        "示例场景必须由用户输入、课程资料或知识库检索结果动态决定，不得使用代码内固定研究方向。"
     )
 
 
