@@ -144,9 +144,9 @@
             :file-list="referenceFiles"
             :on-change="handleReferenceChange"
             :on-remove="handleReferenceRemove"
-            accept=".txt,.md,.csv,.json,.py,.java,.ts,.js,.html,.css,.pdf,.doc,.docx"
+            accept=".txt,.md,.csv,.json,.py,.java,.ts,.js,.html,.css,.pdf"
           >
-            <el-button>上传参考资料</el-button>
+            <el-button :loading="parsingAttachments > 0">上传参考资料</el-button>
           </el-upload>
 
           <div class="agent-composer-spacer"></div>
@@ -154,11 +154,11 @@
           <el-button
             type="primary"
             size="large"
-            :loading="planning || adjusting"
-            :disabled="plan?.status === 'built'"
+            :loading="planning || adjusting || parsingAttachments > 0"
+            :disabled="plan?.status === 'built' || parsingAttachments > 0"
             @click="handlePrimaryAction"
           >
-            {{ plan ? '发送调整' : '生成项目计划' }}
+            {{ parsingAttachments > 0 ? '解析资料中' : plan ? '发送调整' : '生成项目计划' }}
           </el-button>
         </div>
 
@@ -177,6 +177,7 @@ import { ElMessage } from 'element-plus'
 import type { UploadFile, UploadUserFile } from 'element-plus'
 import {
   buildProjectPlan,
+  parseProjectPlanAttachment,
   streamAdjustProjectPlan,
   streamProjectPlan,
   type LearningProjectRead,
@@ -189,7 +190,8 @@ type ReferenceMaterial = {
   name: string
   size: number
   content: string
-  readable: boolean
+  parser: string
+  pageCount?: number | null
 }
 
 type ResourceLink = {
@@ -218,6 +220,7 @@ const adjustmentStreamText = ref('')
 const composerText = ref('')
 const referenceFiles = ref<UploadUserFile[]>([])
 const referenceMaterials = ref<ReferenceMaterial[]>([])
+const parsingAttachments = ref(0)
 
 const hasConversation = computed(() => Boolean(plan.value || streamText.value || planning.value || adjusting.value))
 const composerPlaceholder = computed(() => {
@@ -242,11 +245,10 @@ const visibleMessages = computed<ProjectPlanMessage[]>(() => {
   return plan.value.messages.slice(-6)
 })
 const referenceSummaries = computed(() =>
-  referenceMaterials.value.map((item) =>
-    item.readable
-      ? `${item.name} · 已读取 ${Math.min(item.content.length, MAX_REFERENCE_CHARS)} 字`
-      : `${item.name} · 已附加文件名`
-  )
+  referenceMaterials.value.map((item) => {
+    const pageInfo = item.pageCount ? ` · ${item.pageCount} 页` : ''
+    return `${item.name} · ${item.parser}${pageInfo} · 已解析 ${item.content.length} 字`
+  })
 )
 const resourceLinks = computed<ResourceLink[]>(() => {
   if (!plan.value) return []
@@ -269,8 +271,7 @@ const resourceLinks = computed<ResourceLink[]>(() => {
       ]
 })
 
-const MAX_REFERENCE_CHARS = 12000
-const TEXT_FILE_PATTERN = /\.(txt|md|csv|json|py|java|ts|js|html|css)$/i
+const MAX_PROJECT_CONTEXT_CHARS = 60000
 const URL_PATTERN = /(https?:\/\/[^\s"'<>，。；、]+)/i
 
 async function handlePrimaryAction() {
@@ -282,9 +283,22 @@ async function handlePrimaryAction() {
 }
 
 async function handleCreatePlan() {
+  if (parsingAttachments.value > 0) {
+    ElMessage.warning('参考资料仍在解析中，请等待解析完成后再生成项目计划。')
+    return
+  }
+
   const message = composerText.value.trim()
   if (!message) {
     ElMessage.warning('请先输入学习目标或科研方向')
+    return
+  }
+
+  let referenceContext = ''
+  try {
+    referenceContext = buildReferenceContext()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : String(error))
     return
   }
 
@@ -297,7 +311,7 @@ async function handleCreatePlan() {
       {
         learning_type: form.learning_type,
         learning_goal: message,
-        extra_requirements: buildReferenceContext()
+        extra_requirements: referenceContext
       },
       {
         onToken: (content) => {
@@ -320,9 +334,22 @@ async function handleCreatePlan() {
 
 async function handleAdjust() {
   if (!plan.value) return
+  if (parsingAttachments.value > 0) {
+    ElMessage.warning('参考资料仍在解析中，请等待解析完成后再调整项目计划。')
+    return
+  }
+
   const message = composerText.value.trim()
   if (!message) {
     ElMessage.warning('请输入调整要求')
+    return
+  }
+
+  let payload = ''
+  try {
+    payload = appendReferenceContext(message)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : String(error))
     return
   }
 
@@ -338,7 +365,7 @@ async function handleAdjust() {
   ]
   composerText.value = ''
   try {
-    await streamAdjustProjectPlan(plan.value.id, appendReferenceContext(message), {
+    await streamAdjustProjectPlan(plan.value.id, payload, {
       onToken: (content) => {
         adjustmentStreamText.value += content
         streamText.value = adjustmentStreamText.value
@@ -371,37 +398,29 @@ async function handleBuildProject() {
   }
 }
 
-function handleReferenceChange(uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
+async function handleReferenceChange(uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
   referenceFiles.value = uploadFiles
   const raw = uploadFile.raw
   if (!raw) return
 
-  if (!TEXT_FILE_PATTERN.test(raw.name)) {
+  parsingAttachments.value += 1
+  try {
+    const { data } = await parseProjectPlanAttachment(raw)
     upsertReference({
       uid: String(uploadFile.uid),
-      name: raw.name,
-      size: raw.size,
-      content: '',
-      readable: false
+      name: data.filename,
+      size: data.size,
+      content: data.text,
+      parser: data.parser,
+      pageCount: data.page_count
     })
-    ElMessage.info('已记录文件名。当前版本会读取 txt/md/csv/json/代码等文本资料内容。')
-    return
+    ElMessage.success(`参考资料已解析：${data.filename}`)
+  } catch {
+    referenceFiles.value = uploadFiles.filter((file) => file.uid !== uploadFile.uid)
+    referenceMaterials.value = referenceMaterials.value.filter((item) => item.uid !== String(uploadFile.uid))
+  } finally {
+    parsingAttachments.value = Math.max(0, parsingAttachments.value - 1)
   }
-
-  const reader = new FileReader()
-  reader.onload = () => {
-    upsertReference({
-      uid: String(uploadFile.uid),
-      name: raw.name,
-      size: raw.size,
-      content: String(reader.result || '').slice(0, MAX_REFERENCE_CHARS),
-      readable: true
-    })
-  }
-  reader.onerror = () => {
-    ElMessage.error(`参考资料读取失败：${raw.name}`)
-  }
-  reader.readAsText(raw)
 }
 
 function handleReferenceRemove(uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
@@ -418,18 +437,31 @@ function upsertReference(next: ReferenceMaterial) {
 
 function buildReferenceContext(): string {
   if (!referenceMaterials.value.length) return ''
-  return [
-    '用户上传了以下参考资料。请优先基于资料内容与资料来源规划项目；若资料只有文件名，请把它作为待补充来源，不要虚构其中内容。',
+  const context = [
+    '用户上传了以下已解析参考资料。请优先基于资料正文与资料来源规划项目；不得虚构资料中不存在的内容。',
     ...referenceMaterials.value.map((item, index) => {
-      const header = `资料 ${index + 1}：${item.name}，大小 ${formatBytes(item.size)}`
-      return item.readable ? `${header}\n${item.content}` : `${header}\n未读取到正文，仅可作为资料线索。`
+      const pageInfo = item.pageCount ? `，页数 ${item.pageCount}` : ''
+      const header = `资料 ${index + 1}：${item.name}，类型 ${item.parser}，大小 ${formatBytes(item.size)}${pageInfo}`
+      return `${header}\n${item.content}`
     })
   ].join('\n\n')
+  ensureProjectContextSize(context)
+  return context
 }
 
 function appendReferenceContext(message: string): string {
   const context = buildReferenceContext()
-  return context ? `${message}\n\n${context}` : message
+  const payload = context ? `${message}\n\n${context}` : message
+  ensureProjectContextSize(payload)
+  return payload
+}
+
+function ensureProjectContextSize(value: string) {
+  if (value.length > MAX_PROJECT_CONTEXT_CHARS) {
+    throw new Error(
+      `参考资料上下文过长：${value.length} 字，当前上限 ${MAX_PROJECT_CONTEXT_CHARS} 字。请删除部分附件、拆分资料或只上传节选后的 md/txt。`
+    )
+  }
 }
 
 function asList(value: unknown): string[] {

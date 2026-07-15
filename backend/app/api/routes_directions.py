@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,7 @@ from app.services.direction_service import (
     update_project,
 )
 from app.services.llm_client import LLMConfigurationError, LLMResponseError
+from app.services.attachment_service import AttachmentParseError, ParsedAttachment, parse_project_plan_attachment
 from app.services.project_plan_service import (
     adjust_project_plan,
     build_project_from_plan,
@@ -96,6 +97,17 @@ def project_plan_create(
         return create_project_plan(db, user, request)
     except (LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_ai_error(exc) from exc
+
+
+@router.post("/project-plans/attachments/parse", response_model=ParsedAttachment)
+async def project_plan_attachment_parse(
+    file: UploadFile,
+    user: User = Depends(get_current_user),
+) -> ParsedAttachment:
+    try:
+        return await parse_project_plan_attachment(file)
+    except AttachmentParseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post("/project-plans/stream")

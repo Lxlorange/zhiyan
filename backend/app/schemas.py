@@ -271,11 +271,11 @@ class ProjectPlanMessage(BaseModel):
 class ProjectPlanRequest(BaseModel):
     learning_type: str = Field(default="", pattern="^(|course_project|research_project|course_knowledge)$")
     learning_goal: str = Field(..., min_length=1, max_length=2000)
-    extra_requirements: str = Field(default="", max_length=3000)
+    extra_requirements: str = Field(default="", max_length=60000)
 
 
 class ProjectPlanAdjustRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=3000)
+    message: str = Field(..., min_length=1, max_length=60000)
 
 
 class ProjectPlanRead(BaseModel):

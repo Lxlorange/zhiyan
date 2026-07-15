@@ -98,6 +98,15 @@ export interface ProjectPlanRead {
   updated_at: string
 }
 
+export interface ParsedProjectPlanAttachment {
+  filename: string
+  content_type: string
+  size: number
+  parser: 'text' | 'pdf'
+  text: string
+  page_count?: number | null
+}
+
 export interface LearningProjectRead {
   id: number
   direction_id: number
@@ -559,6 +568,14 @@ export function streamAdjustProjectPlan(
 
 export function buildProjectPlan(planId: number) {
   return api.post<ProjectPlanBuildResponse>(`/project-plans/${planId}/build`)
+}
+
+export function parseProjectPlanAttachment(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post<ParsedProjectPlanAttachment>('/project-plans/attachments/parse', formData, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
 }
 
 export function listLearningProjects() {
