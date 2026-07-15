@@ -181,12 +181,18 @@ class KnowledgeSearchRequest(BaseModel):
 
 
 class KnowledgeSearchHit(BaseModel):
+    chunk_id: Optional[int] = None
     document_title: str
     document_type: str
     knowledge_point: str
     content: str
     source_uri: str
     keywords: List[str]
+    page_no: Optional[int] = None
+    slide_no: Optional[int] = None
+    section_title: str = ""
+    distance: Optional[float] = None
+    keyword_hit: Optional[int] = None
 
 
 class SessionSummary(BaseModel):

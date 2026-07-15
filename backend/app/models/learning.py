@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import VECTOR
 
 from app.core.database import Base
 
@@ -91,6 +92,12 @@ class KnowledgeDocument(Base):
     doc_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_uri: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
+    file_name: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(128), default="", index=True, nullable=False)
+    course_code: Mapped[str] = mapped_column(String(64), default="", index=True, nullable=False)
+    parse_status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
+    parse_meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="document", cascade="all, delete-orphan")
@@ -105,8 +112,34 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     keywords: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    page_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    slide_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    section_title: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(VECTOR(1024), nullable=True)
+    retrieval_weight: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    extra_meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     document: Mapped[KnowledgeDocument] = relationship(back_populates="chunks")
+
+
+class KnowledgeImportJob(Base):
+    __tablename__ = "knowledge_import_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    course_code: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    course_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True, nullable=False)
+    total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    parsed_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    options: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class WorkflowSessionRecord(Base):

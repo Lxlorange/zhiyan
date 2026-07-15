@@ -406,12 +406,34 @@ export interface KnowledgePointRead {
 }
 
 export interface KnowledgeSearchHit {
+  chunk_id?: number | null
   document_title: string
   document_type: string
   knowledge_point: string
   content: string
   source_uri: string
   keywords: string[]
+  page_no?: number | null
+  slide_no?: number | null
+  section_title?: string
+  distance?: number | null
+  keyword_hit?: number | null
+}
+
+export interface KnowledgeImportJobRead {
+  id: number
+  course_code: string
+  course_title: string
+  source_name: string
+  status: string
+  total_files: number
+  parsed_files: number
+  failed_files: number
+  total_chunks: number
+  error_message: string
+  options: Record<string, any>
+  created_at: string
+  updated_at: string
 }
 
 export function saveAuth(payload: TokenResponse) {
@@ -790,6 +812,44 @@ export function listKnowledgePoints() {
 
 export function searchKnowledge(query: string, limit = 6) {
   return api.post<KnowledgeSearchHit[]>('/course/knowledge/search', { query, limit })
+}
+
+export function searchKnowledgeEnhanced(query: string, limit = 8) {
+  return api.post<KnowledgeSearchHit[]>('/course/knowledge/search/enhanced', { query, limit }, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function importKnowledgePackage(file: File, payload: {
+  course_code?: string
+  course_title?: string
+  use_ocr?: boolean
+  rebuild_course?: boolean
+}) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('course_code', payload.course_code || 'IMPORTED-COURSEWARE')
+  formData.append('course_title', payload.course_title || '导入课程课件知识库')
+  formData.append('use_ocr', String(Boolean(payload.use_ocr)))
+  formData.append('rebuild_course', String(Boolean(payload.rebuild_course)))
+  return api.post<KnowledgeImportJobRead>('/course/knowledge/import', formData, {
+    timeout: 30 * 60 * 1000
+  })
+}
+
+export function listKnowledgeImportJobs(limit = 20) {
+  return api.get<KnowledgeImportJobRead[]>('/course/knowledge/import-jobs', { params: { limit } })
+}
+
+export function getKnowledgeImportJob(jobId: number) {
+  return api.get<KnowledgeImportJobRead>(`/course/knowledge/import-jobs/${jobId}`)
+}
+
+export function rebuildKnowledgeEmbeddings(limit = 200) {
+  return api.post<{ rebuilt: number }>('/course/knowledge/embeddings/rebuild', null, {
+    params: { limit },
+    timeout: 30 * 60 * 1000
+  })
 }
 
 export function getTeacherDashboard() {

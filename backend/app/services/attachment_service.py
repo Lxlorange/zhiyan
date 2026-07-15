@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
@@ -28,7 +29,7 @@ class ParsedAttachment(BaseModel):
     size: int
     parser: str
     text: str = Field(..., min_length=1, max_length=MAX_EXTRACTED_CHARS)
-    page_count: int | None = None
+    page_count: Optional[int] = None
 
 
 async def parse_project_plan_attachment(file: UploadFile) -> ParsedAttachment:

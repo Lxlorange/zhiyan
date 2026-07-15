@@ -17,7 +17,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 from sqlalchemy import Select, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.models.learning import (
     AgentTaskRecord,
@@ -40,6 +40,7 @@ from app.schemas import (
     SyllabusItemStatusRequest,
 )
 from app.core.config import get_settings
+from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
 
@@ -880,6 +881,7 @@ def _generate_visualization_demo(
     package: _ClassroomPackage,
     instruction: str,
 ) -> _VisualizationDemo:
+    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     raw = _qwen_chat_raw_json(
         "你是 VisualizationAgent，负责为高校 AI 课堂生成可交互演示的数据规格。只输出 JSON，不输出 HTML/JS。",
         (
@@ -892,6 +894,7 @@ def _generate_visualization_demo(
             f"学习项：{item.title}\n"
             f"学习目标：{item.objective}\n"
             f"知识点：{item.knowledge_points}\n"
+            f"课程知识库来源：\n{knowledge_context}\n"
             f"课堂摘要：{package.learning_summary}\n"
             f"补充要求：{instruction}\n"
         ),
@@ -910,6 +913,7 @@ def _generate_dialogue_response(
     package: _ClassroomPackage,
     request: ClassroomDialogueRequest,
 ) -> _DialogueAgentResponse:
+    knowledge_context = build_rag_context_for_classroom(project, item, request.message)
     history = [
         submission.content
         for submission in session.submissions
@@ -929,6 +933,7 @@ def _generate_dialogue_response(
             f"课堂摘要：{package.learning_summary}\n"
             f"概念卡：{[card.model_dump() for card in package.concept_cards]}\n"
             f"引导问题：{[question.model_dump() for question in package.guiding_questions]}\n"
+            f"课程知识库来源：\n{knowledge_context}\n"
             f"最近对话：{history}\n"
             f"快捷动作：{request.quick_action}\n"
             f"学生问题：{request.message}\n"
@@ -1351,6 +1356,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
 
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
     mode_hint = _classroom_mode_hint(project, item)
+    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     system_prompt = (
         "你是面向高校学生的 OpenMAIC 风格多智能体课堂生成系统。"
         "只输出严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。"
@@ -1385,6 +1391,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"学习项目标：{item.objective}\n"
         f"知识点：{item.knowledge_points}\n"
         f"关联资料：{item.related_documents}\n"
+        f"课程知识库来源：\n{knowledge_context}\n"
         f"完成标准：{item.completion_criteria}\n"
         f"评估方式：{item.assessment_method}\n"
         f"mode_hint：{mode_hint}\n"
@@ -1396,6 +1403,25 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         return _ClassroomPackage.model_validate(normalized)
     except Exception as exc:
         raise LLMResponseError(f"课堂包 JSON 归一化后仍未通过结构校验：{exc}") from exc
+
+
+def build_rag_context_for_classroom(project: LearningProject, item: LearningSyllabusItem, instruction: str = "") -> str:
+    query = "\n".join(
+        [
+            project.title,
+            project.research_direction,
+            project.learning_goal,
+            item.title,
+            item.objective,
+            " ".join(item.knowledge_points or []),
+            " ".join(item.related_documents or []),
+            instruction,
+        ]
+    )
+    db = object_session(project)
+    if db is None:
+        raise LLMResponseError("课堂生成无法获取数据库会话，不能检索课程知识库")
+    return build_rag_context(db, query, limit=8)
 
 
 def _classroom_mode_hint(project: LearningProject, item: LearningSyllabusItem) -> str:

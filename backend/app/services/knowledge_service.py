@@ -353,12 +353,18 @@ def search_knowledge(db: Session, query: str, limit: int = 6) -> list[KnowledgeS
     rows = db.execute(statement).all()
     return [
         KnowledgeSearchHit(
+            chunk_id=chunk.id,
             document_title=document.title,
             document_type=document.doc_type,
             knowledge_point=point.name if point else "课程资料",
             content=chunk.content,
             source_uri=document.source_uri,
             keywords=chunk.keywords,
+            page_no=chunk.page_no,
+            slide_no=chunk.slide_no,
+            section_title=chunk.section_title,
+            distance=None,
+            keyword_hit=1,
         )
         for chunk, document, point in rows
     ]

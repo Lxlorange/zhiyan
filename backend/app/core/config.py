@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     xunfei_app_id: str = ""
     xunfei_api_key: str = ""
     xunfei_api_secret: str = ""
+    knowledge_upload_dir: str = str(BACKEND_DIR / "uploaded_knowledge")
+    knowledge_embedding_provider: str = "qwen"
+    knowledge_embedding_model: str = "text-embedding-v3"
+    knowledge_embedding_dim: int = 1024
+    knowledge_chunk_chars: int = 1200
+    knowledge_chunk_overlap: int = 180
+    knowledge_max_upload_mb: int = 300
+    local_ocr_engine: str = "tesseract"
+    tesseract_cmd: str = ""
 
     model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8")
 

@@ -34,7 +34,8 @@ from app.schemas import (
     SyllabusRegenerateStageRequest,
     SyllabusReorderRequest,
 )
-from app.services.knowledge_service import COURSE_CODE, search_knowledge
+from app.services.knowledge_ingestion_service import search_knowledge_enhanced
+from app.services.knowledge_service import COURSE_CODE
 from app.services.llm_client import qwen_chat_json
 
 
@@ -226,7 +227,7 @@ def _knowledge_context(db: Session, project: LearningProject) -> list[dict]:
             " ".join(project.related_knowledge_points or []),
         ]
     )
-    return [hit.model_dump() for hit in search_knowledge(db, query, limit=10)]
+    return search_knowledge_enhanced(db, query, limit=10)
 
 
 def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:

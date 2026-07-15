@@ -18,7 +18,8 @@ from app.schemas import (
     ProjectPlanRequest,
 )
 from app.services.direction_service import ProjectSuggestion
-from app.services.knowledge_service import COURSE_TITLE, search_knowledge
+from app.services.knowledge_ingestion_service import build_rag_context
+from app.services.knowledge_service import COURSE_TITLE
 from app.services.llm_client import qwen_chat_json, qwen_chat_stream_text
 
 
@@ -51,13 +52,7 @@ def _message(role: str, content: str) -> dict:
 
 
 def _knowledge_context(db: Session, query: str) -> str:
-    hits = search_knowledge(db, query, limit=8)
-    if not hits:
-        return "No course knowledge matched. Ask the user to confirm source materials that should be added."
-    return "\n".join(
-        f"- {hit.knowledge_point} / {hit.document_title}: {hit.content} source={hit.source_uri}"
-        for hit in hits
-    )
+    return build_rag_context(db, query, limit=8)
 
 
 def _run_project_plan_agent(
@@ -111,6 +106,11 @@ def _build_project_plan_prompt(
 
 可引用知识来源：
 {knowledge_context}
+
+知识库使用约束：
+1. 涉及课程内容、实验方法、论文写作规范、习题解析时，优先引用上方知识库来源。
+2. recommended_resources 中如使用知识库资料，source 必须写明文档标题、页码或幻灯片编号。
+3. 不得声称知识库没有出现的课件内容已经存在；缺少来源时写入 risk_notes 或 next_questions。
 
 历史对话：
 {json.dumps(messages, ensure_ascii=False)}
