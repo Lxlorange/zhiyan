@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-import html
 import json
 import re
 import socket
@@ -43,6 +42,7 @@ from app.core.config import get_settings
 from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
+from app.services.visualization_3d_renderer import render_three_physics_html
 
 
 class _SlideSpec(BaseModel):
@@ -142,6 +142,25 @@ class _VisualizationControl(BaseModel):
     description: str
 
 
+class _PhysicsObjectSpec(BaseModel):
+    id: str
+    label: str
+    role: str
+    shape: str
+    size: list[float] = Field(min_length=3, max_length=3)
+    position: list[float] = Field(min_length=3, max_length=3)
+    velocity: list[float] = Field(min_length=3, max_length=3)
+    mass: float
+    color: str
+
+
+class _PhysicsSceneSpec(BaseModel):
+    scene_kind: str
+    gravity: list[float] = Field(min_length=3, max_length=3)
+    camera: dict[str, list[float]]
+    objects: list[_PhysicsObjectSpec] = Field(min_length=4, max_length=9)
+
+
 class _VisualizationDemo(BaseModel):
     title: str
     demo_type: str
@@ -153,6 +172,7 @@ class _VisualizationDemo(BaseModel):
     teaching_points: list[str] = Field(min_length=3, max_length=8)
     student_tasks: list[str] = Field(min_length=2, max_length=6)
     safety_notes: list[str] = Field(min_length=1)
+    physics_scene: _PhysicsSceneSpec
 
 
 class _DialogueCard(BaseModel):
@@ -328,9 +348,9 @@ def generate_classroom_visualization(
         user_id=user.id,
         resource_type="interactive_visualization",
         title=demo.title,
-        content_data=demo.model_dump(),
+        content_data=demo.model_dump(mode="json"),
         file_path=str(html_path),
-        source="THU-MAIC/OpenMAIC-inspired MIT",
+        source="THU-MAIC/OpenMAIC-inspired; Three.js; cannon-es",
         status="ready",
     )
     db.add(resource)
@@ -338,10 +358,10 @@ def generate_classroom_visualization(
         AgentTaskRecord(
             session_id=f"classroom-{session.id}",
             user_id=user.id,
-            agent="VisualizationAgent",
+            agent="VisualizationAgent+PhysicsSimulationAgent",
             status="completed",
             input_summary=f"{project.title} / {item.title}",
-            output_summary=f"生成可交互演示：{demo.title}",
+            output_summary=f"生成 3D 物理演示：{demo.title}",
             latency_ms=0,
         )
     )
@@ -350,7 +370,7 @@ def generate_classroom_visualization(
         project,
         user,
         "classroom_visualization_generated",
-        f"生成可视化演示：{demo.title}",
+        f"生成 3D 物理演示：{demo.title}",
         {"session_id": session.id, "demo_type": demo.demo_type},
     )
     db.commit()
@@ -883,12 +903,25 @@ def _generate_visualization_demo(
 ) -> _VisualizationDemo:
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     raw = _qwen_chat_raw_json(
-        "你是 VisualizationAgent，负责为高校 AI 课堂生成可交互演示的数据规格。只输出 JSON，不输出 HTML/JS。",
         (
-            "生成一个可被前端动画模板渲染的演示。允许输出更丰富的变量对象、控制器对象和帧状态，"
-            "但必须表达每一帧发生了什么。\n"
-            "推荐字段：title, demo_type, learning_goal, description, variables, frames, controls, teaching_points, student_tasks, safety_notes。\n"
-            "demo_type 建议从 classification_metrics, confusion_matrix, csi_signal, dataset_split, training_curve, knowledge_flow 中选择。\n"
+            "你是 VisualizationAgent + PhysicsSimulationAgent，负责为高校 AI 课堂生成 Three.js + cannon-es "
+            "可交互 3D 物理演示规格。只输出 JSON，不输出 Markdown、HTML 或 JavaScript。"
+        ),
+        (
+            "请生成一个与学习主题强相关的 3D 物理演示数据规格，后端会把该 JSON 渲染为 Three.js + cannon-es HTML。\n"
+            "顶层字段必须完整包含：title, demo_type, learning_goal, description, variables, frames, controls, "
+            "teaching_points, student_tasks, safety_notes, physics_scene。\n"
+            "demo_type 必须从以下值选择：signal_wave, network_packet, neural_activation, optimization_landscape, "
+            "sorting_collision, graph_diffusion, physics_system。\n"
+            "physics_scene 必须包含 scene_kind, gravity, camera, objects。\n"
+            "scene_kind 必须从以下值选择：signal_wave, network_packet, neural_activation, optimization_landscape, "
+            "sorting_collision, graph_diffusion, general_physics。\n"
+            "camera 必须包含 position 和 target，二者都是 3 个数字的数组。\n"
+            "objects 必须包含 4 到 9 个对象；每个对象必须包含 id, label, role, shape, size, position, velocity, mass, color。\n"
+            "shape 只能使用 sphere, box, cylinder, packet, node；size/position/velocity 都必须是 3 个数字的数组；color 必须是十六进制颜色。\n"
+            "frames 需要 4 到 12 帧；每帧必须包含 label, narrative, metrics；metrics 至少包含 progress, force, activity 三个 0 到 1 或合理正数。\n"
+            "controls 至少 3 个，建议包含 speed, force, damping 或 gravity；每个控制器必须包含 name, label, min_value, max_value, default_value, description。\n"
+            "必须结合课程知识库来源和课堂摘要生成内容，不能输出空数组、占位符、模板化泛泛描述或具体题目无关的演示。\n"
             f"项目：{project.title}\n"
             f"研究方向：{project.research_direction}\n"
             f"学习项：{item.title}\n"
@@ -899,11 +932,11 @@ def _generate_visualization_demo(
             f"补充要求：{instruction}\n"
         ),
     )
-    normalized = _normalize_visualization_demo(raw, project, item, package)
+    normalized = _normalize_visualization_demo(raw)
     try:
         return _VisualizationDemo.model_validate(normalized)
     except Exception as exc:
-        raise LLMResponseError(f"可视化演示 JSON 归一化后仍未通过结构校验：{exc}") from exc
+        raise LLMResponseError(f"3D 物理演示 JSON 归一化后仍未通过结构校验：{exc}") from exc
 
 
 def _generate_dialogue_response(
@@ -944,55 +977,48 @@ def _generate_dialogue_response(
     )
 
 
-def _normalize_visualization_demo(
-    raw: Any,
-    project: LearningProject,
-    item: LearningSyllabusItem,
-    package: _ClassroomPackage,
-) -> dict:
+def _normalize_visualization_demo(raw: Any, project: LearningProject, item: LearningSyllabusItem, package: _ClassroomPackage) -> dict:
     if not isinstance(raw, dict):
-        raise LLMResponseError("可视化演示 JSON 顶层必须是对象")
+        raise LLMResponseError("3D 物理演示 JSON 顶层必须是对象")
     data = raw
-    variables = [_normalize_visualization_variable(value) for value in _as_list(data.get("variables") or data.get("states") or data.get("layers"))]
+    variables = [_normalize_visualization_variable(value) for value in _as_list(data.get("variables"))]
     variables = [value for value in variables if value]
     if len(variables) < 2:
-        raise LLMResponseError("可视化演示 JSON 缺少 variables，至少需要 2 个变量")
-    variables = variables[:8]
-
+        raise LLMResponseError("3D 物理演示 JSON 缺少 variables，至少需要 2 个变量")
     frames = [
         _normalize_visualization_frame(frame, index, variables)
-        for index, frame in enumerate(_as_list(data.get("frames") or data.get("steps") or data.get("timeline")), start=1)
+        for index, frame in enumerate(_as_list(data.get("frames")), start=1)
     ]
     if len(frames) < 4:
-        raise LLMResponseError("可视化演示 JSON 缺少 frames，至少需要 4 帧")
-    frames = frames[:12]
-
+        raise LLMResponseError("3D 物理演示 JSON 缺少 frames，至少需要 4 帧")
     controls = [
         _normalize_visualization_control(control, index)
-        for index, control in enumerate(_as_list(data.get("controls") or data.get("interactions")), start=1)
+        for index, control in enumerate(_as_list(data.get("controls")), start=1)
     ]
     if not controls:
-        raise LLMResponseError("可视化演示 JSON 缺少 controls，至少需要 1 个控制器")
-    safety_notes = _as_str_list(data.get("safety_notes") or data.get("safety") or data.get("notes"))
+        raise LLMResponseError("3D 物理演示 JSON 缺少 controls，至少需要 1 个控制器")
+    safety_notes = _as_str_list(data.get("safety_notes"))
     if not safety_notes:
-        raise LLMResponseError("可视化演示 JSON 缺少 safety_notes")
-    teaching_points = _as_str_list(data.get("teaching_points") or data.get("key_points"))
+        raise LLMResponseError("3D 物理演示 JSON 缺少 safety_notes")
+    teaching_points = _as_str_list(data.get("teaching_points"))
     if len(teaching_points) < 3:
-        raise LLMResponseError("可视化演示 JSON 缺少 teaching_points，至少需要 3 条")
-    student_tasks = _as_str_list(data.get("student_tasks") or data.get("tasks"))
+        raise LLMResponseError("3D 物理演示 JSON 缺少 teaching_points，至少需要 3 条")
+    student_tasks = _as_str_list(data.get("student_tasks"))
     if len(student_tasks) < 2:
-        raise LLMResponseError("可视化演示 JSON 缺少 student_tasks，至少需要 2 条")
+        raise LLMResponseError("3D 物理演示 JSON 缺少 student_tasks，至少需要 2 条")
+    demo_type = _normalize_demo_type(_require_text(data.get("demo_type"), "visualization.demo_type"))
     return {
-        "title": _require_text(data.get("title") or data.get("name"), "visualization.title"),
-        "demo_type": _normalize_demo_type(_require_text(data.get("demo_type") or data.get("type"), "visualization.demo_type")),
-        "learning_goal": _require_text(data.get("learning_goal") or data.get("goal"), "visualization.learning_goal"),
-        "description": _require_text(data.get("description") or data.get("summary"), "visualization.description"),
-        "variables": variables,
-        "frames": frames,
+        "title": _require_text(data.get("title"), "visualization.title"),
+        "demo_type": demo_type,
+        "learning_goal": _require_text(data.get("learning_goal"), "visualization.learning_goal"),
+        "description": _require_text(data.get("description"), "visualization.description"),
+        "variables": variables[:8],
+        "frames": frames[:12],
         "controls": controls,
         "teaching_points": teaching_points[:8],
         "student_tasks": student_tasks[:6],
         "safety_notes": safety_notes,
+        "physics_scene": _normalize_physics_scene(data.get("physics_scene"), demo_type),
     }
 
 
@@ -1004,55 +1030,133 @@ def _normalize_visualization_variable(raw: Any) -> str:
 
 def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -> dict:
     if not isinstance(raw, dict):
-        raise LLMResponseError(f"可视化演示 JSON frames[{index}] 必须是对象")
-    frame = raw
-    label = _require_text(frame.get("label") or frame.get("title") or frame.get("name"), f"visualization.frames[{index}].label")
-    narrative = _require_text(
-        frame.get("narrative") or frame.get("description") or frame.get("explanation") or frame.get("text") or frame.get("caption"),
-        f"visualization.frames[{index}].narrative",
-    )
-    raw_metrics = frame.get("metrics") if isinstance(frame.get("metrics"), dict) else {}
-    metrics = _numeric_metrics(raw_metrics)
-    reserved = {
-        "label", "title", "name", "narrative", "description", "explanation", "text", "caption",
-        "metrics", "notes", "safety_notes", "events", "controls",
-    }
-    for key, value in frame.items():
-        if key in reserved:
-            continue
-        metric = _metric_value(value)
-        if metric is not None:
-            metrics[str(key)] = metric
+        raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 必须是对象")
+    metrics = _numeric_metrics(raw.get("metrics") if isinstance(raw.get("metrics"), dict) else {})
     if not metrics:
-        raise LLMResponseError(f"可视化演示 JSON frames[{index}] 缺少可渲染的 metrics 或数值状态")
-    return {"label": label, "metrics": metrics, "narrative": narrative}
+        raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 缺少可渲染的 metrics")
+    return {
+        "label": _require_text(raw.get("label"), f"visualization.frames[{index}].label"),
+        "metrics": metrics,
+        "narrative": _require_text(raw.get("narrative"), f"visualization.frames[{index}].narrative"),
+    }
 
 
 def _normalize_visualization_control(raw: Any, index: int) -> dict:
     if not isinstance(raw, dict):
-        raise LLMResponseError(f"可视化演示 JSON controls[{index}] 必须是对象")
-    control = raw
+        raise LLMResponseError(f"3D 物理演示 JSON controls[{index}] 必须是对象")
     return {
-        "name": _require_text(control.get("name") or control.get("id") or control.get("type"), f"visualization.controls[{index}].name"),
-        "label": _require_text(control.get("label") or control.get("title"), f"visualization.controls[{index}].label"),
-        "min_value": _require_metric(control.get("min_value", control.get("min")), f"visualization.controls[{index}].min_value"),
-        "max_value": _require_metric(control.get("max_value", control.get("max")), f"visualization.controls[{index}].max_value"),
-        "default_value": _require_metric(control.get("default_value", control.get("default")), f"visualization.controls[{index}].default_value"),
-        "description": _require_text(control.get("description") or control.get("help"), f"visualization.controls[{index}].description"),
+        "name": _require_text(raw.get("name"), f"visualization.controls[{index}].name"),
+        "label": _require_text(raw.get("label"), f"visualization.controls[{index}].label"),
+        "min_value": _require_metric(raw.get("min_value"), f"visualization.controls[{index}].min_value"),
+        "max_value": _require_metric(raw.get("max_value"), f"visualization.controls[{index}].max_value"),
+        "default_value": _require_metric(raw.get("default_value"), f"visualization.controls[{index}].default_value"),
+        "description": _require_text(raw.get("description"), f"visualization.controls[{index}].description"),
     }
 
 
 def _normalize_demo_type(value: str) -> str:
     allowed = {
-        "classification_metrics",
-        "confusion_matrix",
-        "csi_signal",
-        "dataset_split",
-        "training_curve",
-        "knowledge_flow",
+        "signal_wave",
+        "network_packet",
+        "neural_activation",
+        "optimization_landscape",
+        "sorting_collision",
+        "graph_diffusion",
+        "physics_system",
     }
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    return normalized if normalized in allowed else "knowledge_flow"
+    if normalized not in allowed:
+        raise LLMResponseError(f"3D 物理演示 JSON demo_type 非法：{value}；允许值：{', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _normalize_physics_scene(raw: Any, demo_type: str) -> dict:
+    if not isinstance(raw, dict):
+        raise LLMResponseError("3D 物理演示 JSON 缺少 physics_scene 对象")
+    allowed_kinds = {
+        "signal_wave",
+        "network_packet",
+        "neural_activation",
+        "optimization_landscape",
+        "sorting_collision",
+        "graph_diffusion",
+        "general_physics",
+    }
+    scene_kind = _require_text(raw.get("scene_kind"), "visualization.physics_scene.scene_kind")
+    scene_kind = scene_kind.strip().lower().replace("-", "_").replace(" ", "_")
+    if scene_kind not in allowed_kinds:
+        raise LLMResponseError(f"3D 物理演示 JSON scene_kind 非法：{scene_kind}；允许值：{', '.join(sorted(allowed_kinds))}")
+    if demo_type != "physics_system" and scene_kind == "general_physics":
+        raise LLMResponseError("3D 物理演示 JSON scene_kind 不能在具体 demo_type 下使用 general_physics")
+    camera = raw.get("camera")
+    if not isinstance(camera, dict):
+        raise LLMResponseError("3D 物理演示 JSON physics_scene.camera 必须是对象")
+    objects = [
+        _normalize_physics_object(obj, index)
+        for index, obj in enumerate(_as_list(raw.get("objects")), start=1)
+    ]
+    if len(objects) < 4:
+        raise LLMResponseError("3D 物理演示 JSON physics_scene.objects 至少需要 4 个对象")
+    if len(objects) > 9:
+        raise LLMResponseError("3D 物理演示 JSON physics_scene.objects 最多允许 9 个对象")
+    return {
+        "scene_kind": scene_kind,
+        "gravity": _vector3(raw.get("gravity"), "visualization.physics_scene.gravity"),
+        "camera": {
+            "position": _vector3(camera.get("position"), "visualization.physics_scene.camera.position"),
+            "target": _vector3(camera.get("target"), "visualization.physics_scene.camera.target"),
+        },
+        "objects": objects,
+    }
+
+
+def _normalize_physics_object(raw: Any, index: int) -> dict:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"3D 物理演示 JSON physics_scene.objects[{index}] 必须是对象")
+    allowed_shapes = {"sphere", "box", "cylinder", "packet", "node"}
+    shape = _require_text(raw.get("shape"), f"visualization.physics_scene.objects[{index}].shape")
+    shape = shape.strip().lower().replace("-", "_").replace(" ", "_")
+    if shape not in allowed_shapes:
+        raise LLMResponseError(f"3D 物理演示 JSON objects[{index}].shape 非法：{shape}；允许值：{', '.join(sorted(allowed_shapes))}")
+    mass = _require_metric(raw.get("mass"), f"visualization.physics_scene.objects[{index}].mass")
+    if mass < 0:
+        raise LLMResponseError(f"3D 物理演示 JSON objects[{index}].mass 不能小于 0")
+    return {
+        "id": _require_text(raw.get("id"), f"visualization.physics_scene.objects[{index}].id"),
+        "label": _require_text(raw.get("label"), f"visualization.physics_scene.objects[{index}].label"),
+        "role": _require_text(raw.get("role"), f"visualization.physics_scene.objects[{index}].role"),
+        "shape": shape,
+        "size": _positive_vector3(raw.get("size"), f"visualization.physics_scene.objects[{index}].size"),
+        "position": _vector3(raw.get("position"), f"visualization.physics_scene.objects[{index}].position"),
+        "velocity": _vector3(raw.get("velocity"), f"visualization.physics_scene.objects[{index}].velocity"),
+        "mass": mass,
+        "color": _require_color(raw.get("color"), f"visualization.physics_scene.objects[{index}].color"),
+    }
+
+
+def _vector3(value: Any, field_path: str) -> list[float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise LLMResponseError(f"模型 JSON 字段 {field_path} 必须是长度为 3 的数字数组")
+    vector: list[float] = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise LLMResponseError(f"模型 JSON 字段 {field_path}[{index}] 必须是数字")
+        vector.append(float(item))
+    return vector
+
+
+def _positive_vector3(value: Any, field_path: str) -> list[float]:
+    vector = _vector3(value, field_path)
+    if any(item <= 0 for item in vector):
+        raise LLMResponseError(f"模型 JSON 字段 {field_path} 必须全部大于 0")
+    return vector
+
+
+def _require_color(value: Any, field_path: str) -> str:
+    color = _require_text(value, field_path)
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        raise LLMResponseError(f"模型 JSON 字段 {field_path} 必须是 #RRGGBB 十六进制颜色")
+    return color
 
 
 def _numeric_metrics(raw: dict[str, Any]) -> dict[str, float]:
@@ -1095,261 +1199,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
     output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization.html"
-    data_json = json.dumps(demo.model_dump(), ensure_ascii=False).replace("</", "<\\/")
-    page_title = html.escape(demo.title)
-    html_doc = f"""<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{page_title}</title>
-  <style>
-    :root {{
-      color: #1e1b4b;
-      background: #eef2ff;
-      font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      min-height: 100vh;
-      background: linear-gradient(135deg, #eef2ff 0%, #ffffff 54%, #ecfdf5 100%);
-    }}
-    .demo-shell {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 300px;
-      gap: 18px;
-      min-height: 100vh;
-      padding: 22px;
-    }}
-    .stage, .side {{
-      border: 1px solid #c7d2fe;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.92);
-      box-shadow: 0 18px 44px rgba(79, 70, 229, 0.12);
-    }}
-    .stage {{ display: grid; grid-template-rows: auto minmax(360px, 1fr) auto; gap: 16px; padding: 20px; }}
-    h1 {{ margin: 0; color: #1e1b4b; font-size: 24px; line-height: 1.25; }}
-    p {{ margin: 8px 0 0; color: #475569; line-height: 1.65; }}
-    canvas {{ width: 100%; height: 100%; min-height: 420px; border-radius: 16px; background: #f8fbff; }}
-    .controls {{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }}
-    button {{
-      min-height: 38px;
-      padding: 8px 14px;
-      border: 1px solid #818cf8;
-      border-radius: 12px;
-      background: #4f46e5;
-      color: white;
-      font-weight: 800;
-      cursor: pointer;
-    }}
-    button.secondary {{ background: #fff; color: #3730a3; }}
-    .frame-label {{ color: #3730a3; font-weight: 900; }}
-    .side {{ display: grid; align-content: start; gap: 14px; padding: 18px; }}
-    .side section {{ display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #f8fbff; }}
-    .side strong {{ color: #1e1b4b; }}
-    .side ul {{ margin: 0; padding-left: 18px; color: #475569; line-height: 1.65; }}
-    @media (max-width: 880px) {{
-      .demo-shell {{ grid-template-columns: 1fr; padding: 14px; }}
-      canvas {{ min-height: 320px; }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="demo-shell">
-    <main class="stage">
-      <header>
-        <h1>{page_title}</h1>
-        <p id="description"></p>
-      </header>
-      <canvas id="canvas" width="1100" height="620"></canvas>
-      <div class="controls">
-        <button id="play">播放动画</button>
-        <button id="prev" class="secondary">上一帧</button>
-        <button id="next" class="secondary">下一帧</button>
-        <span class="frame-label" id="frameLabel"></span>
-      </div>
-    </main>
-    <aside class="side">
-      <section><strong>学习目标</strong><p id="goal"></p></section>
-      <section><strong>变量</strong><ul id="variables"></ul></section>
-      <section><strong>教学点</strong><ul id="points"></ul></section>
-      <section><strong>学生任务</strong><ul id="tasks"></ul></section>
-    </aside>
-  </div>
-  <script id="demo-data" type="application/json">{data_json}</script>
-  <script>
-    const demo = JSON.parse(document.getElementById('demo-data').textContent);
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const state = {{ index: 0, timer: null }};
-    const colors = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
-
-    function list(id, values) {{
-      document.getElementById(id).innerHTML = (values || []).map((value) => `<li>${{escapeHtml(String(value))}}</li>`).join('');
-    }}
-    function escapeHtml(value) {{
-      return value.replace(/[&<>"']/g, (ch) => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}}[ch]));
-    }}
-    function setup() {{
-      document.getElementById('description').textContent = demo.description || '';
-      document.getElementById('goal').textContent = demo.learning_goal || '';
-      list('variables', demo.variables);
-      list('points', demo.teaching_points);
-      list('tasks', demo.student_tasks);
-      draw();
-    }}
-    function currentFrame() {{
-      return demo.frames[Math.max(0, Math.min(state.index, demo.frames.length - 1))] || {{ label: '', metrics: {{}}, narrative: '' }};
-    }}
-    function draw() {{
-      const frame = currentFrame();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffffff';
-      roundRect(24, 24, canvas.width - 48, canvas.height - 48, 24, true);
-      document.getElementById('frameLabel').textContent = `${{state.index + 1}} / ${{demo.frames.length}}  ${{frame.label || ''}}`;
-      drawTeachingScene(frame);
-      ctx.fillStyle = '#475569';
-      ctx.font = '22px Microsoft YaHei, sans-serif';
-      wrapText(frame.narrative || '', 62, canvas.height - 112, canvas.width - 124, 30);
-    }}
-    function drawTeachingScene(frame) {{
-      const values = (demo.variables && demo.variables.length ? demo.variables : ['概念输入', '机制拆解', '例题验证', '实操复现', '复盘迁移']).slice(0, 5);
-      const metrics = Object.values(frame.metrics || {{ progress: (state.index + 1) / Math.max(1, demo.frames.length) }}).map(Number);
-      const progress = Math.min(1, Math.max(0.08, metrics.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0.5), 0) / Math.max(1, metrics.length)));
-      ctx.fillStyle = '#f8fbff';
-      roundRect(56, 70, canvas.width - 112, 382, 28, true);
-      ctx.strokeStyle = '#dbe4ff'; ctx.lineWidth = 3; roundRect(56, 70, canvas.width - 112, 382, 28, false);
-
-      const y = 240;
-      values.forEach((value, index) => {{
-        const x = 104 + index * ((canvas.width - 228) / Math.max(1, values.length - 1));
-        const active = index <= Math.round(progress * (values.length - 1));
-        if (index > 0) {{
-          const prevX = 104 + (index - 1) * ((canvas.width - 228) / Math.max(1, values.length - 1));
-          ctx.strokeStyle = active ? '#4f46e5' : '#c7d2fe';
-          ctx.lineWidth = active ? 8 : 5;
-          ctx.beginPath(); ctx.moveTo(prevX + 58, y); ctx.lineTo(x - 58, y); ctx.stroke();
-          const pulseX = prevX + 58 + ((x - prevX - 116) * ((Date.now() / 900 + state.index * 0.25) % 1));
-          ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(pulseX, y, active ? 8 : 0, 0, Math.PI * 2); ctx.fill();
-        }}
-        ctx.fillStyle = active ? colors[index % colors.length] : '#e0e7ff';
-        roundRect(x - 62, y - 58, 124, 116, 24, true);
-        ctx.fillStyle = active ? '#ffffff' : '#3730a3';
-        ctx.font = 'bold 20px Microsoft YaHei, sans-serif';
-        wrapText(String(value), x - 42, y - 10, 84, 24);
-        ctx.fillStyle = active ? '#22c55e' : '#94a3b8';
-        ctx.beginPath(); ctx.arc(x + 42, y - 42, 10, 0, Math.PI * 2); ctx.fill();
-      }});
-
-      ctx.fillStyle = '#1e1b4b';
-      ctx.font = 'bold 30px Microsoft YaHei, sans-serif';
-      wrapText(frame.label || demo.title || '互动演示', 86, 126, canvas.width - 172, 38);
-      ctx.fillStyle = '#4f46e5';
-      roundRect(86, 390, (canvas.width - 172) * progress, 16, 8, true);
-      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 2; roundRect(86, 390, canvas.width - 172, 16, 8, false);
-    }}
-    function drawBars(frame) {{
-      const entries = Object.entries(frame.metrics || {{ accuracy: 0.72, precision: 0.68, recall: 0.64, f1: 0.66 }});
-      entries.forEach(([key, value], index) => {{
-        const x = 92 + index * 210;
-        const h = Math.max(12, Number(value) * 320);
-        ctx.fillStyle = colors[index % colors.length];
-        roundRect(x, 430 - h, 120, h, 18, true);
-        ctx.fillStyle = '#1e1b4b';
-        ctx.font = '24px Inter, sans-serif';
-        ctx.fillText(key, x, 470);
-        ctx.fillText(`${{Math.round(Number(value) * 100)}}%`, x, 430 - h - 18);
-      }});
-    }}
-    function drawCurve(frame) {{
-      const values = Object.values(frame.metrics || {{ loss: 0.9, accuracy: 0.3 }}).map(Number);
-      const points = demo.frames.map((f, i) => {{
-        const metricValues = Object.values(f.metrics || {{ value: 0.5 }}).map(Number);
-        return {{ x: 80 + i * ((canvas.width - 180) / Math.max(1, demo.frames.length - 1)), y: 430 - (metricValues[0] || 0.5) * 300 }};
-      }});
-      drawAxis();
-      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 8; ctx.beginPath();
-      points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
-      points.forEach((p, i) => {{ ctx.fillStyle = i === state.index ? '#22c55e' : '#818cf8'; ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill(); }});
-      ctx.fillStyle = '#1e1b4b'; ctx.font = '26px Inter, sans-serif'; ctx.fillText(`当前值：${{values.map(v => v.toFixed(2)).join(' / ')}}`, 80, 90);
-    }}
-    function drawMatrix(frame) {{
-      const vals = Object.values(frame.metrics || {{ TP: 0.65, FP: 0.15, FN: 0.12, TN: 0.08 }}).map(Number);
-      const labels = Object.keys(frame.metrics || {{ TP: 1, FP: 1, FN: 1, TN: 1 }});
-      const size = 160, startX = 270, startY = 120;
-      vals.slice(0, 4).forEach((value, i) => {{
-        const x = startX + (i % 2) * size; const y = startY + Math.floor(i / 2) * size;
-        ctx.fillStyle = `rgba(79, 70, 229, ${{0.18 + Math.min(0.72, value)}})`;
-        roundRect(x, y, size - 12, size - 12, 20, true);
-        ctx.fillStyle = '#1e1b4b'; ctx.font = '30px Inter, sans-serif'; ctx.fillText(labels[i] || `C${{i+1}}`, x + 42, y + 72);
-        ctx.fillText(String(Math.round(value * 100)), x + 56, y + 112);
-      }});
-    }}
-    function drawSignal(frame) {{
-      ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 5; ctx.beginPath();
-      const amp = Number(Object.values(frame.metrics || {{ amplitude: 0.7 }})[0] || 0.7);
-      for (let x = 70; x < canvas.width - 70; x += 8) {{
-        const y = 300 + Math.sin((x + state.index * 42) / 42) * amp * 150 + Math.sin(x / 17) * 18;
-        x === 70 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }}
-      ctx.stroke();
-    }}
-    function drawDataset(frame) {{
-      const entries = Object.entries(frame.metrics || {{ train: 0.7, validation: 0.15, test: 0.15 }});
-      let x = 100;
-      entries.forEach(([key, value], index) => {{
-        const width = Number(value) * 820;
-        ctx.fillStyle = colors[index % colors.length];
-        roundRect(x, 250, width, 110, 12, true);
-        ctx.fillStyle = '#1e1b4b'; ctx.font = '24px Inter, sans-serif';
-        ctx.fillText(`${{key}} ${{Math.round(Number(value) * 100)}}%`, x + 16, 315);
-        x += width;
-      }});
-    }}
-    function drawFlow(frame) {{
-      const values = demo.variables || ['输入', '理解', '练习', '复盘'];
-      values.slice(0, 5).forEach((value, index) => {{
-        const x = 80 + index * 190;
-        ctx.fillStyle = index <= state.index % values.length ? '#4f46e5' : '#dbe4ff';
-        roundRect(x, 220, 140, 90, 18, true);
-        ctx.fillStyle = index <= state.index % values.length ? '#fff' : '#3730a3';
-        ctx.font = '22px Microsoft YaHei, sans-serif';
-        wrapText(String(value), x + 18, 260, 104, 26);
-        if (index < values.length - 1) {{ ctx.fillStyle = '#818cf8'; ctx.fillText('→', x + 152, 275); }}
-      }});
-    }}
-    function drawAxis() {{
-      ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 3; ctx.beginPath();
-      ctx.moveTo(70, 440); ctx.lineTo(canvas.width - 70, 440); ctx.moveTo(70, 80); ctx.lineTo(70, 440); ctx.stroke();
-    }}
-    function wrapText(text, x, y, maxWidth, lineHeight) {{
-      const chars = String(text).split('');
-      let line = '';
-      for (const ch of chars) {{
-        const test = line + ch;
-        if (ctx.measureText(test).width > maxWidth && line) {{
-          ctx.fillText(line, x, y); line = ch; y += lineHeight;
-        }} else line = test;
-      }}
-      if (line) ctx.fillText(line, x, y);
-    }}
-    function roundRect(x, y, w, h, r, fill) {{
-      ctx.beginPath();
-      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-      if (fill) ctx.fill(); else ctx.stroke();
-    }}
-    document.getElementById('play').onclick = () => {{
-      clearInterval(state.timer);
-      state.timer = setInterval(() => {{ state.index = (state.index + 1) % demo.frames.length; draw(); }}, 900);
-    }};
-    document.getElementById('prev').onclick = () => {{ clearInterval(state.timer); state.index = (state.index - 1 + demo.frames.length) % demo.frames.length; draw(); }};
-    document.getElementById('next').onclick = () => {{ clearInterval(state.timer); state.index = (state.index + 1) % demo.frames.length; draw(); }};
-    setup();
-  </script>
-</body>
-</html>"""
+    html_doc = render_three_physics_html(demo.model_dump(mode="json"), demo.title)
     path.write_text(html_doc, encoding="utf-8")
     return path
 

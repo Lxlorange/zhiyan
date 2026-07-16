@@ -197,22 +197,22 @@
                       <header>
                         <div>
                           <span>Interactive Demo</span>
-                          <strong>{{ visualizationResource?.title || '互动演示生成' }}</strong>
+                          <strong>{{ visualizationResource?.title || '3D 物理演示' }}</strong>
                         </div>
                         <div v-if="visualizationResource">
                           <el-button :loading="loadingVisualizationView" @click="loadVisualizationView">刷新预览</el-button>
                           <el-button @click="downloadVisualization">下载 HTML</el-button>
                         </div>
                         <el-button v-else type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
-                          生成演示
+                          生成 3D 演示
                         </el-button>
                       </header>
                       <template v-if="visualizationResource">
-                        <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂可视化演示" />
-                        <div v-else class="visualization-loading">正在载入演示...</div>
+                        <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂 3D 物理演示" />
+                        <div v-else class="visualization-loading">正在载入 3D 演示...</div>
                       </template>
                       <section v-else class="visualization-empty">
-                        <el-input v-model="visualizationInstruction" type="textarea" :rows="5" placeholder="可选：指定训练曲线、混淆矩阵、流程动画、系统架构动画等演示形式" />
+                        <el-input v-model="visualizationInstruction" type="textarea" :rows="5" placeholder="可选：指定信号传播、网络数据包、神经激活、排序碰撞、优化地形等 3D 演示方向" />
                       </section>
                     </section>
 
@@ -514,7 +514,7 @@ async function handleGenerateVisualization() {
     classroom.value = data
     await loadVisualizationView()
     activeTool.value = 'visualization'
-    ElMessage.success('可视化演示已生成')
+    ElMessage.success('3D 物理演示已生成')
   } finally {
     generatingVisualization.value = false
   }

@@ -1,9 +1,14 @@
 from collections.abc import Generator
 
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
+
+
+class DatabaseStartupError(RuntimeError):
+    pass
 
 
 class Base(DeclarativeBase):
@@ -12,13 +17,7 @@ class Base(DeclarativeBase):
 
 settings = get_settings()
 engine = create_engine(settings.database_url, pool_pre_ping=True)
-if engine.dialect.name == "postgresql":
-    from pgvector.psycopg import register_vector
-    from sqlalchemy import event
-
-    @event.listens_for(engine, "connect")
-    def _register_pgvector(dbapi_connection, connection_record) -> None:
-        register_vector(dbapi_connection)
+_pgvector_adapter_registered = False
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -133,8 +132,36 @@ def _apply_lightweight_migrations() -> None:
 def _ensure_postgres_extensions() -> None:
     if engine.dialect.name != "postgresql":
         return
-    with engine.begin() as connection:
-        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except OperationalError as exc:
+        raise DatabaseStartupError(
+            "PostgreSQL 连接失败。请检查 backend/.env 中的 DATABASE_URL 是否与本机数据库一致："
+            "用户、密码、端口、数据库名必须正确；当前项目不会回退到 SQLite。"
+        ) from exc
+    except ProgrammingError as exc:
+        raise DatabaseStartupError(
+            "PostgreSQL 已连接，但无法创建 pgvector 扩展。请确认当前数据库已安装 pgvector，"
+            "并且 DATABASE_URL 对应用户有 CREATE EXTENSION vector 的权限。"
+        ) from exc
+
+
+def _register_pgvector_adapter() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+    global _pgvector_adapter_registered
+    if _pgvector_adapter_registered:
+        return
+    from pgvector.psycopg import register_vector
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _register_pgvector(dbapi_connection, connection_record) -> None:
+        register_vector(dbapi_connection)
+
+    _pgvector_adapter_registered = True
+    engine.dispose()
 
 
 def init_db() -> None:
@@ -144,6 +171,7 @@ def init_db() -> None:
     from app.services.knowledge_service import seed_course_knowledge
 
     _ensure_postgres_extensions()
+    _register_pgvector_adapter()
     Base.metadata.create_all(bind=engine)
     _apply_lightweight_migrations()
     db = SessionLocal()

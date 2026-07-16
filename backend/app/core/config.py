@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     knowledge_max_upload_mb: int = 300
     local_ocr_engine: str = "tesseract"
     tesseract_cmd: str = ""
+    libreoffice_path: str = ""
 
     model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8")
 

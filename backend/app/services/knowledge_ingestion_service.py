@@ -244,9 +244,7 @@ def _parse_single_file(path: Path, *, use_ocr: bool) -> ParsedKnowledgeFile:
         path = _convert_legacy_office(path, ".docx")
         extension = path.suffix.lower()
 
-    if extension in {".pdf", ".pptx", ".docx"}:
-        sections = _parse_with_unstructured(path, use_ocr=use_ocr)
-    elif extension == ".pdf":
+    if extension == ".pdf":
         sections = _parse_pdf(path, use_ocr=use_ocr)
     elif extension == ".pptx":
         sections = _parse_pptx(path)
@@ -273,38 +271,6 @@ def _parse_single_file(path: Path, *, use_ocr: bool) -> ParsedKnowledgeFile:
         sections=sections,
         metadata={"extension": extension, "text_chars": text_len},
     )
-
-
-def _parse_with_unstructured(path: Path, *, use_ocr: bool) -> list[ParsedSection]:
-    try:
-        from unstructured.partition.auto import partition
-    except ImportError as exc:
-        raise KnowledgeIngestionError("缺少 unstructured 解析依赖，请先安装 requirements.txt", 500) from exc
-    strategy = "hi_res" if use_ocr and path.suffix.lower() == ".pdf" else "auto"
-    try:
-        elements = partition(filename=str(path), strategy=strategy)
-    except Exception as exc:
-        raise KnowledgeIngestionError(f"unstructured 解析失败：{path.name}，{exc}", 422) from exc
-    sections: list[ParsedSection] = []
-    for index, element in enumerate(elements, start=1):
-        text_value = str(element).strip()
-        if not text_value:
-            continue
-        metadata = getattr(element, "metadata", None)
-        metadata_dict = metadata.to_dict() if metadata and hasattr(metadata, "to_dict") else {}
-        sections.append(
-            ParsedSection(
-                text=text_value,
-                section_title=metadata_dict.get("section", "") or metadata_dict.get("filename", "") or f"片段 {index}",
-                page_no=metadata_dict.get("page_number"),
-                slide_no=metadata_dict.get("page_number") if path.suffix.lower() == ".pptx" else None,
-                metadata=metadata_dict,
-            )
-        )
-    if not sections:
-        raise KnowledgeIngestionError(f"unstructured 未提取到文本：{path.name}", 422)
-    return sections
-
 
 def _parse_pdf(path: Path, *, use_ocr: bool) -> list[ParsedSection]:
     sections: list[ParsedSection] = []
@@ -421,12 +387,16 @@ def _ocr_pdf_or_image(path: Path) -> list[ParsedSection]:
 
 
 def _convert_legacy_office(path: Path, target_suffix: str) -> Path:
-    libreoffice = shutil.which("soffice") or shutil.which("libreoffice")
+    settings = get_settings()
+    libreoffice = settings.libreoffice_path.strip() or shutil.which("soffice") or shutil.which("libreoffice")
     if not libreoffice:
         raise KnowledgeIngestionError(f"{path.suffix} 旧格式需要安装 LibreOffice 后转换：{path.name}", 501)
+    libreoffice_path = Path(libreoffice)
+    if not libreoffice_path.exists():
+        raise KnowledgeIngestionError(f"LIBREOFFICE_PATH 指向的文件不存在：{libreoffice}", 501)
     output_dir = path.parent / "converted"
     output_dir.mkdir(exist_ok=True)
-    cmd = [libreoffice, "--headless", "--convert-to", target_suffix.removeprefix("."), "--outdir", str(output_dir), str(path)]
+    cmd = [str(libreoffice_path), "--headless", "--convert-to", target_suffix.removeprefix("."), "--outdir", str(output_dir), str(path)]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     if result.returncode != 0:
         raise KnowledgeIngestionError(f"LibreOffice 转换失败：{path.name}，{result.stderr or result.stdout}", 422)

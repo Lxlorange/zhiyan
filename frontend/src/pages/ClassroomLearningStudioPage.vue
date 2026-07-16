@@ -150,13 +150,13 @@
                     </section>
                   </el-tab-pane>
 
-                  <el-tab-pane label="可视化演示" name="visualization">
+                  <el-tab-pane label="3D 物理演示" name="visualization">
                     <section class="visualization-panel">
                       <div v-if="!visualizationResource" class="classroom-generate">
-                        <h4>生成互动演示动画</h4>
-                        <el-input v-model="visualizationInstruction" type="textarea" :rows="4" placeholder="可选：指定演示类型，例如训练曲线、混淆矩阵、数据流转或模型结构..." />
+                        <h4>生成 3D 物理演示</h4>
+                        <el-input v-model="visualizationInstruction" type="textarea" :rows="4" placeholder="可选：指定信号传播、网络数据包、神经激活、排序碰撞、优化地形等 3D 演示方向..." />
                         <el-button type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
-                          生成可视化演示
+                          生成 3D 演示
                         </el-button>
                       </div>
                       <div v-else class="visualization-frame-shell">
@@ -167,8 +167,8 @@
                             <el-button @click="downloadVisualization">下载 HTML</el-button>
                           </div>
                         </header>
-                        <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂可视化演示" />
-                        <div v-else class="visualization-loading">正在载入演示...</div>
+                        <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂 3D 物理演示" />
+                        <div v-else class="visualization-loading">正在载入 3D 演示...</div>
                       </div>
                     </section>
                   </el-tab-pane>
@@ -453,7 +453,7 @@ async function handleGenerateVisualization() {
     const { data } = await generateClassroomVisualization(classroom.value.id, visualizationInstruction.value)
     classroom.value = data
     await loadVisualizationView()
-    ElMessage.success('可视化演示已生成')
+    ElMessage.success('3D 物理演示已生成')
   } finally {
     generatingVisualization.value = false
   }
