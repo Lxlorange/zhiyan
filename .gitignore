@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .env
+.env.production
 .venv/
 backend/.venv/
 
@@ -22,6 +23,8 @@ frontend/.vite/
 Thumbs.db
 .DS_Store
 .codex/
+.agents/
+.github/
 
 # Local data
 backend/data/*.db
