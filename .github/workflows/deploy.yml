@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
       SERVER_USER: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
