@@ -43,7 +43,7 @@ jobs:
           port: ${{ env.SERVER_PORT }}
           script_stop: true
           script: |
-            cd /opt/zhiyan-a3
+            cd /opt/zhiyan-a3/A3
             git fetch --all --prune
             git checkout master
             git pull --ff-only origin master
