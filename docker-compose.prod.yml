@@ -51,8 +51,7 @@ services:
     container_name: zhiyan-a3-caddy
     restart: unless-stopped
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
-      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      APP_SITE_ADDRESS: ${APP_SITE_ADDRESS:-:80}
     ports:
       - "80:80"
       - "443:443"
