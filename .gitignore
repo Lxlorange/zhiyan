@@ -8,7 +8,7 @@ __pycache__/
 .env.production
 .venv/
 backend/.venv/
-
+.npm-cache/
 # Node
 node_modules/
 dist/
