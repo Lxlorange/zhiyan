@@ -35,12 +35,15 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
     }
     .app {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 340px;
+      grid-template-columns: minmax(0, 1fr) 320px;
       height: 100vh;
       gap: 16px;
       padding: 16px;
     }
     .stage {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 10px;
       position: relative;
       overflow: hidden;
       border: 1px solid rgba(91, 141, 239, 0.28);
@@ -48,20 +51,23 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
       background: rgba(255, 255, 255, 0.68);
       box-shadow: 0 24px 80px rgba(37, 99, 235, 0.16);
     }
+    .canvas-wrap {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      border-radius: 0 0 16px 16px;
+    }
     #scene {
       width: 100%;
       height: 100%;
       display: block;
     }
     .hud {
-      position: absolute;
-      left: 18px;
-      right: 18px;
-      top: 18px;
+      position: static;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 14px;
-      pointer-events: none;
+      padding: 14px 14px 0;
     }
     .title-card, .status-card, .side {
       border: 1px solid rgba(148, 163, 184, 0.22);
@@ -72,7 +78,7 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
     .title-card {
       min-width: 0;
       border-radius: 16px;
-      padding: 14px 16px;
+      padding: 12px 14px;
     }
     .title-card span {
       display: block;
@@ -85,41 +91,46 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
     .title-card h1 {
       margin: 6px 0 0;
       color: #111827;
-      font-size: 22px;
+      font-size: 18px;
       line-height: 1.25;
     }
     .title-card p {
       margin: 8px 0 0;
       color: #475569;
-      font-size: 13px;
-      line-height: 1.5;
+      font-size: 12px;
+      line-height: 1.42;
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
     }
     .status-card {
       min-width: 180px;
       border-radius: 16px;
-      padding: 14px 16px;
+      padding: 12px 14px;
       text-align: right;
     }
     .status-card strong {
       display: block;
       color: #111827;
-      font-size: 18px;
+      font-size: 16px;
     }
     .status-card small {
       display: block;
       color: #64748b;
       margin-top: 5px;
       line-height: 1.4;
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
     }
     .timeline {
-      position: absolute;
-      left: 18px;
-      right: 18px;
-      bottom: 18px;
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
       gap: 12px;
       align-items: center;
+      margin: 0 14px 14px;
       border: 1px solid rgba(148, 163, 184, 0.22);
       border-radius: 16px;
       padding: 12px;
@@ -219,7 +230,7 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
     @media (max-width: 960px) {
       body { overflow: auto; }
       .app { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
-      .stage { min-height: 68vh; }
+      .stage { min-height: 78vh; }
       .hud { grid-template-columns: 1fr; }
       .status-card { text-align: left; }
     }
@@ -237,7 +248,6 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
 <body>
   <div class="app">
     <main class="stage">
-      <canvas id="scene"></canvas>
       <section class="hud">
         <div class="title-card">
           <span id="kind"></span>
@@ -249,6 +259,9 @@ THREE_PHYSICS_TEMPLATE = """<!doctype html>
           <small id="frameNarrative"></small>
         </div>
       </section>
+      <div class="canvas-wrap">
+        <canvas id="scene"></canvas>
+      </div>
       <section class="timeline">
         <button id="play">Play</button>
         <div class="bar"><i id="progress"></i></div>

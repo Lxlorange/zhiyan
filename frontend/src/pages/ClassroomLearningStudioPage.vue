@@ -78,14 +78,13 @@
         <Transition name="panel-swap" mode="out-in">
           <section v-if="activeGate === 'ppt'" key="ppt" class="classroom-pane">
             <Transition name="panel-swap" mode="out-in">
-              <div v-if="isPptSetupVisible" key="ppt-setup" class="classroom-generate">
-                <h4>{{ pptPackage ? '重新生成课堂资源' : '生成课堂资源' }}</h4>
-                <el-input v-model="pptInstruction" type="textarea" :rows="5" placeholder="可选：补充案例、风格、重点或实验要求" />
+              <div v-if="!pptPackage" key="ppt-preparing" class="classroom-generate classroom-preparing-card">
+                <span class="classroom-preparing-dot" aria-hidden="true" />
+                <h4>课堂资源正在后台生成</h4>
+                <p>系统会按学习清单顺序预生成多模态课堂资源。当前学习项尚未就绪，请稍后刷新。</p>
                 <div class="classroom-action-row">
-                  <el-button v-if="pptPackage" @click="editingPptInstruction = false">取消</el-button>
-                  <el-button type="primary" :loading="generatingPpt" @click="handleGeneratePpt">
-                    {{ pptPackage ? '确认重新生成' : '生成动态课件' }}
-                  </el-button>
+                  <el-button @click="goBackToSyllabus">返回学习清单</el-button>
+                  <el-button type="primary" :loading="loading" @click="loadClassroom">刷新状态</el-button>
                 </div>
               </div>
 
@@ -124,7 +123,6 @@
                     </div>
                     <div class="classroom-action-row">
                       <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-                      <el-button @click="editingPptInstruction = true">重新生成</el-button>
                       <el-button type="success" :disabled="!allSlidesViewed || classroom?.slides_completed" @click="handleCompleteSlides">
                         {{ classroom?.slides_completed ? '课件已完成' : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
                       </el-button>
@@ -304,7 +302,6 @@ import { ElMessage } from 'element-plus'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
-  generateClassroomPpt,
   generateClassroomVisualization,
   getCurrentSyllabus,
   getOrCreateClassroomSession,
@@ -324,7 +321,6 @@ type GateKey = 'ppt' | 'quiz' | 'practice' | 'reflection'
 const props = defineProps<{ projectId: number | null; itemId: number | null }>()
 const router = useRouter()
 const loading = ref(false)
-const generatingPpt = ref(false)
 const generatingVisualization = ref(false)
 const loadingVisualizationView = ref(false)
 const sendingDialogue = ref(false)
@@ -337,8 +333,6 @@ const activeGate = ref<GateKey>('ppt')
 const activeContentTab = ref('slides')
 const activeSlideIndex = ref(0)
 const visitedSlideIndices = ref<Set<number>>(new Set([0]))
-const editingPptInstruction = ref(false)
-const pptInstruction = ref('')
 const visualizationInstruction = ref('')
 const visualizationUrl = ref('')
 const chatMessage = ref('')
@@ -363,7 +357,6 @@ const quizQuestions = computed<any[]>(() => pptPackage.value?.quiz || [])
 const currentSlide = computed(() => slideList.value[activeSlideIndex.value] || null)
 const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
-const isPptSetupVisible = computed(() => !pptPackage.value || editingPptInstruction.value)
 const conceptCards = computed<any[]>(() => pptPackage.value?.concept_cards || [])
 const diagramSpec = computed<Record<string, any>>(() => pptPackage.value?.diagram || {})
 const guidingQuestions = computed<any[]>(() => pptPackage.value?.guiding_questions || [])
@@ -427,22 +420,6 @@ async function loadClassroom() {
     if (visualizationResource.value) await loadVisualizationView()
   } finally {
     loading.value = false
-  }
-}
-
-async function handleGeneratePpt() {
-  if (!classroom.value) return
-  generatingPpt.value = true
-  try {
-    const { data } = await generateClassroomPpt(classroom.value.id, pptInstruction.value)
-    classroom.value = data
-    hydrateQuizAnswers()
-    syncVisitedSlidesFromSession()
-    editingPptInstruction.value = false
-    activeContentTab.value = 'slides'
-    ElMessage.success('课堂资源已生成')
-  } finally {
-    generatingPpt.value = false
   }
 }
 

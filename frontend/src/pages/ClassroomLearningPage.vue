@@ -57,16 +57,15 @@
         <Transition name="panel-swap" mode="out-in">
           <section v-if="activeGate === 'ppt'" key="ppt" class="classroom-task-card">
             <Transition name="panel-swap" mode="out-in">
-              <div v-if="isPptSetupVisible" key="ppt-setup" class="classroom-generation-panel">
+              <div v-if="!pptPackage" key="ppt-preparing" class="classroom-generation-panel classroom-preparing-card">
+                <span class="classroom-preparing-dot" aria-hidden="true" />
                 <div class="task-copy">
-                  <h4>{{ pptPackage ? '重新生成课堂 PPT' : '生成课堂 PPT' }}</h4>
+                  <h4>课堂资源正在后台生成</h4>
+                  <p>系统会按学习清单顺序预生成课堂 PPT、例题、实操和复盘任务。当前学习项尚未就绪，请稍后刷新。</p>
                 </div>
-                <el-input v-model="pptInstruction" type="textarea" :rows="5" placeholder="可选：补充 PPT 风格、重点、案例或公式要求" />
                 <div class="classroom-action-row">
-                  <el-button v-if="pptPackage" @click="editingPptInstruction = false">取消</el-button>
-                  <el-button type="primary" :loading="generatingPpt" @click="handleGeneratePpt">
-                    {{ pptPackage ? '确认重新生成' : '生成 PPT 课件' }}
-                  </el-button>
+                  <el-button @click="goBackToSyllabus">返回学习清单</el-button>
+                  <el-button type="primary" :loading="loading" @click="loadClassroom">刷新状态</el-button>
                 </div>
               </div>
 
@@ -78,7 +77,6 @@
                   </div>
                   <div class="slide-player-actions">
                     <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-                    <el-button @click="editingPptInstruction = true">重新生成</el-button>
                   </div>
                 </header>
 
@@ -243,7 +241,6 @@ import { ElMessage } from 'element-plus'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
-  generateClassroomPpt,
   getCurrentSyllabus,
   getOrCreateClassroomSession,
   submitClassroomPractice,
@@ -260,7 +257,6 @@ type GateKey = 'ppt' | 'quiz' | 'practice' | 'reflection'
 const props = defineProps<{ projectId: number | null; itemId: number | null }>()
 const router = useRouter()
 const loading = ref(false)
-const generatingPpt = ref(false)
 const submittingQuiz = ref(false)
 const submittingPractice = ref(false)
 const submittingReflection = ref(false)
@@ -269,8 +265,6 @@ const classroom = ref<ClassroomSessionRead | null>(null)
 const activeGate = ref<GateKey>('ppt')
 const activeSlideIndex = ref(0)
 const visitedSlideIndices = ref<Set<number>>(new Set([0]))
-const editingPptInstruction = ref(false)
-const pptInstruction = ref('')
 const unresolvedQuestionsText = ref('')
 const quizAnswers = reactive<Record<string, string>>({})
 const practiceForm = reactive({ report: '', artifact_url: '', key_result: '' })
@@ -288,8 +282,7 @@ const quizQuestions = computed<any[]>(() => pptPackage.value?.quiz || [])
 const currentSlide = computed(() => slideList.value[activeSlideIndex.value] || null)
 const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
-const isPptSetupVisible = computed(() => !pptPackage.value || editingPptInstruction.value)
-const isSlidePlayerFocused = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value) && !editingPptInstruction.value)
+const isSlidePlayerFocused = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value))
 const practiceSpec = computed(() => pptPackage.value?.practice || null)
 const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
 const reflectionPrompts = computed<string[]>(() => pptPackage.value?.reflection_prompts || [])
@@ -332,21 +325,6 @@ async function loadClassroom() {
     syncVisitedSlidesFromSession()
   } finally {
     loading.value = false
-  }
-}
-
-async function handleGeneratePpt() {
-  if (!classroom.value) return
-  generatingPpt.value = true
-  try {
-    const { data } = await generateClassroomPpt(classroom.value.id, pptInstruction.value)
-    classroom.value = data
-    hydrateQuizAnswers()
-    syncVisitedSlidesFromSession()
-    editingPptInstruction.value = false
-    ElMessage.success('PPT 课件已生成')
-  } finally {
-    generatingPpt.value = false
   }
 }
 

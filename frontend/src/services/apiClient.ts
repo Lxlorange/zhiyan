@@ -242,6 +242,8 @@ export interface ClassroomSessionRead {
   ppt_resource_id?: number | null
   slides_completed: boolean
   slide_progress: Record<string, any>
+  generation_started_at?: string | null
+  generation_error: string
   quiz_passed: boolean
   practice_passed: boolean
   reflection_passed: boolean
@@ -270,6 +272,9 @@ export interface DailyPlanItemRead {
   user_order: number
   syllabus_item_id?: number | null
   project_id: number
+  is_overdue: boolean
+  is_today: boolean
+  can_start: boolean
 }
 
 export interface DailyPlanRead {
@@ -648,6 +653,10 @@ export function moveDailyPlanItem(itemId: number, plannedDate: string) {
   })
 }
 
+export function shiftDailyPlanItem(itemId: number, direction: 'next' | 'previous' = 'next') {
+  return api.patch<DailyPlanRead>(`/daily-plan-items/${itemId}/shift`, { direction })
+}
+
 export function updateSyllabusItemStatus(itemId: number, status: string, reason = '') {
   return api.post<SyllabusVersionRead>(`/syllabus-items/${itemId}/status`, { status, reason })
 }
@@ -660,10 +669,12 @@ export function getOrCreateClassroomSession(itemId: number) {
   return api.post<ClassroomSessionRead>(`/syllabus-items/${itemId}/classroom`)
 }
 
+export function getClassroomSession(sessionId: number) {
+  return api.get<ClassroomSessionRead>(`/classroom-sessions/${sessionId}`)
+}
+
 export function generateClassroomPpt(sessionId: number, instruction = '') {
-  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/ppt`, { instruction }, {
-    timeout: GENERATION_TIMEOUT_MS
-  })
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/ppt`, { instruction })
 }
 
 export function generateClassroomVisualization(sessionId: number, instruction = '') {
@@ -676,10 +687,20 @@ export function generateClassroomVoice(sessionId: number, payload: {
   voice_name?: string
   speed?: number
   text_scope?: 'current_slide' | 'one_minute' | 'five_minutes' | 'all_slides'
+  slide_index?: number
+  page_context?: string
 } = {}) {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/voice`, payload, {
     timeout: GENERATION_TIMEOUT_MS
   })
+}
+
+export function saveClassroomNote(sessionId: number, payload: {
+  markdown: string
+  slide_index?: number
+  slide_title?: string
+}) {
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/notes`, payload)
 }
 
 export function sendClassroomDialogue(sessionId: number, payload: {

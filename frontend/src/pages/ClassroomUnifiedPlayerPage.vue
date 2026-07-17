@@ -1,5 +1,5 @@
 <template>
-  <div class="page classroom-page classroom-unified-page">
+  <div class="page classroom-page classroom-unified-page" :class="{ 'deck-focus-mode': isDeckFocusMode }">
     <section class="page-hero classroom-hero">
       <div>
         <p class="eyebrow">AI Classroom</p>
@@ -97,58 +97,88 @@
         <Transition name="panel-swap" mode="out-in">
           <section v-if="activeGate === 'ppt'" key="ppt" class="classroom-pane">
             <Transition name="panel-swap" mode="out-in">
-              <div v-if="isPptSetupVisible" key="ppt-setup" class="classroom-generate">
-                <h4>{{ pptPackage ? '重新生成课堂' : '生成课堂' }}</h4>
-                <el-input v-model="pptInstruction" type="textarea" :rows="5" placeholder="可选：补充案例、风格、重点、实验或演示要求" />
+              <div v-if="!pptPackage" key="ppt-preparing" class="classroom-generate classroom-preparing-card">
+                <span class="classroom-preparing-dot" aria-hidden="true" />
+                <h4>{{ classroomGenerationTitle }}</h4>
+                <p>{{ classroomGenerationMessage }}</p>
+                <el-progress :percentage="classroomGenerationProgress" :indeterminate="isClassroomGenerating" :stroke-width="10" />
+                <p v-if="classroom?.generation_error" class="classroom-error-text">{{ classroom.generation_error }}</p>
                 <div class="classroom-action-row">
-                  <el-button v-if="pptPackage" @click="editingPptInstruction = false">取消</el-button>
-                  <el-button type="primary" :loading="generatingPpt" @click="handleGeneratePpt">
-                    {{ pptPackage ? '确认重新生成' : '生成集成课堂' }}
+                  <el-button @click="goBackToSyllabus">返回学习清单</el-button>
+                  <el-button
+                    v-if="classroom?.status === 'failed'"
+                    type="primary"
+                    :loading="requestingPptGeneration"
+                    @click="ensurePptGeneration(true)"
+                  >
+                    重新生成
                   </el-button>
                 </div>
               </div>
 
-              <section v-else key="lesson-player" class="lesson-player">
-                <div class="lesson-tool-ribbon" aria-label="多模态学习工具">
-                  <button
-                    v-for="tool in lessonTools"
-                    :key="tool.key"
-                    type="button"
-                    :class="{ active: activeTool === tool.key }"
-                    @click="activeTool = tool.key"
-                  >
-                    {{ tool.label }}
-                  </button>
-                </div>
+              <section v-else key="lesson-player" class="lesson-player course-learning-shell">
+                <section class="om-classroom-player" :class="{ 'panel-open': Boolean(activeAssistantTab) }">
+                  <header class="om-player-toolbar">
+                    <div class="om-lesson-title">
+                      <span>Lesson Deck</span>
+                      <strong>{{ currentSlide?.title || pptPackage?.title }}</strong>
+                    </div>
+                    <div class="om-player-actions">
+                      <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
+                      <el-button type="success" :disabled="!allSlidesViewed || classroom?.slides_completed" @click="handleCompleteSlides">
+                        {{ classroom?.slides_completed ? '课件已完成' : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
+                      </el-button>
+                    </div>
+                  </header>
 
-                <div class="lesson-primary">
-                  <Transition name="panel-swap" mode="out-in">
-                    <section v-if="activeTool === 'notes'" key="slide-stage" class="slide-stage">
-                      <section class="slide-canvas-v2">
-                        <div class="slide-count">Slide {{ activeSlideIndex + 1 }} / {{ slideList.length }}</div>
-                        <h4>{{ currentSlide?.title }}</h4>
-                        <ul>
-                          <li v-for="bullet in currentSlide?.bullets || []" :key="bullet">{{ bullet }}</li>
-                        </ul>
-                      </section>
-
-                      <section class="tool-stage-card note-stage">
-                        <header class="tool-stage-head">
-                          <div>
-                            <span>AI 讲解</span>
-                            <strong>{{ currentSlide?.title || '当前课件' }}</strong>
+                  <div class="om-workspace">
+                    <main class="om-stage-wrap">
+                      <section class="om-slide-stage" :class="`deck-layout-${currentSlideLayout}`">
+                        <div class="om-slide-canvas">
+                          <div class="om-slide-meta">
+                            <span>Slide {{ activeSlideIndex + 1 }} / {{ slideList.length }}</span>
+                            <span>{{ currentSlideLayoutLabel }}</span>
                           </div>
-                        </header>
-                        <p>{{ currentSlide?.speaker_notes || '暂无讲稿。' }}</p>
+
+                          <div class="om-slide-title">
+                            <h4>{{ currentSlide?.title }}</h4>
+                            <div class="om-slide-pills">
+                              <span v-for="point in currentSlideKnowledgePoints" :key="point">{{ point }}</span>
+                            </div>
+                          </div>
+
+                          <div class="om-slide-body">
+                            <section class="om-slide-main">
+                              <p v-if="currentSlide?.visual_hint" class="om-visual-direction">{{ currentSlide.visual_hint }}</p>
+                              <ul>
+                                <li v-for="bullet in currentSlide?.bullets || []" :key="bullet">{{ bullet }}</li>
+                              </ul>
+                            </section>
+
+                            <section class="om-insight-panel">
+                              <article v-for="block in currentSlideVisualBlocks.slice(0, 3)" :key="`${block.type}-${block.title}`">
+                                <span>{{ visualBlockLabel(block.type) }}</span>
+                                <strong>{{ block.title }}</strong>
+                                <p>{{ block.content }}</p>
+                              </article>
+                            </section>
+                          </div>
+
+                          <footer class="om-slide-footer">
+                            <p v-if="currentSlideTakeaways.length">{{ currentSlideTakeaways.slice(0, 3).join(' · ') }}</p>
+                            <p v-else-if="currentSlideSidePanel">{{ currentSlideSidePanel.items.slice(0, 3).join(' · ') }}</p>
+                          </footer>
+                        </div>
                       </section>
 
-                      <div class="slide-controls-v2">
+                      <div class="om-slide-controls">
                         <el-button :disabled="activeSlideIndex <= 0" @click="goToSlide(activeSlideIndex - 1)">上一页</el-button>
-                        <el-progress :percentage="slideReadPercent" :stroke-width="8" />
+                        <div class="om-progress-line"><span :style="{ width: `${slideReadPercent}%` }" /></div>
+                        <strong>{{ slideReadPercent }}%</strong>
                         <el-button :disabled="activeSlideIndex >= slideList.length - 1" @click="goToSlide(activeSlideIndex + 1)">下一页</el-button>
                       </div>
 
-                      <div class="slide-strip" aria-label="课件页面">
+                      <div class="om-slide-strip" aria-label="课件页导航">
                         <button
                           v-for="(slide, index) in slideList"
                           :key="`${slide.title}-${index}`"
@@ -160,101 +190,91 @@
                           <span>{{ slide.title }}</span>
                         </button>
                       </div>
-                    </section>
+                    </main>
 
-                    <section v-else-if="activeTool === 'diagram'" key="diagram-stage" class="tool-stage-card diagram-stage">
-                      <header class="tool-stage-head">
-                        <div>
-                          <span>图解说明</span>
-                          <strong>{{ diagramSpec.title || '知识图解' }}</strong>
-                        </div>
-                      </header>
-                      <div ref="diagramEl" class="mermaid-stage" />
-                      <p>{{ diagramSpec.explanation || '当前课堂暂未返回图解说明。' }}</p>
-                    </section>
+                    <aside class="om-assistant-dock" :class="{ open: Boolean(activeAssistantTab) }">
+                      <nav class="om-assistant-tabs" aria-label="课堂工具">
+                        <button
+                          v-for="tab in assistantTabs"
+                          :key="tab.key"
+                          type="button"
+                          :class="{ active: activeAssistantTab === tab.key }"
+                          @click="toggleAssistantTab(tab.key)"
+                        >
+                          {{ tab.label }}
+                        </button>
+                      </nav>
 
-                    <section v-else-if="activeTool === 'voice'" key="voice-stage" class="tool-stage-card voice-stage">
-                      <header class="tool-stage-head">
-                        <div>
-                          <span>语音讲解</span>
-                          <strong>课堂语音播放</strong>
-                        </div>
-                        <div class="voice-actions">
-                          <el-button type="primary" :disabled="!voiceText" @click="handleGenerateVoice">
-                            {{ isSpeaking ? '暂停' : '播放语音' }}
-                          </el-button>
-                          <el-button :disabled="!voiceText" @click="resumeVoice">继续</el-button>
-                          <el-button :disabled="!voiceText" @click="stopVoice">停止</el-button>
-                        </div>
-                      </header>
-                      <p>{{ voiceText || '当前课堂暂无语音脚本。' }}</p>
-                      <div class="voice-segment-grid">
-                        <small v-for="segment in voiceScript.segments || []" :key="segment">{{ segment }}</small>
-                      </div>
-                    </section>
+                      <Transition name="panel-swap" mode="out-in">
+                        <section v-if="activeAssistantTab === 'lecture'" key="lecture" class="om-tool-panel">
+                          <header>
+                            <strong>当前页讲解</strong>
+                            <div class="voice-actions">
+                              <el-button type="primary" :disabled="!voiceText" @click="toggleLectureVoice">
+                                {{ isSpeaking ? '暂停' : '播放' }}
+                              </el-button>
+                              <el-button :disabled="!voiceText" @click="stopVoice">停止</el-button>
+                            </div>
+                          </header>
+                          <p class="om-lecture-text">{{ currentSlideExplanation }}</p>
+                          <div v-if="showLectureSubtitle" class="lecture-subtitle">{{ voiceText }}</div>
+                          <div class="om-insight-list">
+                            <article v-if="currentSlide?.example"><span>案例</span><p>{{ currentSlide.example }}</p></article>
+                            <article v-if="currentSlide?.misconception"><span>易错点</span><p>{{ currentSlide.misconception }}</p></article>
+                            <article v-if="currentSlide?.interaction_prompt"><span>互动问题</span><p>{{ currentSlide.interaction_prompt }}</p></article>
+                          </div>
+                        </section>
 
-                    <section v-else-if="activeTool === 'visualization'" key="visualization-stage" class="visualization-stage">
-                      <header>
-                        <div>
-                          <span>Interactive Demo</span>
-                          <strong>{{ visualizationResource?.title || '3D 物理演示' }}</strong>
-                        </div>
-                        <div v-if="visualizationResource">
-                          <el-button :loading="loadingVisualizationView" @click="loadVisualizationView">刷新预览</el-button>
-                          <el-button @click="downloadVisualization">下载 HTML</el-button>
-                        </div>
-                        <el-button v-else type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
-                          生成 3D 演示
-                        </el-button>
-                      </header>
-                      <template v-if="visualizationResource">
-                        <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂 3D 物理演示" />
-                        <div v-else class="visualization-loading">正在载入 3D 演示...</div>
-                      </template>
-                      <section v-else class="visualization-empty">
-                        <el-input v-model="visualizationInstruction" type="textarea" :rows="5" placeholder="可选：指定信号传播、网络数据包、神经激活、排序碰撞、优化地形等 3D 演示方向" />
-                      </section>
-                    </section>
+                        <section v-else-if="activeAssistantTab === 'interactive'" key="interactive" class="om-tool-panel om-visual-panel">
+                          <header>
+                            <strong>互动演示</strong>
+                            <el-button type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
+                              {{ visualizationResource ? '重新生成' : '生成演示' }}
+                            </el-button>
+                          </header>
+                          <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
+                          <div v-else class="om-empty-tool">
+                            <p>根据当前页内容生成合适的动态演示，不固定为 3D。</p>
+                            <el-input v-model="visualizationInstruction" type="textarea" :rows="5" :placeholder="currentVisualizationPlaceholder" />
+                          </div>
+                        </section>
 
-                    <section v-else-if="activeTool === 'demo'" key="demo-stage" class="tool-stage-card demo-stage">
-                      <header class="tool-stage-head">
-                        <div>
-                          <span>复现 Demo</span>
-                          <strong>{{ reproductionDemo.title || '复现任务' }}</strong>
-                        </div>
-                      </header>
-                      <p>{{ reproductionDemo.task || '当前课堂暂未返回复现任务。' }}</p>
-                      <pre v-if="reproductionDemo.code_skeleton">{{ reproductionDemo.code_skeleton }}</pre>
-                      <div class="demo-step-list">
-                        <small v-for="step in reproductionDemo.steps || []" :key="step">{{ step }}</small>
-                      </div>
-                    </section>
-
-                    <section v-else key="concepts-stage" class="tool-stage-card concepts-stage">
-                      <header class="tool-stage-head">
-                        <div>
-                          <span>关键概念</span>
-                          <strong>本节知识卡片</strong>
-                        </div>
-                      </header>
-                      <div class="concept-card-grid">
-                        <article v-for="card in conceptCards" :key="card.name">
-                          <strong>{{ card.name }}</strong>{{ card.explanation }}
-                        </article>
-                      </div>
-                    </section>
-                  </Transition>
-                </div>
+                        <section
+                          v-else-if="activeAssistantTab === 'workspace'"
+                          key="workspace"
+                          class="om-tool-panel om-workspace-panel"
+                          :class="{ 'is-mindmap': activeTool === 'mindmap' }"
+                        >
+                          <header>
+                            <strong>笔记与导图</strong>
+                            <div class="om-mini-tabs">
+                              <button type="button" :class="{ active: activeTool === 'note' }" @click="activeTool = 'note'">笔记</button>
+                              <button type="button" :class="{ active: activeTool === 'mindmap' }" @click="activeTool = 'mindmap'">导图</button>
+                            </div>
+                          </header>
+                          <template v-if="activeTool === 'mindmap'">
+                            <VueFlow
+                              v-model:nodes="mindmapNodes"
+                              v-model:edges="mindmapEdges"
+                              :fit-view-on-init="true"
+                              class="classroom-mindmap-flow"
+                            />
+                          </template>
+                          <template v-else>
+                            <el-input v-model="noteMarkdown" type="textarea" :rows="13" placeholder="用 Markdown 写下当前页笔记" />
+                            <div class="note-reference-card">
+                              <span>引用页</span>
+                              <strong>Slide {{ activeSlideIndex + 1 }} · {{ currentSlide?.title }}</strong>
+                            </div>
+                            <el-button type="primary" :loading="savingNote" :disabled="!noteMarkdown.trim()" @click="handleSaveNote">保存笔记</el-button>
+                          </template>
+                        </section>
+                      </Transition>
+                    </aside>
+                  </div>
+                </section>
               </section>
             </Transition>
-
-            <div v-if="pptPackage" class="classroom-action-row">
-              <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-              <el-button @click="editingPptInstruction = true">重新生成</el-button>
-              <el-button type="success" :disabled="!allSlidesViewed || classroom?.slides_completed" @click="handleCompleteSlides">
-                {{ classroom?.slides_completed ? '课件已完成' : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
-              </el-button>
-            </div>
           </section>
 
           <section v-else-if="activeGate === 'quiz'" key="quiz" class="classroom-pane">
@@ -332,17 +352,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import mermaid from 'mermaid'
+import { VueFlow, type Edge, type Node } from '@vue-flow/core'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
-  generateClassroomPpt,
   generateClassroomVisualization,
+  generateClassroomPpt,
+  getClassroomSession,
   getCurrentSyllabus,
   getOrCreateClassroomSession,
+  saveClassroomNote,
   sendClassroomDialogue,
   submitClassroomPractice,
   submitClassroomQuiz,
@@ -355,43 +379,44 @@ import {
 } from '../services/apiClient'
 
 type GateKey = 'ppt' | 'quiz' | 'practice' | 'reflection'
-type ToolKey = 'notes' | 'diagram' | 'voice' | 'visualization' | 'demo' | 'concepts'
+type ToolKey = 'lecture' | 'visualization' | 'note' | 'mindmap'
+type AssistantTabKey = 'lecture' | 'interactive' | 'workspace'
 
 const props = defineProps<{ projectId: number | null; itemId: number | null }>()
 const router = useRouter()
 const loading = ref(false)
-const generatingPpt = ref(false)
 const generatingVisualization = ref(false)
 const loadingVisualizationView = ref(false)
 const sendingDialogue = ref(false)
+const savingNote = ref(false)
 const submittingQuiz = ref(false)
 const submittingPractice = ref(false)
 const submittingReflection = ref(false)
+const requestingPptGeneration = ref(false)
+const pollingClassroom = ref(false)
+let classroomPollTimer: ReturnType<typeof window.setInterval> | null = null
 const syllabus = ref<SyllabusVersionRead | null>(null)
 const classroom = ref<ClassroomSessionRead | null>(null)
 const activeGate = ref<GateKey>('ppt')
-const activeTool = ref<ToolKey>('notes')
+const activeTool = ref<ToolKey>('lecture')
+const activeAssistantTab = ref<AssistantTabKey | null>(null)
 const activeSlideIndex = ref(0)
 const visitedSlideIndices = ref<Set<number>>(new Set([0]))
-const editingPptInstruction = ref(false)
-const pptInstruction = ref('')
 const visualizationInstruction = ref('')
 const visualizationUrl = ref('')
-const diagramEl = ref<HTMLElement | null>(null)
 const isSpeaking = ref(false)
+const showLectureSubtitle = ref(false)
+const noteMarkdown = ref('')
 const chatMessage = ref('')
 const unresolvedQuestionsText = ref('')
 const quizAnswers = reactive<Record<string, string>>({})
 const practiceForm = reactive({ report: '', artifact_url: '', key_result: '' })
 const reflectionForm = reactive({ reflection: '', next_action: '' })
 const quickActions = ['讲简单点', '举例', '出一道题', '联系科研方向', '总结本页']
-const lessonTools = [
-  { key: 'notes' as ToolKey, label: '讲解' },
-  { key: 'diagram' as ToolKey, label: '图解' },
-  { key: 'voice' as ToolKey, label: '语音' },
-  { key: 'visualization' as ToolKey, label: '演示' },
-  { key: 'demo' as ToolKey, label: 'Demo' },
-  { key: 'concepts' as ToolKey, label: '概念' }
+const assistantTabs = [
+  { key: 'lecture' as AssistantTabKey, label: '讲解' },
+  { key: 'interactive' as AssistantTabKey, label: '互动' },
+  { key: 'workspace' as AssistantTabKey, label: '产物' }
 ]
 
 const currentItem = computed(() => syllabus.value?.items.find((item) => item.id === props.itemId) || null)
@@ -406,15 +431,88 @@ const visualizationResource = computed<ClassroomResourceRead | null>(() => {
 const pptPackage = computed<Record<string, any> | null>(() => pptResource.value?.content_data || null)
 const slideList = computed<any[]>(() => pptPackage.value?.slides || [])
 const quizQuestions = computed<any[]>(() => pptPackage.value?.quiz || [])
+const classroomGenerationState = computed(() => classroom.value?.progress_state || {})
+const isClassroomGenerating = computed(() => classroom.value?.status === 'generating' || classroom.value?.status === 'queued' || pollingClassroom.value)
+const classroomGenerationProgress = computed(() => {
+  const value = Number(classroomGenerationState.value.generation_progress || 0)
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+})
+const classroomGenerationTitle = computed(() => {
+  if (classroom.value?.status === 'failed') return '课堂资源生成失败'
+  if (classroom.value?.status === 'queued') return '课堂资源已排队'
+  return '课堂资源正在生成'
+})
+const classroomGenerationMessage = computed(() => {
+  if (classroom.value?.generation_error) return classroom.value.generation_error
+  return String(classroomGenerationState.value.generation_message || '系统正在生成课件、例题、实操和复盘资源，完成后会自动显示。')
+})
 const currentSlide = computed(() => slideList.value[activeSlideIndex.value] || null)
+const currentSlideLayout = computed(() => String(currentSlide.value?.layout || ''))
+const currentSlideLayoutLabel = computed(() => {
+  const labels: Record<string, string> = {
+    cover: 'Overview',
+    split_visual: 'Concept + Visual',
+    process_timeline: 'Process',
+    comparison_matrix: 'Comparison',
+    evidence_cards: 'Evidence',
+    lab_workbench: 'Lab',
+    defense_panel: 'Defense'
+  }
+  return labels[currentSlideLayout.value] || currentSlideLayout.value
+})
+const currentSlideVisualBlocks = computed<Array<Record<string, string>>>(() => {
+  const blocks = Array.isArray(currentSlide.value?.visual_blocks) ? currentSlide.value.visual_blocks : []
+  return blocks.map((block: Record<string, unknown>) => ({
+    type: String(block.type || 'concept'),
+    title: String(block.title || ''),
+    content: String(block.content || ''),
+    emphasis: String(block.emphasis || '')
+  })).filter((block: Record<string, string>) => block.title && block.content)
+})
+const currentSlideSidePanel = computed<{ title: string; items: string[] } | null>(() => {
+  const panel = currentSlide.value?.side_panel
+  if (!panel || typeof panel !== 'object') return null
+  const items = Array.isArray(panel.items) ? panel.items.map((item: unknown) => String(item)).filter(Boolean) : []
+  if (!String(panel.title || '').trim() || !items.length) return null
+  return { title: String(panel.title), items }
+})
+const currentSlideTakeaways = computed<string[]>(() => {
+  return Array.isArray(currentSlide.value?.takeaways) ? currentSlide.value.takeaways.map((item: unknown) => String(item)).filter(Boolean) : []
+})
+const currentSlideSourceRefs = computed<Array<{ title: string; url: string }>>(() => {
+  if (!Array.isArray(currentSlide.value?.source_refs)) return []
+  return currentSlide.value.source_refs
+    .map((item: unknown) => {
+      if (!item || typeof item !== 'object') return null
+      const source = item as Record<string, unknown>
+      const title = String(source.title || '').trim()
+      const url = String(source.url || '').trim()
+      if (!title || !/^https?:\/\//i.test(url)) return null
+      return { title, url }
+    })
+    .filter((item: { title: string; url: string } | null): item is { title: string; url: string } => Boolean(item))
+})
+const currentSlideKnowledgePoints = computed<string[]>(() => {
+  const title = String(currentSlide.value?.title || '')
+  const bullets = (currentSlide.value?.bullets || []).join(' ')
+  const matched = (currentItem.value?.knowledge_points || []).filter((point) => {
+    const value = String(point)
+    return title.includes(value) || bullets.includes(value)
+  })
+  return matched.length ? matched.slice(0, 4) : (currentItem.value?.knowledge_points || []).slice(0, 4)
+})
+const currentSlideExplanation = computed(() => {
+  const notes = String(currentSlide.value?.speaker_notes || '').trim()
+  if (notes) return notes
+  const bullets = (currentSlide.value?.bullets || []).join('；')
+  return bullets ? `本页围绕 ${currentSlide.value?.title || '当前知识点'} 展开：${bullets}` : '当前页暂无讲解内容。'
+})
 const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
-const isPptSetupVisible = computed(() => !pptPackage.value || editingPptInstruction.value)
 const conceptCards = computed<any[]>(() => pptPackage.value?.concept_cards || [])
-const diagramSpec = computed<Record<string, any>>(() => pptPackage.value?.diagram || {})
 const guidingQuestions = computed<any[]>(() => pptPackage.value?.guiding_questions || [])
 const voiceScript = computed<Record<string, any>>(() => pptPackage.value?.voice_script || {})
-const reproductionDemo = computed<Record<string, any>>(() => pptPackage.value?.reproduction_demo || {})
 const practiceSpec = computed(() => pptPackage.value?.practice || null)
 const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
 const reflectionPrompts = computed<string[]>(() => pptPackage.value?.reflection_prompts || [])
@@ -433,10 +531,25 @@ const slideReadPercent = computed(() => {
 })
 const isDeckFocusMode = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value))
 const voiceText = computed(() => {
-  if (!voiceScript.value) return ''
-  if (activeSlideIndex.value >= 0 && currentSlide.value?.speaker_notes) return String(currentSlide.value.speaker_notes)
-  return String(voiceScript.value.one_minute || voiceScript.value.five_minutes || '')
+  if (!voiceScript.value && !currentSlide.value) return ''
+  const title = currentSlide.value?.title ? `现在讲解：${currentSlide.value.title}。` : ''
+  const notes = String(currentSlide.value?.speaker_notes || '').trim()
+  const bullets = (currentSlide.value?.bullets || []).map((item: string, index: number) => `${index + 1}. ${item}`).join('。')
+  const context = currentSlideKnowledgePoints.value.length ? `这一页的关键知识点包括：${currentSlideKnowledgePoints.value.join('、')}。` : ''
+  const example = currentSlide.value?.example ? `举个例子：${currentSlide.value.example}` : ''
+  const misconception = currentSlide.value?.misconception ? `常见误区是：${currentSlide.value.misconception}` : ''
+  const interaction = currentSlide.value?.interaction_prompt ? `你可以思考：${currentSlide.value.interaction_prompt}` : ''
+  const guidance = '请注意，这不是逐字朗读课件，而是用课堂讲解的方式说明概念、例子、易错点和下一步操作。'
+  const body = notes || bullets || String(voiceScript.value.one_minute || voiceScript.value.five_minutes || '')
+  return [title, context, body, example, misconception, interaction, guidance].filter(Boolean).join('\n')
 })
+const currentVisualizationPlaceholder = computed(() => {
+  const title = currentSlide.value?.title || currentItem.value?.title || '当前页'
+  const points = currentSlideKnowledgePoints.value.join('、') || '当前知识点'
+  return `围绕「${title}」生成动态演示。可补充希望展示的机制，例如：${points} 的流程、信号传播、状态变化、数据流、交互动画或必要时的 3D 类比。`
+})
+const mindmapNodes = ref<Node[]>([])
+const mindmapEdges = ref<Edge[]>([])
 const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
@@ -456,20 +569,16 @@ const dialogueMessages = computed(() => {
     }))
 })
 
-mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' })
-
 onMounted(loadClassroom)
 onBeforeUnmount(() => {
   revokeVisualizationUrl()
   stopVoice()
+  stopClassroomPolling()
 })
 watch(() => [props.projectId, props.itemId] as const, () => loadClassroom())
 watch(() => visualizationResource.value?.id, () => {
   if (visualizationResource.value) void loadVisualizationView()
   else revokeVisualizationUrl()
-})
-watch(() => [activeTool.value, diagramSpec.value?.mermaid] as const, () => {
-  if (activeTool.value === 'diagram') void renderDiagram()
 })
 
 async function loadClassroom() {
@@ -484,25 +593,63 @@ async function loadClassroom() {
     classroom.value = classroomData
     hydrateQuizAnswers()
     syncVisitedSlidesFromSession()
+    hydrateNote()
+    hydrateMindmap()
     if (visualizationResource.value) await loadVisualizationView()
+    if (!pptPackage.value) await ensurePptGeneration()
   } finally {
     loading.value = false
   }
 }
 
-async function handleGeneratePpt() {
-  if (!classroom.value) return
-  generatingPpt.value = true
+async function ensurePptGeneration(forceRetry = false) {
+  if (!classroom.value || classroom.value.ppt_resource_id || requestingPptGeneration.value) return
+  if (classroom.value.status === 'failed' && !forceRetry) {
+    ElMessage.error(classroom.value.generation_error || '课堂资源生成失败')
+    return
+  }
+  requestingPptGeneration.value = true
   try {
-    const { data } = await generateClassroomPpt(classroom.value.id, pptInstruction.value)
+    const { data } = await generateClassroomPpt(classroom.value.id)
     classroom.value = data
+    startClassroomPolling()
+  } finally {
+    requestingPptGeneration.value = false
+  }
+}
+
+function startClassroomPolling() {
+  if (!classroom.value || classroomPollTimer) return
+  pollingClassroom.value = true
+  classroomPollTimer = window.setInterval(() => {
+    void refreshClassroomStatus()
+  }, 5000)
+}
+
+function stopClassroomPolling() {
+  if (classroomPollTimer) {
+    window.clearInterval(classroomPollTimer)
+    classroomPollTimer = null
+  }
+  pollingClassroom.value = false
+}
+
+async function refreshClassroomStatus() {
+  if (!classroom.value) return
+  const { data } = await getClassroomSession(classroom.value.id)
+  classroom.value = data
+  if (data.ppt_resource_id) {
+    stopClassroomPolling()
     hydrateQuizAnswers()
     syncVisitedSlidesFromSession()
-    editingPptInstruction.value = false
-    activeTool.value = 'notes'
-    ElMessage.success('集成课堂已生成')
-  } finally {
-    generatingPpt.value = false
+    hydrateNote()
+    hydrateMindmap()
+    ElMessage.success('课堂课件已生成')
+    return
+  }
+  if (data.status === 'failed') {
+    stopClassroomPolling()
+    ElMessage.error(data.generation_error || '课堂资源生成失败')
   }
 }
 
@@ -510,28 +657,54 @@ async function handleGenerateVisualization() {
   if (!classroom.value) return
   generatingVisualization.value = true
   try {
-    const { data } = await generateClassroomVisualization(classroom.value.id, visualizationInstruction.value)
+    const pageContext = [
+      `当前页：${currentSlide.value?.title || currentItem.value?.title || ''}`,
+      `知识点：${currentSlideKnowledgePoints.value.join('、')}`,
+      `页面要点：${(currentSlide.value?.bullets || []).join('；')}`,
+      `用户要求：${visualizationInstruction.value}`
+    ].join('\n')
+    const { data } = await generateClassroomVisualization(classroom.value.id, pageContext)
     classroom.value = data
     await loadVisualizationView()
     activeTool.value = 'visualization'
-    ElMessage.success('3D 物理演示已生成')
+    activeAssistantTab.value = 'interactive'
+    ElMessage.success('动态演示已生成')
   } finally {
     generatingVisualization.value = false
   }
 }
 
-function handleGenerateVoice() {
+function toggleAssistantTab(tab: AssistantTabKey) {
+  if (activeAssistantTab.value === tab) {
+    activeAssistantTab.value = null
+    if (tab === 'lecture') stopVoice()
+    return
+  }
+  activeAssistantTab.value = tab
+  if (tab === 'lecture') activeTool.value = 'lecture'
+  if (tab === 'interactive') {
+    activeTool.value = 'visualization'
+    stopVoice()
+  }
+  if (tab === 'workspace') {
+    if (!['note', 'mindmap'].includes(activeTool.value)) activeTool.value = 'note'
+    stopVoice()
+  }
+}
+
+function toggleLectureVoice() {
+  const text = voiceText.value.trim()
+  if (!text) {
+    ElMessage.warning('当前页暂无可讲解内容')
+    return
+  }
   if (isSpeaking.value) {
     window.speechSynthesis.pause()
     isSpeaking.value = false
     return
   }
-  const text = voiceText.value.trim()
-  if (!text) {
-    ElMessage.warning('当前课堂暂无可播放的语音脚本')
-    return
-  }
   stopVoice()
+  showLectureSubtitle.value = true
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.lang = 'zh-CN'
   utterance.rate = 0.96
@@ -547,33 +720,24 @@ function handleGenerateVoice() {
   window.speechSynthesis.speak(utterance)
 }
 
-function resumeVoice() {
-  window.speechSynthesis.resume()
-  isSpeaking.value = !window.speechSynthesis.paused
-}
-
 function stopVoice() {
   window.speechSynthesis.cancel()
   isSpeaking.value = false
 }
 
-async function renderDiagram() {
-  await nextTick()
-  if (!diagramEl.value) return
-  const source = String(diagramSpec.value?.mermaid || '').trim()
-  if (!source) {
-    diagramEl.value.innerHTML = '<div class="diagram-empty">当前课堂暂无 Mermaid 图解。</div>'
-    return
-  }
+async function handleSaveNote() {
+  if (!classroom.value || !noteMarkdown.value.trim()) return
+  savingNote.value = true
   try {
-    const id = `diagram-${props.itemId || 'item'}-${Date.now()}`
-    const { svg } = await mermaid.render(id, source)
-    if (diagramEl.value) diagramEl.value.innerHTML = svg
-  } catch (error) {
-    if (diagramEl.value) {
-      diagramEl.value.innerHTML = `<pre>${escapeHtml(source)}</pre>`
-    }
-    ElMessage.error(`图解渲染失败：${error instanceof Error ? error.message : String(error)}`)
+    const { data } = await saveClassroomNote(classroom.value.id, {
+      markdown: noteMarkdown.value,
+      slide_index: activeSlideIndex.value,
+      slide_title: String(currentSlide.value?.title || '')
+    })
+    classroom.value = data
+    ElMessage.success('课堂笔记已保存')
+  } finally {
+    savingNote.value = false
   }
 }
 
@@ -739,18 +903,77 @@ function downloadBlob(data: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function visualBlockLabel(type: string) {
+  const labels: Record<string, string> = {
+    concept: 'Concept',
+    process: 'Process',
+    metric: 'Metric',
+    evidence: 'Evidence',
+    comparison: 'Compare',
+    formula: 'Formula',
+    code: 'Code',
+    warning: 'Warning',
+    question: 'Question'
+  }
+  return labels[type] || 'Insight'
+}
+
 function revokeVisualizationUrl() {
   if (visualizationUrl.value) URL.revokeObjectURL(visualizationUrl.value)
   visualizationUrl.value = ''
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+function hydrateNote() {
+  const note = latestSubmissionByType('note')
+  if (note?.content?.markdown) {
+    noteMarkdown.value = String(note.content.markdown)
+    return
+  }
+  noteMarkdown.value = [
+    `# ${currentItem.value?.title || '课堂笔记'}`,
+    '',
+    `> 引用：Slide ${activeSlideIndex.value + 1} · ${currentSlide.value?.title || ''}`,
+    '',
+    '## 我的理解',
+    '',
+    '## 关键证据/公式/代码',
+    '',
+    '## 待追问'
+  ].join('\n')
+}
+
+function hydrateMindmap() {
+  const center = currentItem.value?.title || pptPackage.value?.title || '本课'
+  const nodes: Node[] = [
+    { id: 'center', type: 'default', label: center, position: { x: 360, y: 220 } }
+  ]
+  const edges: Edge[] = []
+  const groups = [
+    { id: 'points', label: '知识点', items: currentItem.value?.knowledge_points || [] },
+    { id: 'concepts', label: '概念', items: conceptCards.value.map((card) => String(card.name || '')).filter(Boolean) },
+    { id: 'practice', label: '实践', items: practiceSpec.value?.title ? [practiceSpec.value.title] : [] },
+    { id: 'reflection', label: '复盘', items: reflectionPrompts.value.slice(0, 3) }
+  ]
+  groups.forEach((group, groupIndex) => {
+    const groupNodeId = `group-${group.id}`
+    nodes.push({
+      id: groupNodeId,
+      label: group.label,
+      position: { x: 80 + groupIndex * 210, y: 60 }
+    })
+    edges.push({ id: `edge-center-${group.id}`, source: 'center', target: groupNodeId })
+    group.items.slice(0, 5).forEach((item, itemIndex) => {
+      const nodeId = `${group.id}-${itemIndex}`
+      nodes.push({
+        id: nodeId,
+        label: String(item),
+        position: { x: 40 + groupIndex * 210, y: 340 + itemIndex * 74 }
+      })
+      edges.push({ id: `edge-${group.id}-${itemIndex}`, source: groupNodeId, target: nodeId })
+    })
+  })
+  mindmapNodes.value = nodes
+  mindmapEdges.value = edges
 }
 
 async function goBackToSyllabus() {
@@ -776,3 +999,7 @@ function statusType(status: string): '' | 'success' | 'warning' | 'info' | 'prim
   return 'primary'
 }
 </script>
+
+
+
+

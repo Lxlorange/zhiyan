@@ -20,7 +20,8 @@ from app.schemas import (
 from app.services.direction_service import ProjectSuggestion
 from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.knowledge_service import COURSE_TITLE
-from app.services.llm_client import qwen_chat_json, qwen_chat_stream_text
+from app.services.llm_client import LLMResponseError, qwen_chat_json, qwen_chat_stream_text
+from app.services.scholarly_search_service import ScholarlySearchError, verify_candidate_resource_url
 
 
 class RecommendedResource(BaseModel):
@@ -28,6 +29,7 @@ class RecommendedResource(BaseModel):
     url: str = ""
     source: str = ""
     reason: str = ""
+    verified: bool = False
 
 
 class ProjectPlanAgentResult(BaseModel):
@@ -51,6 +53,14 @@ def _message(role: str, content: str) -> dict:
     return {"role": role, "content": content, "created_at": datetime.utcnow().isoformat()}
 
 
+def _split_display_and_model_message(message: str) -> tuple[str, str]:
+    marker = "\n\n用户上传了以下已解析参考资料。"
+    if marker not in message:
+        return message, message
+    display = message.split(marker, 1)[0].strip()
+    return display or message, message
+
+
 def _knowledge_context(db: Session, query: str) -> str:
     return build_rag_context(db, query, limit=8)
 
@@ -72,11 +82,12 @@ def _run_project_plan_agent(
         knowledge_context,
         current_plan,
     )
-    return qwen_chat_json(
+    result = qwen_chat_json(
         "你是严谨的高校学习项目规划智能体，只返回合法 JSON。",
         prompt,
         ProjectPlanAgentResult,
     )
+    return _verify_recommended_resources(result, learning_goal)
 
 
 def _build_project_plan_prompt(
@@ -127,7 +138,8 @@ def _build_project_plan_prompt(
 6. 不要给出预设模板答案，不要声称已完成真实实验或已引用不存在论文。
 7. 如果用户要求代写、虚构实验、虚构引用，必须写入 risk_notes 并改成合规学习支持方案。
 
-8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；优先使用可公开访问的课程、论文、文档、工具官网或资料来源链接。没有可靠链接时 url 留空，不要编造不存在的链接。
+8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；url 必须是你确信真实存在且与学习目标直接相关的 http/https 链接，例如官方文档、课程主页、arXiv/DOI/Semantic Scholar/OpenAlex、教材官网、权威教程或用户上传/知识库来源。不得只给资源标题让后端猜链接，不得编造 DOI、论文链接或官网链接；没有可靠链接时不要放入 recommended_resources，改写入 risk_notes。
+9. 对通用技能学习目标优先推荐官方文档、权威教程、课程主页和实践项目；只有用户明确要求论文、综述、科研选题、实验或引用时，才推荐论文数据库链接。
 schema:
 {json.dumps(ProjectPlanAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
 """
@@ -148,7 +160,7 @@ def _stream_prompt_from_json_prompt(json_prompt: str) -> str:
 
 
 def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) -> ProjectPlanRead:
-    messages = [_message("user", f"学习目标：{request.learning_goal}\n补充要求：{request.extra_requirements or '无'}")]
+    messages = [_message("user", request.learning_goal)]
     started = time.perf_counter()
     result = _run_project_plan_agent(
         db,
@@ -188,7 +200,7 @@ def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) ->
 
 
 def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequest) -> Iterator[dict]:
-    messages = [_message("user", f"学习目标：{request.learning_goal}\n补充要求：{request.extra_requirements or '无'}")]
+    messages = [_message("user", request.learning_goal)]
     knowledge_context = _knowledge_context(db, f"{request.learning_goal}\n{request.extra_requirements}")
     json_prompt = _build_project_plan_prompt(
         request.learning_type,
@@ -211,6 +223,7 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
         json_prompt,
         ProjectPlanAgentResult,
     )
+    result = _verify_recommended_resources(result, request.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)
     assistant_content = streamed_text.strip() or result.assistant_message
     messages.append(_message("assistant", assistant_content))
@@ -259,14 +272,15 @@ def adjust_project_plan(
     session = get_project_plan_or_404(db, user, plan_id)
     if session.status == "built":
         raise ValueError("project plan has already been built")
-    messages = [*session.messages, _message("user", request.message)]
+    display_message, model_message = _split_display_and_model_message(request.message)
+    messages = [*session.messages, _message("user", display_message)]
     started = time.perf_counter()
     result = _run_project_plan_agent(
         db,
         session.learning_type,
         session.learning_goal,
         session.extra_requirements,
-        messages,
+        [*session.messages, _message("user", model_message)],
         session.plan_data,
     )
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -281,7 +295,7 @@ def adjust_project_plan(
             user_id=user.id,
             agent="ProjectPlannerAgent",
             status="success",
-            input_summary=request.message[:500],
+            input_summary=display_message[:500],
             output_summary=result.summary[:500],
             latency_ms=latency_ms,
         )
@@ -301,13 +315,15 @@ def stream_adjust_project_plan(
     if session.status == "built":
         raise ValueError("project plan has already been built")
 
-    messages = [*session.messages, _message("user", request.message)]
-    knowledge_context = _knowledge_context(db, f"{session.learning_goal}\n{session.extra_requirements}\n{request.message}")
+    display_message, model_message = _split_display_and_model_message(request.message)
+    messages = [*session.messages, _message("user", display_message)]
+    model_messages = [*session.messages, _message("user", model_message)]
+    knowledge_context = _knowledge_context(db, f"{session.learning_goal}\n{session.extra_requirements}\n{model_message}")
     json_prompt = _build_project_plan_prompt(
         session.learning_type,
         session.learning_goal,
         session.extra_requirements,
-        messages,
+        model_messages,
         knowledge_context,
         session.plan_data,
     )
@@ -325,6 +341,7 @@ def stream_adjust_project_plan(
         json_prompt,
         ProjectPlanAgentResult,
     )
+    result = _verify_recommended_resources(result, session.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)
     messages.append(_message("assistant", streamed_text.strip() or result.assistant_message))
     session.title = result.title
@@ -337,7 +354,7 @@ def stream_adjust_project_plan(
             user_id=user.id,
             agent="ProjectPlannerAgent",
             status="success",
-            input_summary=request.message[:500],
+            input_summary=display_message[:500],
             output_summary=result.summary[:500],
             latency_ms=latency_ms,
         )
@@ -394,13 +411,14 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         related_course=suggestion.related_course,
         related_knowledge_points=suggestion.related_knowledge_points,
         related_documents=suggestion.related_documents,
-        status="draft",
+        status="resources_queued",
+        current_stage="项目资源准备中",
         risk_notes=suggestion.risk_notes,
         personalization_strategy=suggestion.personalization_strategy,
         today_recommendations=suggestion.today_recommendations,
         current_weak_points=suggestion.current_weak_points,
         output_checklist=suggestion.output_checklist,
-        next_step=suggestion.next_step,
+        next_step="系统正在后台生成学习清单和课堂资源，完成后可从项目主页进入学习清单开始学习。",
     )
     db.add(project)
     db.flush()
@@ -424,3 +442,43 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         plan=ProjectPlanRead.model_validate(session),
         project=LearningProjectRead.model_validate(project),
     )
+
+
+def _verify_recommended_resources(result: ProjectPlanAgentResult, learning_goal: str) -> ProjectPlanAgentResult:
+    verified: list[RecommendedResource] = []
+    risk_notes = list(result.risk_notes)
+    for resource in result.recommended_resources[:8]:
+        if not resource.url:
+            risk_notes.append(f"推荐资源「{resource.title}」没有提供可验证链接，已从前台推荐列表移除。")
+            continue
+        try:
+            hit = verify_candidate_resource_url(
+                title=resource.title,
+                url=resource.url,
+                topic=learning_goal,
+                source=resource.source,
+                reason=resource.reason,
+            )
+        except ScholarlySearchError as exc:
+            risk_notes.append(f"推荐资源「{resource.title}」链接验证失败：{exc}")
+            continue
+        if hit is None:
+            risk_notes.append(f"推荐资源「{resource.title}」未通过可达性或主题相关性验证，已从前台推荐列表移除。")
+            continue
+        verified.append(
+            RecommendedResource(
+                title=hit.title,
+                url=hit.url,
+                source=hit.source,
+                reason=hit.reason,
+                verified=True,
+            )
+        )
+    if not verified:
+        risk_notes.append(
+            "推荐资源未产生可打开且主题相关的真实链接；前台不会展示未经验证的资源。"
+            "请在对话中要求 Agent 提供官方文档、课程主页、论文 DOI/arXiv 或教材官网等明确 URL。"
+        )
+    result.recommended_resources = verified
+    result.risk_notes = risk_notes
+    return result

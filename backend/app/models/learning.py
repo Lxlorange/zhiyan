@@ -427,6 +427,8 @@ class ClassroomSession(Base):
     ppt_resource_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     slides_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     slide_progress: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    generation_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    generation_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
     quiz_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     practice_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reflection_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -528,6 +530,18 @@ class DailyLearningPlanItem(Base):
     user_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     daily_plan: Mapped[DailyLearningPlan] = relationship(back_populates="items")
+
+    @property
+    def is_overdue(self) -> bool:
+        return self.status not in {"completed", "mastered", "removed"} and self.planned_date.date() < datetime.utcnow().date()
+
+    @property
+    def is_today(self) -> bool:
+        return self.planned_date.date() == datetime.utcnow().date()
+
+    @property
+    def can_start(self) -> bool:
+        return self.status not in {"removed"} and self.syllabus_item_id is not None
 
 
 class LiteraturePaper(Base):

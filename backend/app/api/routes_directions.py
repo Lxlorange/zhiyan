@@ -1,11 +1,12 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import SessionLocal, get_db
+from app.models.learning import LearningProject, LearningProjectEvent
 from app.models.user import User
 from app.schemas import (
     DirectionAnalyzeRequest,
@@ -25,6 +26,7 @@ from app.schemas import (
     ProjectPlanRead,
     ProjectPlanRequest,
     ResearchDirectionRead,
+    SyllabusGenerateRequest,
 )
 from app.services.direction_service import (
     analyze_direction,
@@ -51,6 +53,7 @@ from app.services.direction_service import (
 )
 from app.services.llm_client import LLMConfigurationError, LLMResponseError
 from app.services.attachment_service import AttachmentParseError, ParsedAttachment, parse_project_plan_attachment
+from app.services.classroom_service import pre_generate_project_classrooms
 from app.services.project_plan_service import (
     adjust_project_plan,
     build_project_from_plan,
@@ -58,6 +61,7 @@ from app.services.project_plan_service import (
     stream_adjust_project_plan,
     stream_create_project_plan,
 )
+from app.services.syllabus_service import generate_syllabus, get_current_syllabus
 
 router = APIRouter(tags=["directions"])
 
@@ -68,6 +72,48 @@ def _handle_ai_error(exc: Exception) -> HTTPException:
     if isinstance(exc, LLMResponseError):
         return HTTPException(status_code=502, detail=str(exc))
     return HTTPException(status_code=500, detail=str(exc))
+
+
+def _background_prepare_project_resources(project_id: int, user_id: int) -> None:
+    prepare_db = SessionLocal()
+    try:
+        user = prepare_db.get(User, user_id)
+        project = get_project_or_404(prepare_db, user, project_id) if user is not None else None
+        if user is None or project is None:
+            return
+        try:
+            get_current_syllabus(prepare_db, user, project_id)
+        except KeyError:
+            generate_syllabus(
+                prepare_db,
+                user,
+                project_id,
+                SyllabusGenerateRequest(
+                    generation_goal="项目构建后自动生成完整学习清单，并为后续课堂资源预生成做准备。",
+                    force_new_version=False,
+                ),
+            )
+        pre_generate_project_classrooms(prepare_db, user, project_id)
+    except Exception as exc:
+        prepare_db.rollback()
+        user = prepare_db.get(User, user_id)
+        project = prepare_db.get(LearningProject, project_id)
+        if user is not None and project is not None:
+            project.status = "resources_failed"
+            project.current_stage = "项目资源后台生成失败"
+            project.next_step = f"{exc.__class__.__name__}: {exc}"
+            prepare_db.add(
+                LearningProjectEvent(
+                    project_id=project.id,
+                    user_id=user.id,
+                    event_type="project_resources_preparation_failed",
+                    summary="项目构建后的学习清单或课堂资源生成失败",
+                    payload={"error": f"{exc.__class__.__name__}: {exc}"},
+                )
+            )
+            prepare_db.commit()
+    finally:
+        prepare_db.close()
 
 
 @router.get("/direction-templates", response_model=list[DirectionTemplateRead])
@@ -189,11 +235,15 @@ def project_plan_adjust_stream(
 @router.post("/project-plans/{plan_id}/build", response_model=ProjectPlanBuildResponse)
 def project_plan_build(
     plan_id: int,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProjectPlanBuildResponse:
     try:
-        return build_project_from_plan(db, user, plan_id)
+        response = build_project_from_plan(db, user, plan_id)
+        if response.project.status not in {"resources_ready", "resources_generating", "syllabus_generating"}:
+            background_tasks.add_task(_background_prepare_project_resources, response.project.id, user.id)
+        return response
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

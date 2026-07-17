@@ -25,11 +25,13 @@ from app.models.learning import (
     ClassroomSubmission,
     LearningProject,
     LearningProjectEvent,
+    LearningSyllabusVersion,
     LearningSyllabusItem,
 )
 from app.models.user import User
 from app.schemas import (
     ClassroomDialogueRequest,
+    ClassroomNoteSaveRequest,
     ClassroomPracticeSubmitRequest,
     ClassroomQuizSubmitRequest,
     ClassroomReflectionSubmitRequest,
@@ -40,15 +42,28 @@ from app.schemas import (
 )
 from app.core.config import get_settings
 from app.services.knowledge_ingestion_service import build_rag_context
+from app.services.json_repair_service import LLMJsonParseError, parse_llm_json
 from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
 from app.services.visualization_3d_renderer import render_three_physics_html
 
 
+PREGENERATE_CLASSROOM_LIMIT = 2
+
+
 class _SlideSpec(BaseModel):
     title: str
+    layout: str
     bullets: list[str] = Field(min_length=2, max_length=6)
     speaker_notes: str
+    visual_hint: str = ""
+    visual_blocks: list[dict[str, Any]] = Field(min_length=2, max_length=6)
+    side_panel: dict[str, Any]
+    takeaways: list[str] = Field(min_length=2, max_length=5)
+    source_refs: list[dict[str, str]] = Field(min_length=1, max_length=3)
+    example: str = ""
+    misconception: str = ""
+    interaction_prompt: str = ""
 
 
 class _QuizSpec(BaseModel):
@@ -114,7 +129,7 @@ class _ReadingSpec(BaseModel):
 class _ClassroomPackage(BaseModel):
     title: str
     learning_summary: str
-    slides: list[_SlideSpec] = Field(min_length=5, max_length=9)
+    slides: list[_SlideSpec] = Field(min_length=4, max_length=6)
     concept_cards: list[_ConceptCardSpec] = Field(min_length=3, max_length=6)
     diagram: _DiagramSpec
     guiding_questions: list[_GuidingQuestionSpec] = Field(min_length=3, max_length=6)
@@ -257,6 +272,7 @@ def get_or_create_classroom_session(db: Session, user: User, item_id: int) -> Cl
             project_id=project.id,
             user_id=user.id,
             title=item.title,
+            status="queued",
             progress_state=_build_progress_state(False, False, False, False, False),
         )
         db.add(session)
@@ -281,6 +297,159 @@ def get_or_create_classroom_session(db: Session, user: User, item_id: int) -> Cl
     return _get_session(db, user, session.id)
 
 
+def pre_generate_project_classrooms(db: Session, user: User, project_id: int) -> dict:
+    project = _project_or_404(db, user, project_id)
+    version = db.scalar(
+        select(LearningSyllabusVersion)
+        .options(selectinload(LearningSyllabusVersion.items))
+        .where(
+            LearningSyllabusVersion.project_id == project.id,
+            LearningSyllabusVersion.user_id == user.id,
+            LearningSyllabusVersion.is_current.is_(True),
+            LearningSyllabusVersion.status != "deleted",
+        )
+        .order_by(LearningSyllabusVersion.version_no.desc())
+    )
+    if version is None:
+        raise KeyError("current syllabus not found")
+
+    items = [
+        item
+        for item in sorted(version.items, key=lambda value: value.user_order)
+        if item.status not in {"deleted", "skipped", "split", "merged"}
+    ]
+    project.status = "resources_generating"
+    project.current_stage = "课堂资源生成中"
+    project.next_step = "系统正在按学习清单顺序预生成课堂、课件、例题、实操和复盘资源。"
+    _write_event(
+        db,
+        project,
+        user,
+        "classroom_resources_generation_started",
+        f"开始预生成 {len(items)} 个学习项的课堂资源",
+        {"version_id": version.id, "item_count": len(items)},
+    )
+    db.commit()
+
+    preheat_items = items[:PREGENERATE_CLASSROOM_LIMIT]
+    queued_count = max(0, len(items) - len(preheat_items))
+    generated = 0
+    skipped = 0
+    queued = 0
+    for item in items:
+        session = _get_or_create_prepared_classroom_session(db, user, project, item)
+        if item not in preheat_items:
+            if not session.ppt_resource_id and session.status not in {"generating", "ready", "completed"}:
+                session.status = "queued"
+                session.progress_state = _build_progress_state(False, False, False, False, False)
+                db.commit()
+            queued += 1
+            continue
+        try:
+            if session.ppt_resource_id:
+                skipped += 1
+                continue
+            generate_classroom_ppt(db, user, session.id, "")
+            generated += 1
+        except Exception as exc:
+            db.rollback()
+            project = _project_or_404(db, user, project_id)
+            project.status = "resources_failed"
+            project.current_stage = "课堂资源生成失败"
+            project.next_step = f"{item.title}: {exc.__class__.__name__}: {exc}"
+            _write_event(
+                db,
+                project,
+                user,
+                "classroom_resources_generation_failed",
+                f"课堂资源生成失败：{item.title}",
+                {
+                    "version_id": version.id,
+                    "item_id": item.id,
+                    "error": f"{exc.__class__.__name__}: {exc}",
+                },
+            )
+            db.add(
+                AgentTaskRecord(
+                    session_id=f"project-{project.id}-classroom-resources",
+                    user_id=user.id,
+                    agent="ClassroomResourcePreGenerationAgent",
+                    status="failed",
+                    input_summary=f"{project.title} / {item.title}",
+                    output_summary=f"{exc.__class__.__name__}: {exc}",
+                    latency_ms=0,
+                )
+            )
+            db.commit()
+            return {
+                "status": "failed",
+                "generated": generated,
+                "skipped": skipped,
+                "queued": queued,
+                "failed_item_id": item.id,
+                "error": f"{exc.__class__.__name__}: {exc}",
+            }
+
+    project = _project_or_404(db, user, project_id)
+    project.status = "resources_ready"
+    project.current_stage = "核心课堂资源已就绪"
+    project.next_step = "已优先生成靠前学习项，后续课堂会在进入学习时继续生成。"
+    project.progress = max(project.progress, 15)
+    project.generated_resource_count = max(project.generated_resource_count, generated + skipped)
+    _write_event(
+        db,
+        project,
+        user,
+        "classroom_resources_generated",
+        f"课堂资源预热完成：新增 {generated} 个，跳过 {skipped} 个，排队 {queued_count} 个",
+        {"version_id": version.id, "generated": generated, "skipped": skipped, "queued": queued},
+    )
+    db.add(
+        AgentTaskRecord(
+            session_id=f"project-{project.id}-classroom-resources",
+            user_id=user.id,
+            agent="ClassroomResourcePreGenerationAgent",
+            status="completed",
+            input_summary=f"{project.title} / syllabus-v{version.version_no}",
+            output_summary=f"预热 {generated} 个课堂资源，跳过 {skipped} 个，排队 {queued_count} 个",
+            latency_ms=0,
+        )
+    )
+    db.commit()
+    return {"generated": generated, "skipped": skipped, "queued": queued, "total": len(items)}
+
+
+def _get_or_create_prepared_classroom_session(
+    db: Session,
+    user: User,
+    project: LearningProject,
+    item: LearningSyllabusItem,
+) -> ClassroomSession:
+    session = _latest_session(db, user, item.id)
+    if session is not None:
+        return session
+    session = ClassroomSession(
+        syllabus_item_id=item.id,
+        project_id=project.id,
+        user_id=user.id,
+        title=item.title,
+        status="queued",
+        progress_state=_build_progress_state(False, False, False, False, False),
+    )
+    db.add(session)
+    db.flush()
+    _write_event(
+        db,
+        project,
+        user,
+        "classroom_prepared",
+        f"预创建课堂：{item.title}",
+        {"item_id": item.id, "session_id": session.id},
+    )
+    db.commit()
+    return _get_session(db, user, session.id)
+
+
 def generate_classroom_ppt(
     db: Session,
     user: User,
@@ -290,6 +459,14 @@ def generate_classroom_ppt(
     session = _get_session(db, user, session_id)
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
+    if session.ppt_resource_id:
+        return session
+    session.status = "generating"
+    session.generation_started_at = datetime.utcnow()
+    session.generation_error = ""
+    session.progress_state = _build_generation_progress_state("generating", "正在生成课堂课件、例题、实操和复盘任务")
+    db.commit()
+
     package = _generate_classroom_package(project, item, instruction)
     ppt_path = _write_pptx_file(session.id, item, package)
 
@@ -308,6 +485,8 @@ def generate_classroom_ppt(
     db.add(resource)
     db.flush()
     session.ppt_resource_id = resource.id
+    session.status = "ready"
+    session.generation_error = ""
     session.slides_completed = False
     session.slide_progress = {"current_index": 0, "total_slides": len(package.slides), "visited_indices": [0]}
     session.progress_state = _build_progress_state(True, False, session.quiz_passed, session.practice_passed, session.reflection_passed)
@@ -326,6 +505,28 @@ def generate_classroom_ppt(
     _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
+
+
+def request_classroom_ppt_generation(db: Session, user: User, session_id: int) -> tuple[ClassroomSession, bool]:
+    session = _get_session(db, user, session_id)
+    if session.ppt_resource_id:
+        return session, False
+    if session.status == "generating":
+        return session, False
+    session.status = "generating"
+    session.generation_started_at = datetime.utcnow()
+    session.generation_error = ""
+    session.progress_state = _build_generation_progress_state("queued", "课堂资源已进入生成队列")
+    db.commit()
+    return _get_session(db, user, session.id), True
+
+
+def mark_classroom_generation_failed(db: Session, user: User, session_id: int, exc: Exception) -> None:
+    session = _get_session(db, user, session_id)
+    session.status = "failed"
+    session.generation_error = f"{exc.__class__.__name__}: {exc}"
+    session.progress_state = _build_generation_progress_state("failed", session.generation_error)
+    db.commit()
 
 
 def generate_classroom_visualization(
@@ -387,7 +588,7 @@ def generate_classroom_voice(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     package = _classroom_package_or_error(session)
-    voice_text = _voice_text_for_scope(package, request.text_scope)
+    voice_text = _voice_text_for_scope(package, request)
     voice_path = _write_voice_script_file(session.id, item, request, voice_text)
     resource = ClassroomResource(
         session_id=session.id,
@@ -400,6 +601,8 @@ def generate_classroom_voice(
             "voice_name": request.voice_name,
             "speed": request.speed,
             "text_scope": request.text_scope,
+            "slide_index": request.slide_index,
+            "page_context": request.page_context,
             "text": voice_text,
             "provider": "browser_speech_synthesis",
             "xunfei_ready": False,
@@ -629,25 +832,36 @@ def submit_reflection(
     return _get_session(db, user, session.id)
 
 
-def _generate_classroom_package_strict_unused(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
-    return qwen_chat_json(
-        "你是 OpenMAIC 风格的多智能体课程生成系统，负责生成可导出 PPT 的课堂资源、例题、实操任务和复盘问题。只输出 JSON。",
-        (
-            "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式：slides、quizzes、interactive/practice、PBL/reflection。\n"
-            f"项目：{project.title}\n"
-            f"研究方向：{project.research_direction}\n"
-            f"学习目标：{project.learning_goal}\n"
-            f"学习项：{item.title}\n"
-            f"学习项目标：{item.objective}\n"
-            f"知识点：{item.knowledge_points}\n"
-            f"完成标准：{item.completion_criteria}\n"
-            f"评估方式：{item.assessment_method}\n"
-            f"补充要求：{instruction}\n"
-            "请生成 5-9 页 slides，每页含 title、bullets、speaker_notes；2-5 道 quiz，每题必须有 id、prompt、answer、explanation；"
-            "practice 要包含 steps、expected_artifact、acceptance_criteria；reflection_prompts 至少 3 条。"
-        ),
-        _ClassroomPackage,
+def save_classroom_note(
+    db: Session,
+    user: User,
+    session_id: int,
+    request: ClassroomNoteSaveRequest,
+) -> ClassroomSession:
+    session = _get_session(db, user, session_id)
+    item = _item_or_404(db, user, session.syllabus_item_id)
+    _classroom_package_or_error(session)
+    _add_submission(
+        db,
+        session=session,
+        user=user,
+        item=item,
+        submission_type="note",
+        content=request.model_dump(),
+        score=0,
+        passed=True,
+        feedback="课堂笔记已保存，可用于后续知识库链接与整合。",
     )
+    _write_event(
+        db,
+        _project_or_404(db, user, session.project_id),
+        user,
+        "classroom_note_saved",
+        f"保存课堂笔记：{item.title}",
+        {"session_id": session.id, "slide_index": request.slide_index, "slide_title": request.slide_title},
+    )
+    db.commit()
+    return _get_session(db, user, session.id)
 
 
 def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _ClassroomPackage) -> Path:
@@ -662,7 +876,7 @@ def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _Clas
 
     title_slide = prs.slides.add_slide(blank_layout)
     _paint_slide_background(title_slide, prs)
-    _add_label(title_slide, "AI CLASSROOM", Inches(0.72), Inches(0.58), Inches(2.2), Inches(0.32), Pt(11), RGBColor(79, 70, 229), bold=True)
+    _add_label(title_slide, "AI CLASSROOM", Inches(0.72), Inches(0.58), Inches(2.2), Inches(0.32), Pt(11), RGBColor(13, 148, 136), bold=True)
     _add_text(
         title_slide,
         package.title,
@@ -671,22 +885,26 @@ def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _Clas
         Inches(8.2),
         Inches(1.4),
         Pt(36),
-        RGBColor(30, 27, 75),
+        RGBColor(19, 78, 74),
         bold=True,
     )
     _add_text(title_slide, item.title, Inches(0.76), Inches(3.05), Inches(8.8), Inches(0.55), Pt(18), RGBColor(71, 85, 105))
-    _add_text(title_slide, package.learning_summary, Inches(0.78), Inches(3.85), Inches(6.6), Inches(1.4), Pt(17), RGBColor(49, 46, 129))
+    _add_text(title_slide, package.learning_summary, Inches(0.78), Inches(3.85), Inches(6.6), Inches(1.4), Pt(17), RGBColor(15, 118, 110))
     _add_accent_panel(title_slide, Inches(9.25), Inches(1.12), Inches(3.25), Inches(4.95), "个性化课堂", item.knowledge_points[:4] or [item.title])
 
     for index, spec in enumerate(package.slides, start=1):
         slide = prs.slides.add_slide(blank_layout)
         _paint_slide_background(slide, prs)
-        _add_label(slide, f"SLIDE {index:02d}", Inches(0.7), Inches(0.46), Inches(1.6), Inches(0.3), Pt(10), RGBColor(79, 70, 229), bold=True)
-        _add_text(slide, spec.title, Inches(0.72), Inches(0.92), Inches(8.7), Inches(0.72), Pt(28), RGBColor(30, 27, 75), bold=True)
-        for bullet_index, bullet in enumerate(spec.bullets[:5]):
-            top = Inches(1.95 + bullet_index * 0.78)
-            _add_bullet_card(slide, bullet, Inches(0.9), top, Inches(7.6), Inches(0.58), bullet_index + 1)
-        _add_speaker_panel(slide, spec.speaker_notes)
+        _add_label(slide, f"{spec.layout.upper()} · {index:02d}", Inches(0.7), Inches(0.46), Inches(2.8), Inches(0.3), Pt(10), RGBColor(13, 148, 136), bold=True)
+        _add_text(slide, spec.title, Inches(0.72), Inches(0.82), Inches(8.35), Inches(0.74), Pt(30), RGBColor(19, 78, 74), bold=True)
+        _add_visual_concept_panel(slide, spec.visual_hint, Inches(0.78), Inches(1.62), Inches(3.1), Inches(2.1), index)
+        _add_visual_block_grid(slide, spec.visual_blocks, Inches(4.18), Inches(1.66), Inches(4.72), Inches(3.0))
+        _add_side_panel(slide, spec.side_panel, Inches(9.15), Inches(1.42), Inches(3.18), Inches(3.18))
+        _add_takeaway_strip(slide, spec.takeaways, Inches(0.82), Inches(4.05), Inches(8.1), Inches(0.98))
+        _add_learning_card(slide, "案例", spec.example, Inches(0.88), Inches(5.2), Inches(2.62), Inches(1.14), RGBColor(240, 253, 250), RGBColor(15, 118, 110))
+        _add_learning_card(slide, "易错点", spec.misconception, Inches(3.72), Inches(5.2), Inches(2.62), Inches(1.14), RGBColor(255, 247, 237), RGBColor(194, 65, 12))
+        _add_learning_card(slide, "互动", spec.interaction_prompt, Inches(6.56), Inches(5.2), Inches(2.62), Inches(1.14), RGBColor(239, 246, 255), RGBColor(29, 78, 216))
+        _add_source_refs(slide, spec.source_refs, Inches(9.42), Inches(4.86), Inches(2.6), Inches(1.28))
         _add_footer(slide, package.title, index, len(package.slides))
         notes = slide.notes_slide.notes_text_frame
         notes.text = spec.speaker_notes
@@ -710,15 +928,29 @@ def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _Clas
     return path
 
 
-def _voice_text_for_scope(package: _ClassroomPackage, scope: str) -> str:
+def _voice_text_for_scope(package: _ClassroomPackage, request: ClassroomVoiceGenerateRequest) -> str:
+    scope = request.text_scope
     if scope == "all_slides":
         return "\n\n".join([f"{slide.title}。{slide.speaker_notes}" for slide in package.slides])
     if scope == "five_minutes":
         return package.voice_script.five_minutes or package.voice_script.one_minute
     if scope == "one_minute":
         return package.voice_script.one_minute or package.learning_summary
-    first_slide = package.slides[0] if package.slides else None
-    return first_slide.speaker_notes if first_slide else (package.voice_script.one_minute or package.learning_summary)
+    if not package.slides:
+        raise LLMResponseError("课堂包缺少 slides，无法生成当前页语音讲解")
+    if request.slide_index >= len(package.slides):
+        raise ValueError(f"slide_index 超出范围：{request.slide_index + 1}/{len(package.slides)}")
+    slide = package.slides[request.slide_index]
+    context = f"\n补充上下文：{request.page_context}" if request.page_context else ""
+    return (
+        f"现在讲解：{slide.title}。\n"
+        f"{slide.speaker_notes}\n"
+        f"这个例子可以这样理解：{slide.example}\n"
+        f"容易出错的地方是：{slide.misconception}\n"
+        f"接下来请思考：{slide.interaction_prompt}\n"
+        "这段语音讲解的目标是帮助学生理解当前页，不是逐字朗读幻灯片。"
+        f"{context}"
+    )
 
 
 def _write_voice_script_file(
@@ -741,11 +973,11 @@ def _paint_slide_background(slide: Any, prs: Presentation) -> None:
     bg.line.fill.background()
     accent = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(10.4), Inches(-0.45), Inches(3.7), Inches(2.15))
     accent.fill.solid()
-    accent.fill.fore_color.rgb = RGBColor(224, 231, 255)
+    accent.fill.fore_color.rgb = RGBColor(204, 251, 241)
     accent.line.fill.background()
     bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.72), Inches(6.76), Inches(2.1), Inches(0.09))
     bar.fill.solid()
-    bar.fill.fore_color.rgb = RGBColor(34, 197, 94)
+    bar.fill.fore_color.rgb = RGBColor(13, 148, 136)
     bar.line.fill.background()
 
 
@@ -771,10 +1003,10 @@ def _add_bullet_card(slide: Any, text: str, left: Any, top: Any, width: Any, hei
     card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     card.fill.solid()
     card.fill.fore_color.rgb = RGBColor(255, 255, 255)
-    card.line.color.rgb = RGBColor(219, 228, 255)
+    card.line.color.rgb = RGBColor(204, 251, 241)
     badge = slide.shapes.add_shape(MSO_SHAPE.OVAL, left + Inches(0.12), top + Inches(0.12), Inches(0.34), Inches(0.34))
     badge.fill.solid()
-    badge.fill.fore_color.rgb = RGBColor(79, 70, 229)
+    badge.fill.fore_color.rgb = RGBColor(13, 148, 136)
     badge.line.fill.background()
     badge_frame = badge.text_frame
     badge_frame.clear()
@@ -784,16 +1016,116 @@ def _add_bullet_card(slide: Any, text: str, left: Any, top: Any, width: Any, hei
     badge_paragraph.font.size = Pt(10)
     badge_paragraph.font.bold = True
     badge_paragraph.font.color.rgb = RGBColor(255, 255, 255)
-    _add_text(slide, text, left + Inches(0.6), top + Inches(0.11), width - Inches(0.76), height - Inches(0.12), Pt(16), RGBColor(49, 46, 129))
+    _add_text(slide, text, left + Inches(0.6), top + Inches(0.11), width - Inches(0.76), height - Inches(0.12), Pt(14), RGBColor(51, 65, 85))
 
 
-def _add_speaker_panel(slide: Any, notes: str) -> None:
+def _add_visual_concept_panel(slide: Any, visual_hint: str, left: Any, top: Any, width: Any, height: Any, index: int) -> None:
+    panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = RGBColor(240, 253, 250)
+    panel.line.color.rgb = RGBColor(153, 246, 228)
+    center_x = left + Inches(1.22)
+    center_y = top + Inches(0.34)
+    colors = [RGBColor(13, 148, 136), RGBColor(245, 158, 11), RGBColor(37, 99, 235)]
+    for node_index, color in enumerate(colors):
+        node_left = center_x + Inches((node_index % 2) * 0.78)
+        node_top = center_y + Inches(node_index * 0.45)
+        node = slide.shapes.add_shape(MSO_SHAPE.OVAL, node_left, node_top, Inches(0.52), Inches(0.52))
+        node.fill.solid()
+        node.fill.fore_color.rgb = color
+        node.line.fill.background()
+    _add_label(slide, "VISUAL MODEL", left + Inches(0.24), top + Inches(0.22), width - Inches(0.48), Inches(0.28), Pt(9), RGBColor(15, 118, 110), bold=True)
+    _add_text(slide, visual_hint, left + Inches(0.24), top + Inches(1.42), width - Inches(0.48), height - Inches(1.58), Pt(12), RGBColor(19, 78, 74))
+
+
+def _add_visual_block_grid(slide: Any, blocks: list[dict[str, Any]], left: Any, top: Any, width: Any, height: Any) -> None:
+    colors = [
+        (RGBColor(236, 253, 245), RGBColor(5, 150, 105)),
+        (RGBColor(239, 246, 255), RGBColor(37, 99, 235)),
+        (RGBColor(255, 247, 237), RGBColor(217, 119, 6)),
+        (RGBColor(245, 243, 255), RGBColor(109, 40, 217)),
+    ]
+    card_width = width / 2 - Inches(0.12)
+    card_height = height / 2 - Inches(0.12)
+    for index, block in enumerate(blocks[:4]):
+        row = index // 2
+        col = index % 2
+        block_left = left + col * (card_width + Inches(0.24))
+        block_top = top + row * (card_height + Inches(0.24))
+        fill, accent = colors[index % len(colors)]
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, block_left, block_top, card_width, card_height)
+        card.fill.solid()
+        card.fill.fore_color.rgb = fill
+        card.line.color.rgb = RGBColor(226, 232, 240)
+        _add_label(slide, str(block["type"]).upper(), block_left + Inches(0.18), block_top + Inches(0.12), card_width - Inches(0.36), Inches(0.22), Pt(8), accent, bold=True)
+        _add_text(slide, str(block["title"]), block_left + Inches(0.18), block_top + Inches(0.36), card_width - Inches(0.36), Inches(0.32), Pt(13), RGBColor(15, 23, 42), bold=True)
+        _add_text(slide, str(block["content"]), block_left + Inches(0.18), block_top + Inches(0.76), card_width - Inches(0.36), card_height - Inches(1.02), Pt(10), RGBColor(51, 65, 85))
+        _add_label(slide, str(block["emphasis"])[:42], block_left + Inches(0.18), block_top + card_height - Inches(0.3), card_width - Inches(0.36), Inches(0.18), Pt(8), accent, bold=True)
+
+
+def _add_side_panel(slide: Any, panel_data: dict[str, Any], left: Any, top: Any, width: Any, height: Any) -> None:
+    panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = RGBColor(248, 250, 252)
+    panel.line.color.rgb = RGBColor(203, 213, 225)
+    _add_text(slide, str(panel_data["title"]), left + Inches(0.24), top + Inches(0.22), width - Inches(0.48), Inches(0.36), Pt(15), RGBColor(15, 23, 42), bold=True)
+    for index, item in enumerate(panel_data.get("items", [])[:5]):
+        y = top + Inches(0.78 + index * 0.46)
+        dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, left + Inches(0.28), y + Inches(0.08), Inches(0.12), Inches(0.12))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = RGBColor(13, 148, 136)
+        dot.line.fill.background()
+        _add_text(slide, str(item), left + Inches(0.5), y, width - Inches(0.72), Inches(0.36), Pt(10), RGBColor(51, 65, 85))
+
+
+def _add_takeaway_strip(slide: Any, takeaways: list[str], left: Any, top: Any, width: Any, height: Any) -> None:
+    strip = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    strip.fill.solid()
+    strip.fill.fore_color.rgb = RGBColor(15, 118, 110)
+    strip.line.fill.background()
+    _add_label(slide, "TAKEAWAYS", left + Inches(0.24), top + Inches(0.16), Inches(1.4), Inches(0.22), Pt(8), RGBColor(204, 251, 241), bold=True)
+    joined = "  ·  ".join(takeaways[:4])
+    _add_text(slide, joined, left + Inches(0.24), top + Inches(0.44), width - Inches(0.48), height - Inches(0.5), Pt(12), RGBColor(255, 255, 255), bold=True)
+
+
+def _add_source_refs(slide: Any, refs: list[Any], left: Any, top: Any, width: Any, height: Any) -> None:
+    _add_label(slide, "SOURCES", left, top, width, Inches(0.22), Pt(8), RGBColor(100, 116, 139), bold=True)
+    for index, ref in enumerate(refs[:4]):
+        if isinstance(ref, dict):
+            label = f"{index + 1}. {ref.get('title', '')} ({ref.get('url', '')})"
+        else:
+            label = f"{index + 1}. {ref}"
+        _add_text(slide, label, left, top + Inches(0.3 + index * 0.24), width, Inches(0.2), Pt(8), RGBColor(71, 85, 105))
+
+
+def _add_speaker_panel(slide: Any, notes: str, interaction_prompt: str = "") -> None:
     panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.15), Inches(1.6), Inches(3.35), Inches(4.55))
     panel.fill.solid()
-    panel.fill.fore_color.rgb = RGBColor(240, 253, 244)
-    panel.line.color.rgb = RGBColor(187, 247, 208)
-    _add_label(slide, "TEACHER NOTES", Inches(9.42), Inches(1.9), Inches(2.4), Inches(0.32), Pt(10), RGBColor(22, 101, 52), bold=True)
-    _add_text(slide, notes, Inches(9.42), Inches(2.34), Inches(2.75), Inches(3.35), Pt(13), RGBColor(22, 101, 52))
+    panel.fill.fore_color.rgb = RGBColor(240, 253, 250)
+    panel.line.color.rgb = RGBColor(153, 246, 228)
+    _add_label(slide, "AI TUTOR TALK", Inches(9.42), Inches(1.86), Inches(2.4), Inches(0.32), Pt(10), RGBColor(15, 118, 110), bold=True)
+    _add_text(slide, notes, Inches(9.42), Inches(2.26), Inches(2.75), Inches(2.25), Pt(12), RGBColor(19, 78, 74))
+    if interaction_prompt:
+        _add_learning_card(
+            slide,
+            "互动提问",
+            interaction_prompt,
+            Inches(9.42),
+            Inches(4.72),
+            Inches(2.75),
+            Inches(1.08),
+            RGBColor(255, 247, 237),
+            RGBColor(194, 65, 12),
+        )
+
+
+def _add_learning_card(slide: Any, title: str, body: str, left: Any, top: Any, width: Any, height: Any, fill: RGBColor, color: RGBColor) -> None:
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    card.fill.solid()
+    card.fill.fore_color.rgb = fill
+    card.line.color.rgb = RGBColor(204, 251, 241)
+    _add_text(slide, title, left + Inches(0.18), top + Inches(0.12), width - Inches(0.36), Inches(0.26), Pt(11), color, bold=True)
+    _add_text(slide, body, left + Inches(0.18), top + Inches(0.44), width - Inches(0.36), height - Inches(0.5), Pt(11), RGBColor(51, 65, 85))
 
 
 def _add_accent_panel(slide: Any, left: Any, top: Any, width: Any, height: Any, title: str, items: list[str]) -> None:
@@ -857,12 +1189,34 @@ def _add_submission(
 
 def _build_progress_state(ppt_ready: bool, slides_completed: bool, quiz_passed: bool, practice_passed: bool, reflection_passed: bool) -> dict:
     return {
+        "generation_status": "ready" if ppt_ready else "queued",
+        "generation_progress": 100 if ppt_ready else 0,
+        "generation_message": "课堂资源已就绪" if ppt_ready else "课堂资源等待生成",
         "ppt_ready": ppt_ready,
         "slides_completed": slides_completed,
         "quiz_passed": quiz_passed,
         "practice_passed": practice_passed,
         "reflection_passed": reflection_passed,
         "can_complete": all([ppt_ready, slides_completed, quiz_passed, practice_passed, reflection_passed]),
+    }
+
+
+def _build_generation_progress_state(status: str, message: str) -> dict:
+    progress_map = {
+        "queued": 5,
+        "generating": 35,
+        "failed": 0,
+    }
+    return {
+        "generation_status": status,
+        "generation_progress": progress_map.get(status, 0),
+        "generation_message": message,
+        "ppt_ready": False,
+        "slides_completed": False,
+        "quiz_passed": False,
+        "practice_passed": False,
+        "reflection_passed": False,
+        "can_complete": False,
     }
 
 
@@ -977,7 +1331,7 @@ def _generate_dialogue_response(
     )
 
 
-def _normalize_visualization_demo(raw: Any, project: LearningProject, item: LearningSyllabusItem, package: _ClassroomPackage) -> dict:
+def _normalize_visualization_demo(raw: Any) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError("3D 物理演示 JSON 顶层必须是对象")
     data = raw
@@ -1208,16 +1562,30 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
     mode_hint = _classroom_mode_hint(project, item)
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     system_prompt = (
-        "你是面向高校学生的 OpenMAIC 风格多智能体课堂生成系统。"
+        "你是面向高校学生的 OpenMAIC + PPTAgent 风格多智能体课堂生成系统。"
         "只输出严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。"
-        "课堂必须由 ClassroomAgent、ExplanationAgent、ExerciseAgent、DemoAgent、SafetyAgent 协同产出，"
-        "避免长文堆叠，内容要适合 Vue 页面分卡片渲染。"
+        "课堂必须由 PlannerAgent、SlideWriterAgent、VisualDesignerAgent、TutorAgent、ExerciseAgent、DemoAgent、SafetyAgent 协同产出。"
+        "生成逻辑参考 PPTAgent/DeepPresenter 的思路：先规划每页教学功能，再设计页面布局、视觉层级、素材槽和讲解脚本。"
+        "不要输出三行文字式 PPT；每页必须有明确布局、视觉块、侧栏信息和来源引用。"
     )
     user_prompt = (
-        "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式：slides、quizzes、interactive/practice、PBL/reflection、interactive HTML simulation。\n"
+        "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式和 PPTAgent/DeepPresenter 的课件生成方式："
+        "slides、quizzes、interactive/practice、PBL/reflection、interactive HTML simulation、presentation planning、visual layout。\n"
         "必须输出顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, voice_script, "
         "reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
-        "slides: 5-9 项，每项包含 title, bullets, speaker_notes，bullets 2-6 条。\n"
+        "slides: 4-6 页，每页必须包含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, side_panel, "
+        "takeaways, source_refs, example, misconception, interaction_prompt。"
+        "layout 只能使用 cover, split_visual, process_timeline, comparison_matrix, evidence_cards, lab_workbench, defense_panel 中的一种；"
+        "bullets 不是三行短词，必须是 3-4 条讲得清楚的课堂要点，每条不超过 45 个汉字或 90 个英文字符；speaker_notes 必须是教师口吻讲解，不是照念 bullets；"
+        "visual_hint 描述本页适合生成的图解/动画/3D 演示；"
+        "visual_blocks 必须是 2-4 个结构化视觉块，每项必须包含 type, title, content, emphasis，其中 type 只能是 "
+        "concept, process, metric, evidence, comparison, formula, code, warning, question；"
+        "side_panel 必须包含 title 和 items，items 为 2-5 条短文本；takeaways 为 2-5 条本页结论；"
+        "source_refs 必须是 1-3 个对象，每项包含 title 和 url；只有确信真实存在的公开链接才填写 url，否则 url 留空并在 title 中写明知识库文档、页码或幻灯片编号；"
+        "不得编造 DOI、论文链接、搜索链接、官网链接或空泛来源；"
+        "为避免 JSON 截断，所有字符串保持精炼：speaker_notes 不超过 180 字，visual_blocks.content 不超过 80 字，example/misconception/interaction_prompt 不超过 100 字；"
+        "example 给出贴近学生项目的具体例子；"
+        "misconception 写出常见误区；interaction_prompt 给出本页可以让学生思考或操作的问题。\n"
         "concept_cards: 3-6 项，每项包含 name, explanation, scenario, misconception, relation_to_project。\n"
         "diagram: 包含 title, diagram_type, mermaid, explanation；mermaid 使用 flowchart TD 或 graph TD。\n"
         "guiding_questions: 3-6 项，每项包含 prompt, intent, hint。\n"
@@ -1309,6 +1677,7 @@ def _qwen_chat_raw_json(system_prompt: str, user_prompt: str) -> Any:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.2,
+        "max_tokens": 6000,
         "response_format": {"type": "json_object"},
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1336,22 +1705,10 @@ def _qwen_chat_raw_json(system_prompt: str, user_prompt: str) -> Any:
 
 
 def _extract_raw_json(text: str) -> Any:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-    start_candidates = [index for index in [cleaned.find("{"), cleaned.find("[")] if index >= 0]
-    if not start_candidates:
-        raise LLMResponseError("模型未返回 JSON 内容")
-    start = min(start_candidates)
-    end = max(cleaned.rfind("}"), cleaned.rfind("]"))
-    if end <= start:
-        raise LLMResponseError("模型 JSON 内容不完整")
-    return json.loads(cleaned[start : end + 1])
+        return parse_llm_json(text)
+    except LLMJsonParseError as exc:
+        raise LLMResponseError(str(exc)) from exc
 
 
 def _normalize_classroom_package(raw: Any, project: LearningProject, item: LearningSyllabusItem) -> dict:
@@ -1368,9 +1725,9 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
     if len(readings) < 2:
         raise LLMResponseError("课堂包 JSON 缺少 readings，至少需要 2 条阅读资源")
     slides = [_normalize_slide(slide, index) for index, slide in enumerate(_as_list(data.get("slides") or data.get("ppt") or data.get("deck")), start=1)]
-    if len(slides) < 5:
-        raise LLMResponseError("课堂包 JSON 缺少 slides，至少需要 5 页")
-    slides = slides[:9]
+    if len(slides) < 4:
+        raise LLMResponseError("课堂包 JSON 缺少 slides，至少需要 4 页")
+    slides = slides[:6]
 
     quiz_raw = data.get("quiz") or data.get("quizzes") or data.get("questions") or data.get("exercises")
     quiz = [_normalize_quiz(question, index, item) for index, question in enumerate(_as_list(quiz_raw), start=1)]
@@ -1412,11 +1769,77 @@ def _normalize_slide(raw: Any, index: int) -> dict:
     bullets = _as_str_list(slide.get("bullets") or slide.get("points") or slide.get("content") or slide.get("items"))
     if len(bullets) < 2:
         raise LLMResponseError(f"课堂包 JSON slides[{index}].bullets 至少需要 2 条")
+    visual_blocks = [_normalize_slide_visual_block(value, index, block_index) for block_index, value in enumerate(_as_list(slide.get("visual_blocks")), start=1)]
+    if len(visual_blocks) < 2:
+        raise LLMResponseError(f"课堂包 JSON slides[{index}].visual_blocks 至少需要 2 个视觉块")
+    side_panel = _normalize_slide_side_panel(slide.get("side_panel"), index)
+    takeaways = _as_str_list(slide.get("takeaways"))
+    if len(takeaways) < 2:
+        raise LLMResponseError(f"课堂包 JSON slides[{index}].takeaways 至少需要 2 条")
+    source_refs = [_normalize_slide_source_ref(value, index, ref_index) for ref_index, value in enumerate(_as_list(slide.get("source_refs") or slide.get("sources")), start=1)]
+    if not source_refs:
+        raise LLMResponseError(f"课堂包 JSON slides[{index}].source_refs 至少需要 1 条")
     return {
         "title": _require_text(slide.get("title"), f"classroom.slides[{index}].title"),
+        "layout": _normalize_slide_layout(slide.get("layout"), index),
         "bullets": bullets[:6],
         "speaker_notes": _require_text(slide.get("speaker_notes") or slide.get("notes"), f"classroom.slides[{index}].speaker_notes"),
+        "visual_hint": _require_text(slide.get("visual_hint") or slide.get("visual") or slide.get("diagram_hint"), f"classroom.slides[{index}].visual_hint"),
+        "visual_blocks": visual_blocks[:6],
+        "side_panel": side_panel,
+        "takeaways": takeaways[:5],
+        "source_refs": source_refs[:5],
+        "example": _require_text(slide.get("example") or slide.get("case"), f"classroom.slides[{index}].example"),
+        "misconception": _require_text(slide.get("misconception") or slide.get("pitfall"), f"classroom.slides[{index}].misconception"),
+        "interaction_prompt": _require_text(slide.get("interaction_prompt") or slide.get("question") or slide.get("prompt"), f"classroom.slides[{index}].interaction_prompt"),
     }
+
+
+def _normalize_slide_layout(value: Any, index: int) -> str:
+    layout = _require_text(value, f"classroom.slides[{index}].layout")
+    allowed = {"cover", "split_visual", "process_timeline", "comparison_matrix", "evidence_cards", "lab_workbench", "defense_panel"}
+    if layout not in allowed:
+        raise LLMResponseError(f"classroom.slides[{index}].layout 必须是 {sorted(allowed)} 之一，当前为 {layout}")
+    return layout
+
+
+def _normalize_slide_visual_block(raw: Any, slide_index: int, block_index: int) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"classroom.slides[{slide_index}].visual_blocks[{block_index}] 必须是对象")
+    block_type = _require_text(raw.get("type"), f"classroom.slides[{slide_index}].visual_blocks[{block_index}].type")
+    allowed = {"concept", "process", "metric", "evidence", "comparison", "formula", "code", "warning", "question"}
+    if block_type not in allowed:
+        raise LLMResponseError(
+            f"classroom.slides[{slide_index}].visual_blocks[{block_index}].type 必须是 {sorted(allowed)} 之一，当前为 {block_type}"
+        )
+    return {
+        "type": block_type,
+        "title": _require_text(raw.get("title"), f"classroom.slides[{slide_index}].visual_blocks[{block_index}].title"),
+        "content": _require_text(raw.get("content"), f"classroom.slides[{slide_index}].visual_blocks[{block_index}].content"),
+        "emphasis": _require_text(raw.get("emphasis"), f"classroom.slides[{slide_index}].visual_blocks[{block_index}].emphasis"),
+    }
+
+
+def _normalize_slide_side_panel(raw: Any, slide_index: int) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"classroom.slides[{slide_index}].side_panel 必须是对象")
+    items = _as_str_list(raw.get("items"))
+    if len(items) < 2:
+        raise LLMResponseError(f"classroom.slides[{slide_index}].side_panel.items 至少需要 2 条")
+    return {
+        "title": _require_text(raw.get("title"), f"classroom.slides[{slide_index}].side_panel.title"),
+        "items": items[:5],
+    }
+
+
+def _normalize_slide_source_ref(raw: Any, slide_index: int, ref_index: int) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"classroom.slides[{slide_index}].source_refs[{ref_index}] 必须是对象")
+    title = _require_text(raw.get("title") or raw.get("name"), f"classroom.slides[{slide_index}].source_refs[{ref_index}].title")
+    url = str(raw.get("url") or raw.get("source") or raw.get("uri") or "").strip()
+    if url and not re.match(r"^https?://", url, flags=re.IGNORECASE):
+        raise LLMResponseError(f"classroom.slides[{slide_index}].source_refs[{ref_index}].url 必须是真实 http/https 链接")
+    return {"title": title, "url": url}
 
 
 def _normalize_quiz(raw: Any, index: int, item: LearningSyllabusItem) -> dict:
@@ -1571,3 +1994,4 @@ def _require_text(value: Any, field_path: str) -> str:
     if not texts:
         raise LLMResponseError(f"模型 JSON 缺少必填字段 {field_path}")
     return texts[0]
+

@@ -11,6 +11,7 @@ from typing import Any, Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
+from app.services.json_repair_service import LLMJsonParseError, parse_llm_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -32,23 +33,10 @@ def validate_qwen_config() -> None:
 
 
 def _extract_json_object(text: str) -> Any:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    start_candidates = [index for index in [cleaned.find("{"), cleaned.find("[")] if index >= 0]
-    if not start_candidates:
-        raise LLMResponseError("模型未返回 JSON 内容")
-    start = min(start_candidates)
-    end = max(cleaned.rfind("}"), cleaned.rfind("]"))
-    if end <= start:
-        raise LLMResponseError("模型 JSON 内容不完整")
-    return json.loads(cleaned[start : end + 1])
+        return parse_llm_json(text)
+    except LLMJsonParseError as exc:
+        raise LLMResponseError(str(exc)) from exc
 
 
 def qwen_chat_json(system_prompt: str, user_prompt: str, schema_model: Type[T]) -> T:

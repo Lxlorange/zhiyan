@@ -113,7 +113,7 @@
               <small>{{ formatDate(resource.created_at) }}</small>
             </div>
           </div>
-          <el-empty v-if="!overview?.resources.length" description="还没有生成资源。请先从学习清单进入课堂生成 PPT、图解、演示或语音稿。" />
+          <el-empty v-if="!overview?.resources.length" description="还没有生成资源。项目构建后系统会在后台按学习清单预生成课堂、课件、图解、演示和语音稿。" />
         </article>
 
         <article class="panel-like workspace-panel">

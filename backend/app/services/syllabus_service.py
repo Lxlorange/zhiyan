@@ -23,6 +23,7 @@ from app.models.user import User
 from app.schemas import (
     DailyPlanGenerateRequest,
     DailyPlanMoveItemRequest,
+    DailyPlanShiftItemRequest,
     SyllabusAdaptRequest,
     SyllabusCompareResponse,
     SyllabusGenerateRequest,
@@ -1103,6 +1104,27 @@ def move_daily_plan_item(
     return get_daily_plan(db, user, plan.id)
 
 
+def shift_daily_plan_item(
+    db: Session,
+    user: User,
+    item_id: int,
+    request: DailyPlanShiftItemRequest,
+) -> DailyLearningPlan:
+    item = _daily_plan_item_or_404(db, user, item_id)
+    plan = get_daily_plan(db, user, item.daily_plan_id)
+    allowed_weekdays = _normalize_weekdays(plan.study_weekdays or [], plan.study_weekends)
+    step = 1 if request.direction == "next" else -1
+    target = _date_floor(item.planned_date + timedelta(days=step))
+    for _ in range(3700):
+        if target.weekday() in allowed_weekdays:
+            item.planned_date = target
+            _normalize_daily_plan_order(plan)
+            db.commit()
+            return get_daily_plan(db, user, plan.id)
+        target = _date_floor(target + timedelta(days=step))
+    raise ValueError("cannot find an available study date")
+
+
 def _normalize_daily_plan_order(plan: DailyLearningPlan) -> None:
     grouped_dates = sorted({item.planned_date for item in plan.items})
     day_index_by_date = {planned_date: index for index, planned_date in enumerate(grouped_dates, start=1)}
@@ -1124,12 +1146,14 @@ def get_daily_plan(db: Session, user: User, plan_id: int) -> DailyLearningPlan:
     )
     if plan is None:
         raise KeyError("daily plan not found")
+    if _sync_daily_plan_item_statuses(db, plan):
+        db.commit()
     return plan
 
 
 def list_daily_plans(db: Session, user: User, project_id: int) -> list[DailyLearningPlan]:
     _project_or_404(db, user, project_id)
-    return list(
+    plans = list(
         db.scalars(
             select(DailyLearningPlan)
             .options(selectinload(DailyLearningPlan.items))
@@ -1137,3 +1161,33 @@ def list_daily_plans(db: Session, user: User, project_id: int) -> list[DailyLear
             .order_by(DailyLearningPlan.created_at.desc())
         )
     )
+    for plan in plans:
+        if _sync_daily_plan_item_statuses(db, plan):
+            db.commit()
+    return plans
+
+
+def _sync_daily_plan_item_statuses(db: Session, plan: DailyLearningPlan) -> bool:
+    syllabus_item_ids = [item.syllabus_item_id for item in plan.items if item.syllabus_item_id is not None]
+    if not syllabus_item_ids:
+        return False
+    syllabus_items = {
+        item.id: item
+        for item in db.scalars(
+            select(LearningSyllabusItem).where(LearningSyllabusItem.id.in_(syllabus_item_ids))
+        )
+    }
+    changed = False
+    for plan_item in plan.items:
+        syllabus_item = syllabus_items.get(plan_item.syllabus_item_id)
+        if syllabus_item is None:
+            continue
+        if syllabus_item.status in {"completed", "mastered", "removed", "deleted", "skipped"} and plan_item.status != syllabus_item.status:
+            plan_item.status = "removed" if syllabus_item.status in {"deleted", "skipped"} else syllabus_item.status
+            changed = True
+        elif plan_item.status == "pending" and syllabus_item.status == "in_progress":
+            plan_item.status = "in_progress"
+            changed = True
+    if changed:
+        db.flush()
+    return changed

@@ -513,6 +513,10 @@ class DailyPlanMoveItemRequest(BaseModel):
     planned_date: datetime
 
 
+class DailyPlanShiftItemRequest(BaseModel):
+    direction: str = Field(default="next", pattern="^(next|previous)$")
+
+
 class SyllabusOperationRead(BaseModel):
     id: int
     operation_type: str
@@ -632,6 +636,8 @@ class ClassroomSessionRead(BaseModel):
     ppt_resource_id: Optional[int] = None
     slides_completed: bool = False
     slide_progress: Dict[str, object] = Field(default_factory=dict)
+    generation_started_at: Optional[datetime] = None
+    generation_error: str = ""
     quiz_passed: bool
     practice_passed: bool
     reflection_passed: bool
@@ -654,6 +660,8 @@ class ClassroomVoiceGenerateRequest(BaseModel):
     voice_name: str = Field(default="xiaoyan", max_length=64)
     speed: int = Field(default=50, ge=0, le=100)
     text_scope: str = Field(default="current_slide", pattern="^(current_slide|one_minute|five_minutes|all_slides)$")
+    slide_index: int = Field(default=0, ge=0, le=60)
+    page_context: str = Field(default="", max_length=2000)
 
 
 class ClassroomDialogueRequest(BaseModel):
@@ -683,6 +691,12 @@ class ClassroomReflectionSubmitRequest(BaseModel):
     next_action: str = Field(default="", max_length=1000)
 
 
+class ClassroomNoteSaveRequest(BaseModel):
+    markdown: str = Field(..., min_length=1, max_length=12000)
+    slide_index: int = Field(default=0, ge=0, le=60)
+    slide_title: str = Field(default="", max_length=255)
+
+
 class ClassroomDialogueResponse(BaseModel):
     answer: str
     cards: List[Dict[str, object]] = Field(default_factory=list)
@@ -703,6 +717,9 @@ class DailyPlanItemRead(BaseModel):
     user_order: int
     syllabus_item_id: Optional[int] = None
     project_id: int
+    is_overdue: bool = False
+    is_today: bool = False
+    can_start: bool = True
 
     model_config = {"from_attributes": True}
 

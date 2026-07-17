@@ -1,15 +1,17 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.database import SessionLocal
 from app.models.user import User
 from app.schemas import (
     ClassroomDialogueRequest,
     ClassroomDialogueResponse,
+    ClassroomNoteSaveRequest,
     ClassroomPptGenerateRequest,
     ClassroomPracticeSubmitRequest,
     ClassroomQuizSubmitRequest,
@@ -25,6 +27,9 @@ from app.services.classroom_service import (
     generate_classroom_visualization,
     generate_classroom_voice,
     get_or_create_classroom_session,
+    mark_classroom_generation_failed,
+    request_classroom_ppt_generation,
+    save_classroom_note,
     send_classroom_dialogue,
     submit_practice,
     submit_quiz,
@@ -33,6 +38,25 @@ from app.services.classroom_service import (
 from app.services.llm_client import LLMConfigurationError, LLMResponseError
 
 router = APIRouter(tags=["classroom"])
+
+
+def _background_generate_classroom_ppt(session_id: int, user_id: int, instruction: str) -> None:
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            return
+        generate_classroom_ppt(db, user, session_id, instruction)
+    except Exception as exc:
+        db.rollback()
+        user = db.get(User, user_id)
+        if user is not None:
+            try:
+                mark_classroom_generation_failed(db, user, session_id, exc)
+            except Exception:
+                db.rollback()
+    finally:
+        db.close()
 
 
 def _handle_error(exc: Exception) -> HTTPException:
@@ -65,11 +89,29 @@ def classroom_session_create_or_get(
 def classroom_ppt_generate(
     session_id: int,
     request: ClassroomPptGenerateRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ClassroomSessionRead:
     try:
-        return ClassroomSessionRead.model_validate(generate_classroom_ppt(db, user, session_id, request.instruction))
+        session, should_start = request_classroom_ppt_generation(db, user, session_id)
+        if should_start:
+            background_tasks.add_task(_background_generate_classroom_ppt, session_id, user.id, request.instruction)
+        return ClassroomSessionRead.model_validate(session)
+    except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.get("/classroom-sessions/{session_id}", response_model=ClassroomSessionRead)
+def classroom_session_get(
+    session_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ClassroomSessionRead:
+    try:
+        from app.services.classroom_service import _get_session
+
+        return ClassroomSessionRead.model_validate(_get_session(db, user, session_id))
     except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_error(exc) from exc
 
@@ -97,6 +139,19 @@ def classroom_voice_generate(
     try:
         return ClassroomSessionRead.model_validate(generate_classroom_voice(db, user, session_id, request))
     except (KeyError, ValueError, LLMConfigurationError, LLMResponseError, NotImplementedError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/classroom-sessions/{session_id}/notes", response_model=ClassroomSessionRead)
+def classroom_note_save(
+    session_id: int,
+    request: ClassroomNoteSaveRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ClassroomSessionRead:
+    try:
+        return ClassroomSessionRead.model_validate(save_classroom_note(db, user, session_id, request))
+    except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_error(exc) from exc
 
 

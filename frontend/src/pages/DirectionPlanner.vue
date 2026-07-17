@@ -12,15 +12,6 @@
               <el-tag :type="plan?.status === 'built' ? 'success' : planning || adjusting ? 'warning' : 'primary'">
                 {{ statusText }}
               </el-tag>
-              <el-button
-                v-if="plan"
-                type="primary"
-                :loading="building"
-                :disabled="plan.status === 'built'"
-                @click="handleBuildProject"
-              >
-                {{ plan.status === 'built' ? '已构建' : '构建项目' }}
-              </el-button>
             </div>
           </div>
 
@@ -28,6 +19,12 @@
             <article v-for="message in visibleMessages" :key="message.created_at" :class="['agent-bubble', message.role]">
               <span>{{ message.role === 'user' ? '你' : '规划 Agent' }}</span>
               <p>{{ message.content }}</p>
+              <div v-if="message.role === 'user' && messageAttachments(message).length" class="agent-message-attachments">
+                <span v-for="item in messageAttachments(message)" :key="item.uid" class="agent-file-chip">
+                  <i aria-hidden="true"></i>
+                  {{ item.name }}
+                </span>
+              </div>
             </article>
             <article v-if="streamText" class="agent-bubble assistant is-streaming">
               <span>规划 Agent</span>
@@ -68,19 +65,20 @@
                 <div class="agent-section-head">
                   <span>推荐资源</span>
                 </div>
-                <div class="agent-resource-list">
-                  <a
-                    v-for="item in resourceLinks"
-                    :key="`${item.title}-${item.href}`"
-                    :href="item.href"
-                    target="_blank"
-                    rel="noreferrer"
-                    class="agent-resource-link"
-                  >
-                    <strong>{{ item.title }}</strong>
-                    <small>{{ item.source || '打开资源' }}</small>
-                  </a>
-                </div>
+                <ul class="agent-resource-list">
+                  <li v-for="item in verifiedResourceLinks" :key="`${item.title}-${item.href}`">
+                    <a
+                      :href="item.href"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="agent-resource-link"
+                    >
+                      <strong>{{ item.title }}</strong>
+                      <small>{{ item.source || '打开资源' }}</small>
+                    </a>
+                  </li>
+                </ul>
+                <p v-if="!verifiedResourceLinks.length" class="agent-empty-resources">未检索到可打开的真实资源链接。</p>
               </section>
 
               <section v-if="asList(plan.plan_data.next_questions).length" class="agent-plan-section">
@@ -152,6 +150,16 @@
           <div class="agent-composer-spacer"></div>
 
           <el-button
+            v-if="plan"
+            size="large"
+            :loading="building"
+            :disabled="plan.status === 'built' || planning || adjusting"
+            @click="handleBuildProject"
+          >
+            {{ plan.status === 'built' ? '已构建' : '构建项目' }}
+          </el-button>
+
+          <el-button
             type="primary"
             size="large"
             :loading="planning || adjusting || parsingAttachments > 0"
@@ -162,8 +170,11 @@
           </el-button>
         </div>
 
-        <div v-if="referenceSummaries.length" class="agent-reference-strip">
-          <span v-for="item in referenceSummaries" :key="item">{{ item }}</span>
+        <div v-if="referenceMaterials.length" class="agent-reference-strip">
+          <span v-for="item in referenceMaterials" :key="item.uid" class="agent-file-chip">
+            <i aria-hidden="true"></i>
+            {{ item.name }}
+          </span>
         </div>
       </section>
     </section>
@@ -198,6 +209,11 @@ type ResourceLink = {
   title: string
   href: string
   source?: string
+  verified?: boolean
+}
+
+type DisplayPlanMessage = ProjectPlanMessage & {
+  attachments?: ReferenceMaterial[]
 }
 
 const emit = defineEmits<{
@@ -220,6 +236,7 @@ const adjustmentStreamText = ref('')
 const composerText = ref('')
 const referenceFiles = ref<UploadUserFile[]>([])
 const referenceMaterials = ref<ReferenceMaterial[]>([])
+const displayedUserMessages = ref<Record<string, DisplayPlanMessage>>({})
 const parsingAttachments = ref(0)
 
 const hasConversation = computed(() => Boolean(plan.value || streamText.value || planning.value || adjusting.value))
@@ -235,41 +252,27 @@ const statusText = computed(() => {
   if (plan.value) return '可调整'
   return '待生成'
 })
-const visibleMessages = computed<ProjectPlanMessage[]>(() => {
+const visibleMessages = computed<DisplayPlanMessage[]>(() => {
   if (!plan.value) {
     const goal = form.learning_goal || composerText.value
     return goal
-      ? [{ role: 'user', content: goal, created_at: 'draft-message' }]
+      ? [{ role: 'user', content: goal, created_at: 'draft-message', attachments: referenceMaterials.value }]
       : []
   }
-  return plan.value.messages.slice(-6)
+  return plan.value.messages.slice(-6).map((message) => sanitizePlanMessage(message))
 })
-const referenceSummaries = computed(() =>
-  referenceMaterials.value.map((item) => {
-    const pageInfo = item.pageCount ? ` · ${item.pageCount} 页` : ''
-    return `${item.name} · ${item.parser}${pageInfo} · 已解析 ${item.content.length} 字`
-  })
-)
 const resourceLinks = computed<ResourceLink[]>(() => {
   if (!plan.value) return []
   const data = plan.value.plan_data || {}
   const candidates = [
     ...asArray(data.recommended_resources),
     ...asArray(data.resources),
-    ...asArray(data.references),
-    ...asArray(data.resource_plan)
+    ...asArray(data.references)
   ]
   const links = candidates.map(toResourceLink).filter(Boolean) as ResourceLink[]
-  return links.length
-    ? dedupeLinks(links)
-    : [
-        {
-          title: `${plan.value.title} 相关资源检索`,
-          href: searchHref(plan.value.learning_goal),
-          source: '检索入口'
-        }
-      ]
+  return dedupeLinks(links)
 })
+const verifiedResourceLinks = computed(() => resourceLinks.value.filter((item) => item.href))
 
 const MAX_PROJECT_CONTEXT_CHARS = 60000
 const URL_PATTERN = /(https?:\/\/[^\s"'<>，。；、]+)/i
@@ -307,6 +310,13 @@ async function handleCreatePlan() {
   plan.value = null
   streamText.value = ''
   try {
+    const createdAt = new Date().toISOString()
+    const displayMessage: DisplayPlanMessage = {
+      role: 'user',
+      content: message,
+      created_at: createdAt,
+      attachments: [...referenceMaterials.value]
+    }
     await streamProjectPlan(
       {
         learning_type: form.learning_type,
@@ -318,7 +328,7 @@ async function handleCreatePlan() {
           streamText.value += content
         },
         onPlan: (nextPlan) => {
-          plan.value = nextPlan
+          plan.value = withSanitizedMessages(nextPlan, displayMessage)
           streamText.value = ''
           composerText.value = ''
         },
@@ -355,13 +365,16 @@ async function handleAdjust() {
 
   adjusting.value = true
   adjustmentStreamText.value = ''
+  const createdAt = new Date().toISOString()
+  const displayMessage: DisplayPlanMessage = {
+    role: 'user',
+    content: message,
+    created_at: createdAt,
+    attachments: [...referenceMaterials.value]
+  }
   plan.value.messages = [
     ...plan.value.messages,
-    {
-      role: 'user',
-      content: message,
-      created_at: new Date().toISOString()
-    }
+    displayMessage
   ]
   composerText.value = ''
   try {
@@ -371,7 +384,7 @@ async function handleAdjust() {
         streamText.value = adjustmentStreamText.value
       },
       onPlan: (nextPlan) => {
-        plan.value = nextPlan
+        plan.value = withSanitizedMessages(nextPlan, displayMessage)
         streamText.value = ''
       },
       onDone: () => {
@@ -456,6 +469,44 @@ function appendReferenceContext(message: string): string {
   return payload
 }
 
+function withSanitizedMessages(nextPlan: ProjectPlanRead, displayMessage: DisplayPlanMessage): ProjectPlanRead {
+  displayedUserMessages.value[displayMessage.content] = displayMessage
+  const messages = nextPlan.messages.map((message) => sanitizePlanMessage(message))
+  return { ...nextPlan, messages }
+}
+
+function sanitizePlanMessage(message: ProjectPlanMessage): DisplayPlanMessage {
+  if (message.role !== 'user') return message
+  const displayContent = stripHiddenReferenceContext(message.content)
+  const firstLine = displayContent.split('\n')[0]?.replace(/^学习目标[:：]\s*/, '').trim() || displayContent.trim()
+  const displayed = displayedUserMessages.value[firstLine] || displayedUserMessages.value[message.content]
+  if (displayed) {
+    return {
+      ...message,
+      content: displayed.content,
+      attachments: displayed.attachments
+    }
+  }
+  return {
+    ...message,
+    content: displayContent,
+    attachments: displayContent !== message.content ? [...referenceMaterials.value] : (message as DisplayPlanMessage).attachments
+  }
+}
+
+function messageAttachments(message: DisplayPlanMessage): ReferenceMaterial[] {
+  return message.attachments || []
+}
+
+function stripHiddenReferenceContext(content: string): string {
+  let result = content
+  const compactMarker = '\n\n用户上传了以下已解析参考资料。'
+  if (result.includes(compactMarker)) result = result.split(compactMarker)[0]
+  result = result.replace(/\n补充要求[:：]\s*用户上传了以下已解析参考资料[\s\S]*$/m, '')
+  result = result.replace(/^学习目标[:：]\s*/m, '')
+  return result.trim()
+}
+
 function ensureProjectContextSize(value: string) {
   if (value.length > MAX_PROJECT_CONTEXT_CHARS) {
     throw new Error(
@@ -482,11 +533,13 @@ function asArray(value: unknown): unknown[] {
 function toResourceLink(value: unknown): ResourceLink | null {
   if (typeof value === 'string') {
     const url = value.match(URL_PATTERN)?.[1]
+    if (!url) return null
     const title = value.replace(URL_PATTERN, '').replace(/[：:,-]+$/, '').trim() || value
     return {
       title,
-      href: url || searchHref(value),
-      source: url ? getHost(url) : '检索'
+      href: url,
+      source: getHost(url),
+      verified: true
     }
   }
   if (!value || typeof value !== 'object') return null
@@ -494,10 +547,12 @@ function toResourceLink(value: unknown): ResourceLink | null {
   const title = String(record.title || record.name || record.label || record.source || '推荐资源')
   const rawHref = String(record.url || record.href || record.link || record.source_uri || '')
   const href = rawHref.match(URL_PATTERN)?.[1] || rawHref
+  if (!/^https?:\/\//i.test(href)) return null
   return {
     title,
-    href: href || searchHref(title),
-    source: String(record.source || record.publisher || record.reason || (href ? getHost(href) : '检索'))
+    href,
+    source: String(record.source || record.publisher || getHost(href)),
+    verified: true
   }
 }
 
@@ -509,10 +564,6 @@ function dedupeLinks(links: ResourceLink[]): ResourceLink[] {
     seen.add(key)
     return true
   })
-}
-
-function searchHref(query: string): string {
-  return `https://www.bing.com/search?q=${encodeURIComponent(query)}`
 }
 
 function getHost(url: string): string {

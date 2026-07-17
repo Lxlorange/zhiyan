@@ -1,7 +1,8 @@
 from collections.abc import Generator
 
-from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -30,6 +31,22 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _safe_database_url() -> str:
+    try:
+        return str(make_url(settings.database_url).render_as_string(hide_password=True))
+    except Exception:
+        return "<DATABASE_URL parse failed>"
+
+
+def _postgres_connect_help() -> str:
+    return (
+        f"当前 DATABASE_URL={_safe_database_url()}。"
+        "请确认 PostgreSQL/pgvector 已启动，且用户、密码、端口、数据库名一致。"
+        "本地开发可在项目根目录执行：docker compose -f docker-compose.dev.yml up -d postgres；"
+        "然后进入 backend 执行 python run.py。当前项目不会回退到 SQLite。"
+    )
+
+
 def _apply_lightweight_migrations() -> None:
     if engine.dialect.name != "postgresql":
         return
@@ -48,6 +65,8 @@ def _apply_lightweight_migrations() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(512) NOT NULL DEFAULT ''",
         "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slides_completed BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slide_progress JSONB NOT NULL DEFAULT '{}'",
+        "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS generation_started_at TIMESTAMP NULL",
+        "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS generation_error TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE daily_learning_plans ADD COLUMN IF NOT EXISTS study_weekends BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE daily_learning_plans ADD COLUMN IF NOT EXISTS study_weekdays JSONB NOT NULL DEFAULT '[0, 1, 2, 3, 4]'::jsonb",
         "ALTER TABLE daily_learning_plan_items ADD COLUMN IF NOT EXISTS planned_date TIMESTAMP NOT NULL DEFAULT now()",
@@ -136,14 +155,12 @@ def _ensure_postgres_extensions() -> None:
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     except OperationalError as exc:
-        raise DatabaseStartupError(
-            "PostgreSQL 连接失败。请检查 backend/.env 中的 DATABASE_URL 是否与本机数据库一致："
-            "用户、密码、端口、数据库名必须正确；当前项目不会回退到 SQLite。"
-        ) from exc
+        raise DatabaseStartupError("PostgreSQL 连接失败。" + _postgres_connect_help()) from exc
     except ProgrammingError as exc:
         raise DatabaseStartupError(
-            "PostgreSQL 已连接，但无法创建 pgvector 扩展。请确认当前数据库已安装 pgvector，"
-            "并且 DATABASE_URL 对应用户有 CREATE EXTENSION vector 的权限。"
+            "PostgreSQL 已连接，但无法创建 pgvector 扩展。"
+            "请确认当前数据库镜像/实例已安装 pgvector，并且 DATABASE_URL 对应用户有 CREATE EXTENSION vector 权限。"
+            + _postgres_connect_help()
         ) from exc
 
 

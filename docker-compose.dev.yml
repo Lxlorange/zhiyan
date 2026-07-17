@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zhiyan-a3-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zhiyan_a3
+      POSTGRES_USER: zhiyan
+      POSTGRES_PASSWORD: zhiyan
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhiyan -d zhiyan_a3"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_dev_data:
