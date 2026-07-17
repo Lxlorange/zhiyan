@@ -29,7 +29,6 @@ export const pageMeta: Record<string, PageMeta> = {
   writing: { title: '论文写作', subtitle: '选题、综述、润色和答辩' },
   methods: { title: '科研方法', subtitle: '实验设计、复现和学术规范' },
   agents: { title: '任务中心', subtitle: '查看多智能体执行轨迹' },
-  teacher: { title: '教师驾驶舱', subtitle: '查看短板、资源和教学建议' },
   settings: { title: '账号设置', subtitle: '维护基础信息' }
 }
 
@@ -45,7 +44,6 @@ export const pageRouteNames: Record<string, string> = {
   writing: 'writing',
   methods: 'methods',
   agents: 'agents',
-  teacher: 'teacher',
   settings: 'settings'
 }
 
@@ -67,7 +65,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/writing', name: 'writing', component: WorkspaceModulePage, props: { mode: 'writing' }, meta: { page: 'writing' } },
   { path: '/methods', name: 'methods', component: WorkspaceModulePage, props: { mode: 'methods' }, meta: { page: 'methods' } },
   { path: '/agents', name: 'agents', component: DashboardModulePage, props: { mode: 'agents' }, meta: { page: 'agents' } },
-  { path: '/teacher', name: 'teacher', component: DashboardModulePage, props: { mode: 'teacher' }, meta: { page: 'teacher' } },
+  { path: '/teacher', redirect: '/agents' },
   { path: '/settings', name: 'settings', component: AccountSettings, meta: { page: 'settings' } },
   { path: '/:pathMatch(.*)*', redirect: '/directions' }
 ]

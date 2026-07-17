@@ -7455,6 +7455,243 @@ button:focus-visible,
   }
 }
 
+/* Final contrast repair at EOF: no background grid, no dark text on solid action buttons. */
+body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(154, 101, 0, 0.055), transparent 420px),
+    radial-gradient(circle at 92% 4%, rgba(7, 95, 86, 0.045), transparent 460px),
+    var(--study-paper) !important;
+}
+
+body::before,
+body::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+}
+
+.el-button--primary:not(.is-disabled),
+.el-button--success:not(.is-disabled),
+.el-button--warning:not(.is-disabled),
+.el-button--danger:not(.is-disabled),
+.el-button--info:not(.is-disabled),
+.project-next-actions .el-button--primary:not(.is-disabled),
+.project-card-actions .el-button--primary:not(.is-disabled),
+.todo-current-actions .el-button--primary:not(.is-disabled),
+.todo-work-actions .el-button--primary:not(.is-disabled),
+.syllabus-status-actions .el-button--primary:not(.is-disabled),
+.classroom-action-row .el-button--primary:not(.is-disabled),
+.module-action-strip .el-button--primary:not(.is-disabled) {
+  background: var(--study-green) !important;
+  border-color: var(--study-green) !important;
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+
+.el-button--primary:not(.is-disabled) > span,
+.el-button--success:not(.is-disabled) > span,
+.el-button--warning:not(.is-disabled) > span,
+.el-button--danger:not(.is-disabled) > span,
+.el-button--info:not(.is-disabled) > span,
+.project-next-actions .el-button--primary:not(.is-disabled) > span,
+.project-card-actions .el-button--primary:not(.is-disabled) > span,
+.todo-current-actions .el-button--primary:not(.is-disabled) > span,
+.todo-work-actions .el-button--primary:not(.is-disabled) > span,
+.syllabus-status-actions .el-button--primary:not(.is-disabled) > span,
+.classroom-action-row .el-button--primary:not(.is-disabled) > span,
+.module-action-strip .el-button--primary:not(.is-disabled) > span,
+.el-button--primary:not(.is-disabled) .el-icon,
+.el-button--success:not(.is-disabled) .el-icon,
+.el-button--warning:not(.is-disabled) .el-icon,
+.el-button--danger:not(.is-disabled) .el-icon,
+.el-button--info:not(.is-disabled) .el-icon {
+  color: #ffffff !important;
+  fill: currentColor !important;
+}
+
+.el-button--primary:not(.is-disabled):hover,
+.el-button--success:not(.is-disabled):hover,
+.project-next-actions .el-button--primary:not(.is-disabled):hover,
+.project-card-actions .el-button--primary:not(.is-disabled):hover,
+.todo-current-actions .el-button--primary:not(.is-disabled):hover,
+.todo-work-actions .el-button--primary:not(.is-disabled):hover,
+.syllabus-status-actions .el-button--primary:not(.is-disabled):hover,
+.classroom-action-row .el-button--primary:not(.is-disabled):hover,
+.module-action-strip .el-button--primary:not(.is-disabled):hover {
+  background: var(--study-green-2) !important;
+  border-color: var(--study-green-2) !important;
+  color: #ffffff !important;
+}
+
+.el-button--warning:not(.is-disabled) {
+  background: #8a5700 !important;
+  border-color: #8a5700 !important;
+}
+
+.el-button--warning:not(.is-disabled):hover {
+  background: #6f4500 !important;
+  border-color: #6f4500 !important;
+}
+
+.el-button--danger:not(.is-disabled) {
+  background: var(--study-red) !important;
+  border-color: var(--study-red) !important;
+}
+
+.el-button--danger:not(.is-disabled):hover {
+  background: #7e2219 !important;
+  border-color: #7e2219 !important;
+}
+
+.el-button--info:not(.is-disabled) {
+  background: #33423b !important;
+  border-color: #33423b !important;
+}
+
+.el-button.is-link:not(.is-disabled),
+.el-button--text:not(.is-disabled),
+.el-button.is-link:not(.is-disabled) > span,
+.el-button--text:not(.is-disabled) > span {
+  color: var(--study-green) !important;
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:focus,
+.el-button.is-disabled > span,
+.el-button.is-disabled .el-icon {
+  background: #eeeae1 !important;
+  border-color: var(--study-rule) !important;
+  color: #5d6861 !important;
+  opacity: 1 !important;
+}
+
+/* Contrast repair: remove paper grid lines and make solid action buttons readable. */
+body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(154, 101, 0, 0.055), transparent 420px),
+    radial-gradient(circle at 92% 4%, rgba(7, 95, 86, 0.045), transparent 460px),
+    var(--study-paper) !important;
+}
+
+body::before,
+body::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+}
+
+.el-button--primary:not(.is-disabled),
+.el-button--success:not(.is-disabled),
+.el-button--warning:not(.is-disabled),
+.el-button--danger:not(.is-disabled),
+.el-button--info:not(.is-disabled),
+.project-next-actions .el-button--primary:not(.is-disabled),
+.project-card-actions .el-button--primary:not(.is-disabled),
+.todo-current-actions .el-button--primary:not(.is-disabled),
+.todo-work-actions .el-button--primary:not(.is-disabled),
+.syllabus-status-actions .el-button--primary:not(.is-disabled),
+.classroom-action-row .el-button--primary:not(.is-disabled),
+.module-action-strip .el-button--primary:not(.is-disabled) {
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+
+.el-button--primary:not(.is-disabled) > span,
+.el-button--success:not(.is-disabled) > span,
+.el-button--warning:not(.is-disabled) > span,
+.el-button--danger:not(.is-disabled) > span,
+.el-button--info:not(.is-disabled) > span,
+.project-next-actions .el-button--primary:not(.is-disabled) > span,
+.project-card-actions .el-button--primary:not(.is-disabled) > span,
+.todo-current-actions .el-button--primary:not(.is-disabled) > span,
+.todo-work-actions .el-button--primary:not(.is-disabled) > span,
+.syllabus-status-actions .el-button--primary:not(.is-disabled) > span,
+.classroom-action-row .el-button--primary:not(.is-disabled) > span,
+.module-action-strip .el-button--primary:not(.is-disabled) > span,
+.el-button--primary:not(.is-disabled) .el-icon,
+.el-button--success:not(.is-disabled) .el-icon,
+.el-button--warning:not(.is-disabled) .el-icon,
+.el-button--danger:not(.is-disabled) .el-icon,
+.el-button--info:not(.is-disabled) .el-icon {
+  color: #ffffff !important;
+}
+
+.el-button--primary:not(.is-disabled),
+.project-next-actions .el-button--primary:not(.is-disabled),
+.project-card-actions .el-button--primary:not(.is-disabled),
+.todo-current-actions .el-button--primary:not(.is-disabled),
+.todo-work-actions .el-button--primary:not(.is-disabled),
+.syllabus-status-actions .el-button--primary:not(.is-disabled),
+.classroom-action-row .el-button--primary:not(.is-disabled),
+.module-action-strip .el-button--primary:not(.is-disabled) {
+  background: var(--study-green) !important;
+  border-color: var(--study-green) !important;
+}
+
+.el-button--primary:not(.is-disabled):hover,
+.project-next-actions .el-button--primary:not(.is-disabled):hover,
+.project-card-actions .el-button--primary:not(.is-disabled):hover,
+.todo-current-actions .el-button--primary:not(.is-disabled):hover,
+.todo-work-actions .el-button--primary:not(.is-disabled):hover,
+.syllabus-status-actions .el-button--primary:not(.is-disabled):hover,
+.classroom-action-row .el-button--primary:not(.is-disabled):hover,
+.module-action-strip .el-button--primary:not(.is-disabled):hover {
+  background: var(--study-green-2) !important;
+  border-color: var(--study-green-2) !important;
+  color: #ffffff !important;
+}
+
+.el-button--success:not(.is-disabled) {
+  background: #0b6b3a !important;
+  border-color: #0b6b3a !important;
+}
+
+.el-button--success:not(.is-disabled):hover {
+  background: #07552d !important;
+  border-color: #07552d !important;
+}
+
+.el-button--warning:not(.is-disabled) {
+  background: #8a5700 !important;
+  border-color: #8a5700 !important;
+}
+
+.el-button--warning:not(.is-disabled):hover {
+  background: #6f4500 !important;
+  border-color: #6f4500 !important;
+}
+
+.el-button--danger:not(.is-disabled) {
+  background: var(--study-red) !important;
+  border-color: var(--study-red) !important;
+}
+
+.el-button--danger:not(.is-disabled):hover {
+  background: #7e2219 !important;
+  border-color: #7e2219 !important;
+}
+
+.el-button.is-link:not(.is-disabled),
+.el-button--text:not(.is-disabled) {
+  color: var(--study-green) !important;
+}
+
+.el-button.is-link:not(.is-disabled) > span,
+.el-button--text:not(.is-disabled) > span {
+  color: var(--study-green) !important;
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:focus,
+.el-button.is-disabled > span,
+.el-button.is-disabled .el-icon {
+  color: #5d6861 !important;
+}
+
 /* Minimal product pass: reduce boxy layouts and keep the workspace quiet. */
 :root {
   --minimal-bg: #fbfaf7;
@@ -9265,4 +9502,116 @@ button:focus-visible,
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* EOF contrast lock: this must stay last. */
+body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(154, 101, 0, 0.055), transparent 420px),
+    radial-gradient(circle at 92% 4%, rgba(7, 95, 86, 0.045), transparent 460px),
+    var(--study-paper) !important;
+}
+
+body::before,
+body::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+}
+
+.el-button--primary:not(.is-disabled),
+.el-button--success:not(.is-disabled),
+.el-button--warning:not(.is-disabled),
+.el-button--danger:not(.is-disabled),
+.el-button--info:not(.is-disabled),
+.project-next-actions .el-button--primary:not(.is-disabled),
+.project-card-actions .el-button--primary:not(.is-disabled),
+.todo-current-actions .el-button--primary:not(.is-disabled),
+.todo-work-actions .el-button--primary:not(.is-disabled),
+.syllabus-status-actions .el-button--primary:not(.is-disabled),
+.classroom-action-row .el-button--primary:not(.is-disabled),
+.module-action-strip .el-button--primary:not(.is-disabled) {
+  background: var(--study-green) !important;
+  border-color: var(--study-green) !important;
+  color: #ffffff !important;
+  text-shadow: none !important;
+}
+
+.el-button--primary:not(.is-disabled) > span,
+.el-button--success:not(.is-disabled) > span,
+.el-button--warning:not(.is-disabled) > span,
+.el-button--danger:not(.is-disabled) > span,
+.el-button--info:not(.is-disabled) > span,
+.project-next-actions .el-button--primary:not(.is-disabled) > span,
+.project-card-actions .el-button--primary:not(.is-disabled) > span,
+.todo-current-actions .el-button--primary:not(.is-disabled) > span,
+.todo-work-actions .el-button--primary:not(.is-disabled) > span,
+.syllabus-status-actions .el-button--primary:not(.is-disabled) > span,
+.classroom-action-row .el-button--primary:not(.is-disabled) > span,
+.module-action-strip .el-button--primary:not(.is-disabled) > span,
+.el-button--primary:not(.is-disabled) .el-icon,
+.el-button--success:not(.is-disabled) .el-icon,
+.el-button--warning:not(.is-disabled) .el-icon,
+.el-button--danger:not(.is-disabled) .el-icon,
+.el-button--info:not(.is-disabled) .el-icon {
+  color: #ffffff !important;
+  fill: currentColor !important;
+}
+
+.el-button--primary:not(.is-disabled):hover,
+.el-button--success:not(.is-disabled):hover,
+.project-next-actions .el-button--primary:not(.is-disabled):hover,
+.project-card-actions .el-button--primary:not(.is-disabled):hover,
+.todo-current-actions .el-button--primary:not(.is-disabled):hover,
+.todo-work-actions .el-button--primary:not(.is-disabled):hover,
+.syllabus-status-actions .el-button--primary:not(.is-disabled):hover,
+.classroom-action-row .el-button--primary:not(.is-disabled):hover,
+.module-action-strip .el-button--primary:not(.is-disabled):hover {
+  background: var(--study-green-2) !important;
+  border-color: var(--study-green-2) !important;
+  color: #ffffff !important;
+}
+
+.el-button--warning:not(.is-disabled) {
+  background: #8a5700 !important;
+  border-color: #8a5700 !important;
+}
+
+.el-button--warning:not(.is-disabled):hover {
+  background: #6f4500 !important;
+  border-color: #6f4500 !important;
+}
+
+.el-button--danger:not(.is-disabled) {
+  background: var(--study-red) !important;
+  border-color: var(--study-red) !important;
+}
+
+.el-button--danger:not(.is-disabled):hover {
+  background: #7e2219 !important;
+  border-color: #7e2219 !important;
+}
+
+.el-button--info:not(.is-disabled) {
+  background: #33423b !important;
+  border-color: #33423b !important;
+}
+
+.el-button.is-link:not(.is-disabled),
+.el-button--text:not(.is-disabled),
+.el-button.is-link:not(.is-disabled) > span,
+.el-button--text:not(.is-disabled) > span {
+  color: var(--study-green) !important;
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:focus,
+.el-button.is-disabled > span,
+.el-button.is-disabled .el-icon {
+  background: #eeeae1 !important;
+  border-color: var(--study-rule) !important;
+  color: #5d6861 !important;
+  opacity: 1 !important;
 }

@@ -21,7 +21,7 @@
       :collapse="collapsed"
       :collapse-transition="false"
       :default-active="activePage"
-      :default-openeds="['learning', 'classroom', 'research', 'system']"
+      :default-openeds="['learning', 'classroom', 'system']"
       @select="(key: string) => emit('navigate', key)"
     >
       <el-sub-menu index="learning">
@@ -45,23 +45,12 @@
         <el-menu-item index="assessment">练习评估</el-menu-item>
       </el-sub-menu>
 
-      <el-sub-menu index="research">
-        <template #title>
-          <span class="nav-glyph nav-glyph-research" aria-hidden="true"></span>
-          <span class="nav-label">科研工具</span>
-        </template>
-        <el-menu-item index="literature">文献知识库</el-menu-item>
-        <el-menu-item index="writing">论文写作</el-menu-item>
-        <el-menu-item index="methods">科研方法</el-menu-item>
-      </el-sub-menu>
-
       <el-sub-menu index="system">
         <template #title>
           <span class="nav-glyph nav-glyph-system" aria-hidden="true"></span>
           <span class="nav-label">系统</span>
         </template>
         <el-menu-item index="agents">任务中心</el-menu-item>
-        <el-menu-item index="teacher">教师驾驶舱</el-menu-item>
         <el-menu-item index="settings">账号设置</el-menu-item>
       </el-sub-menu>
     </el-menu>
