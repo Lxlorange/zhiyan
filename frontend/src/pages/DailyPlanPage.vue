@@ -486,7 +486,7 @@ async function openSyllabusItem(item: DailyPlanItemRead) {
   await router.push({
     name: 'project-syllabus',
     params: { projectId: item.project_id },
-    hash: `#item-${item.syllabus_item_id}`
+    query: { itemId: String(item.syllabus_item_id) }
   })
 }
 

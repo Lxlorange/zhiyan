@@ -79,123 +79,147 @@
             <p>{{ syllabus.generation_reason }}</p>
           </section>
 
-          <section class="syllabus-directory panel-like">
+          <section class="syllabus-directory panel-like syllabus-directory-modern">
             <div class="directory-head">
               <div>
-                <span>Directory Overview</span>
+                <span>Course Outline</span>
                 <h3>目录总览</h3>
               </div>
               <el-tag type="success">{{ progressPercent }}% 已完成</el-tag>
             </div>
-            <div class="directory-row" v-for="stage in groupedStages" :key="`overview-${stage.stage}`">
-              <strong>{{ stage.stage }}</strong>
-              <div>
-                <a v-for="item in stage.items" :key="item.id" :href="`#item-${item.id}`">
-                  {{ item.title }}
-                </a>
-              </div>
-            </div>
+
+            <el-collapse v-model="expandedStages" class="syllabus-stage-collapse">
+              <el-collapse-item
+                v-for="stage in groupedStages"
+                :key="stage.stage"
+                :name="stage.stage"
+              >
+                <template #title>
+                  <div class="syllabus-stage-title">
+                    <strong>阶段 {{ stage.index + 1 }} · {{ stage.stage }}</strong>
+                    <span>{{ stage.items.length }} 项</span>
+                  </div>
+                </template>
+
+                <div class="syllabus-outline-list">
+                  <article
+                    v-for="item in stage.items"
+                    :key="item.id"
+                    class="syllabus-outline-item"
+                    :class="{ active: selectedItem?.id === item.id }"
+                  >
+                    <button type="button" class="syllabus-outline-main" @click="selectItem(item)">
+                      <span>{{ item.item_type }} / {{ item.difficulty }} / {{ item.estimated_minutes }} 分钟</span>
+                      <strong>{{ item.title }}</strong>
+                      <small>{{ item.objective }}</small>
+                    </button>
+                    <div class="syllabus-outline-actions">
+                      <el-tag :type="statusType(item.status)" effect="plain">{{ statusLabel(item.status) }}</el-tag>
+                      <el-button type="primary" size="small" @click="handleStartLearning(item)">
+                        {{ ['completed', 'mastered'].includes(item.status) ? '继续学习' : '开始学习' }}
+                      </el-button>
+                      <el-button
+                        size="small"
+                        :loading="statusUpdatingId === item.id"
+                        :disabled="item.status === 'skipped'"
+                        @click="handleStatus(item.id, 'skipped')"
+                      >
+                        暂时跳过
+                      </el-button>
+                      <el-button
+                        type="danger"
+                        plain
+                        size="small"
+                        :loading="statusUpdatingId === item.id"
+                        :disabled="item.is_locked"
+                        @click="handleDeleteItem(item)"
+                      >
+                        删除课程
+                      </el-button>
+                    </div>
+                  </article>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
           </section>
 
-          <section
-            v-for="stage in groupedStages"
-            :id="`stage-${stage.index}`"
-            :key="stage.stage"
-            class="syllabus-stage"
-          >
-            <header>
+          <section v-if="selectedItem" class="syllabus-selected-panel panel-like">
+            <div class="syllabus-selected-head">
               <div>
-                <span>阶段 {{ stage.index + 1 }}</span>
-                <h3>{{ stage.stage }}</h3>
+                <span>{{ selectedStage ? `阶段 ${selectedStage.index + 1} · ${selectedStage.stage}` : '当前课程' }}</span>
+                <h3>{{ selectedItem.title }}</h3>
               </div>
-              <el-tag>{{ stage.items.length }} 个学习项</el-tag>
-            </header>
+              <el-tag :type="statusType(selectedItem.status)">{{ statusLabel(selectedItem.status) }}</el-tag>
+            </div>
 
-            <article
-              v-for="item in stage.items"
-              :id="`item-${item.id}`"
-              :key="item.id"
-              class="syllabus-item-card"
-            >
-              <div class="syllabus-item-head">
-                <div>
-                  <span>{{ item.item_type }} / {{ item.difficulty }}</span>
-                  <h4>{{ item.title }}</h4>
-                </div>
-                <el-tag :type="statusType(item.status)">{{ statusLabel(item.status) }}</el-tag>
+            <p class="syllabus-selected-objective">{{ selectedItem.objective }}</p>
+
+            <div class="syllabus-info-grid">
+              <div>
+                <span>推荐原因</span>
+                <p>{{ selectedItem.recommendation_reason }}</p>
               </div>
-
-              <p>{{ item.objective }}</p>
-
-              <div class="syllabus-info-grid">
-                <div>
-                  <span>推荐原因</span>
-                  <p>{{ item.recommendation_reason }}</p>
-                </div>
-                <div>
-                  <span>完成标准</span>
-                  <p>{{ item.completion_criteria }}</p>
-                </div>
-                <div>
-                  <span>评估方式</span>
-                  <p>{{ item.assessment_method }}</p>
-                </div>
-                <div>
-                  <span>预计时长</span>
-                  <p>{{ item.estimated_minutes }} 分钟</p>
-                </div>
+              <div>
+                <span>完成标准</span>
+                <p>{{ selectedItem.completion_criteria }}</p>
               </div>
-
-              <div class="syllabus-resource-block">
-                <span>多模态学习入口</span>
-                <div class="syllabus-link-grid">
-                  <a
-                    v-for="resource in resourceLinks(item)"
-                    :key="`${item.id}-${resource}`"
-                    href="#"
-                    @click.prevent="handleStartLearning(item)"
-                  >
-                    {{ resource }}
-                  </a>
-                </div>
+              <div>
+                <span>评估方式</span>
+                <p>{{ selectedItem.assessment_method }}</p>
               </div>
-
-              <div class="syllabus-tags">
-                <el-tag v-for="point in item.knowledge_points" :key="point" effect="plain">{{ point }}</el-tag>
+              <div>
+                <span>预计时长</span>
+                <p>{{ selectedItem.estimated_minutes }} 分钟</p>
               </div>
+            </div>
 
-              <div v-if="item.related_documents.length" class="syllabus-doc-links">
-                <span>资料来源</span>
-                <a v-for="doc in item.related_documents" :key="doc" :href="docHref(doc)" target="_blank" rel="noreferrer">
-                  {{ doc }}
-                </a>
-              </div>
-
-              <div class="syllabus-status-actions">
-                <el-button
-                  type="primary"
-                  @click="handleStartLearning(item)"
+            <div class="syllabus-resource-block">
+              <span>课堂资源</span>
+              <div class="syllabus-link-grid">
+                <button
+                  v-for="resource in resourceLinks(selectedItem)"
+                  :key="`${selectedItem.id}-${resource}`"
+                  type="button"
+                  @click="handleStartLearning(selectedItem)"
                 >
-                  {{ ['completed', 'mastered'].includes(item.status) ? '继续学习' : '开始学习' }}
-                </el-button>
-                <el-button
-                  :loading="statusUpdatingId === item.id"
-                  :disabled="item.status === 'skipped'"
-                  @click="handleStatus(item.id, 'skipped')"
-                >
-                  暂时跳过
-                </el-button>
-                <el-button
-                  type="danger"
-                  plain
-                  :loading="statusUpdatingId === item.id"
-                  :disabled="item.is_locked"
-                  @click="handleDeleteItem(item)"
-                >
-                  删除课程
-                </el-button>
+                  {{ resource }}
+                </button>
               </div>
-            </article>
+            </div>
+
+            <div class="syllabus-tags">
+              <el-tag v-for="point in selectedItem.knowledge_points" :key="point" effect="plain">{{ point }}</el-tag>
+            </div>
+
+            <div v-if="selectedItem.related_documents.length" class="syllabus-doc-links">
+              <span>资料来源</span>
+              <template v-for="doc in selectedItem.related_documents" :key="doc">
+                <a v-if="isExternalLink(doc)" :href="doc" target="_blank" rel="noreferrer">{{ doc }}</a>
+                <small v-else>{{ doc }}</small>
+              </template>
+            </div>
+
+            <div class="syllabus-status-actions">
+              <el-button type="primary" @click="handleStartLearning(selectedItem)">
+                {{ ['completed', 'mastered'].includes(selectedItem.status) ? '继续学习' : '开始学习' }}
+              </el-button>
+              <el-button
+                :loading="statusUpdatingId === selectedItem.id"
+                :disabled="selectedItem.status === 'skipped'"
+                @click="handleStatus(selectedItem.id, 'skipped')"
+              >
+                暂时跳过
+              </el-button>
+              <el-button
+                type="danger"
+                plain
+                :loading="statusUpdatingId === selectedItem.id"
+                :disabled="selectedItem.is_locked"
+                @click="handleDeleteItem(selectedItem)"
+              >
+                删除课程
+              </el-button>
+            </div>
           </section>
         </template>
       </main>
@@ -205,7 +229,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteSyllabusItem,
@@ -226,11 +250,14 @@ const projects = ref<LearningProjectRead[]>([])
 const selectedProjectId = ref<number | null>(props.projectId)
 const syllabus = ref<SyllabusVersionRead | null>(null)
 const router = useRouter()
+const route = useRoute()
 const loadingProjects = ref(false)
 const loadingSyllabus = ref(false)
 const generationState = ref<'idle' | 'started' | 'generating' | 'ready' | 'failed'>('idle')
 const generationMessage = ref('')
 const statusUpdatingId = ref<number | null>(null)
+const selectedItemId = ref<number | null>(normalizeItemId(route.query.itemId))
+const expandedStages = ref<string[]>([])
 const pollTimer = ref<number | null>(null)
 
 const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value) || null)
@@ -269,6 +296,12 @@ const groupedStages = computed(() => {
   }))
 })
 
+const selectedItem = computed(() => {
+  const selected = activeItems.value.find((item) => item.id === selectedItemId.value)
+  return selected || activeItems.value[0] || null
+})
+const selectedStage = computed(() => groupedStages.value.find((stage) => stage.items.some((item) => item.id === selectedItem.value?.id)) || null)
+
 onMounted(loadProjects)
 onBeforeUnmount(clearPollTimer)
 
@@ -279,6 +312,20 @@ watch(
     if (nextProjectId) ensureAndLoadSyllabus(nextProjectId)
   }
 )
+
+watch(
+  () => route.query.itemId,
+  (itemId) => {
+    selectedItemId.value = normalizeItemId(itemId)
+    expandSelectedStage()
+  }
+)
+
+watch(groupedStages, () => {
+  if (!expandedStages.value.length) expandedStages.value = groupedStages.value.map((stage) => stage.stage)
+  if (!selectedItemId.value && activeItems.value.length) selectedItemId.value = activeItems.value[0].id
+  expandSelectedStage()
+})
 
 async function loadProjects() {
   loadingProjects.value = true
@@ -305,6 +352,7 @@ async function loadSyllabus(projectId: number) {
     syllabus.value = data
     generationState.value = 'ready'
     generationMessage.value = '学习清单已生成'
+    syncSelectionAfterSyllabusLoad()
   } finally {
     loadingSyllabus.value = false
   }
@@ -320,6 +368,7 @@ async function ensureAndLoadSyllabus(projectId: number) {
     if (data.syllabus) {
       syllabus.value = data.syllabus
       generationState.value = 'ready'
+      syncSelectionAfterSyllabusLoad()
       return
     }
     syllabus.value = null
@@ -342,6 +391,7 @@ function startPolling(projectId: number) {
       if (data.syllabus) {
         syllabus.value = data.syllabus
         generationState.value = 'ready'
+        syncSelectionAfterSyllabusLoad()
         clearPollTimer()
       }
       if (data.state === 'failed') {
@@ -359,6 +409,39 @@ function clearPollTimer() {
     window.clearInterval(pollTimer.value)
     pollTimer.value = null
   }
+}
+
+
+function normalizeItemId(value: unknown): number | null {
+  const raw = Array.isArray(value) ? value[0] : value
+  const id = Number(raw)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+function syncSelectionAfterSyllabusLoad() {
+  if (!activeItems.value.length) {
+    selectedItemId.value = null
+    expandedStages.value = []
+    return
+  }
+  if (!selectedItem.value) selectedItemId.value = activeItems.value[0].id
+  if (!expandedStages.value.length) expandedStages.value = groupedStages.value.map((stage) => stage.stage)
+  expandSelectedStage()
+}
+
+function expandSelectedStage() {
+  const stage = selectedStage.value?.stage
+  if (stage && !expandedStages.value.includes(stage)) expandedStages.value = [...expandedStages.value, stage]
+}
+
+async function selectItem(item: SyllabusItemRead) {
+  selectedItemId.value = item.id
+  expandSelectedStage()
+  await router.replace({
+    name: 'project-syllabus',
+    params: { projectId: item.project_id },
+    query: { itemId: String(item.id) }
+  })
 }
 
 async function handleStartLearning(item: SyllabusItemRead) {
@@ -422,7 +505,7 @@ function resourceLinks(item: SyllabusItemRead) {
   return Array.from(new Set(resources.length ? resources : ['讲解文档', '例题互动', '可视化演示', '语音讲解', '复现 Demo', '练习评估']))
 }
 
-function docHref(doc: string) {
-  return /^https?:\/\//i.test(doc) ? doc : `#item-${encodeURIComponent(doc)}`
+function isExternalLink(doc: string) {
+  return /^https?:\/\//i.test(doc)
 }
 </script>

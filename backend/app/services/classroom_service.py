@@ -50,6 +50,8 @@ from app.services.visualization_3d_renderer import render_three_physics_html
 
 
 PREGENERATE_CLASSROOM_LIMIT = 2
+CLASSROOM_PACKAGE_MAX_TOKENS = 5200
+CLASSROOM_REPAIR_MAX_TOKENS = 4200
 
 
 class _SlideSpec(BaseModel):
@@ -1700,7 +1702,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
     mode_hint = _classroom_mode_hint(project, item)
     paper_focus = _paper_focus_context(item)
-    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
+    knowledge_context = _truncate_for_prompt(build_rag_context_for_classroom(project, item, instruction), 4500)
     system_prompt = (
         "你是面向高校学生的 OpenMAIC + PPTAgent 风格多智能体课堂生成系统。"
         "只输出严格 JSON，不要 Markdown，不要解释 JSON 之外的内容。"
@@ -1714,33 +1716,33 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "必须输出顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, voice_script, "
         "reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
         "禁止只输出 slides、deck、ppt 或 markdown；所有顶层字段必须一次性完整输出。\n"
-        "slides: 4-6 页，每页必须包含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, side_panel, "
+        "slides: 4 页，每页必须包含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, side_panel, "
         "takeaways, source_refs, example, misconception, interaction_prompt。"
         "layout 只能使用 cover, split_visual, process_timeline, comparison_matrix, evidence_cards, lab_workbench, defense_panel 中的一种；"
-        "bullets 不是三行短词，必须是 3-4 条讲得清楚的课堂要点，每条不超过 45 个汉字或 90 个英文字符；speaker_notes 必须是教师口吻讲解，不是照念 bullets；"
+        "bullets 必须是 2-3 条讲得清楚的课堂要点，每条不超过 36 个汉字或 72 个英文字符；speaker_notes 必须是教师口吻讲解，不是照念 bullets；"
         "visual_hint 描述本页适合生成的图解/动画/3D 演示；"
-        "visual_blocks 必须是 2-4 个结构化视觉块，每项必须包含 type, title, content, emphasis，其中 type 只能是 "
+        "visual_blocks 必须是 2 个结构化视觉块，每项必须包含 type, title, content, emphasis，其中 type 只能是 "
         "concept, process, metric, evidence, comparison, formula, code, warning, question；"
-        "side_panel 必须包含 title 和 items，items 为 2-5 条短文本；takeaways 为 2-5 条本页结论；"
-        "source_refs 必须是 1-3 个对象，每项包含 title 和 url；只有确信真实存在的公开链接才填写 url，否则 url 留空并在 title 中写明知识库文档、页码或幻灯片编号；"
+        "side_panel 必须包含 title 和 items，items 为 2-3 条短文本；takeaways 为 2-3 条本页结论；"
+        "source_refs 必须是 1 个对象，包含 title 和 url；只有确信真实存在的公开链接才填写 url，否则 url 留空并在 title 中写明知识库文档、页码或幻灯片编号；"
         "不得编造 DOI、论文链接、搜索链接、官网链接或空泛来源；"
-        "为避免 JSON 截断，所有字符串保持精炼：speaker_notes 不超过 180 字，visual_blocks.content 不超过 80 字，example/misconception/interaction_prompt 不超过 100 字；"
+        "为避免 JSON 截断，所有字符串保持精炼：speaker_notes 不超过 120 字，visual_blocks.content 不超过 60 字，example/misconception/interaction_prompt 不超过 70 字；"
         "example 给出贴近学生项目的具体例子；"
         "misconception 写出常见误区；interaction_prompt 给出本页可以让学生思考或操作的问题。\n"
-        "concept_cards: 3-6 项，每项包含 name, explanation, scenario, misconception, relation_to_project。\n"
+        "concept_cards: 3 项，每项包含 name, explanation, scenario, misconception, relation_to_project。\n"
         "diagram: 包含 title, diagram_type, mermaid, explanation；mermaid 使用 flowchart TD 或 graph TD。\n"
-        "guiding_questions: 3-6 项，每项包含 prompt, intent, hint。\n"
+        "guiding_questions: 3 项，每项包含 prompt, intent, hint。\n"
         "voice_script: 包含 one_minute, five_minutes, segments。\n"
         "reproduction_demo: 包含 title, task, input_format, code_skeleton, steps, expected_output, parameters, common_errors, report_suggestions。\n"
-        "readings: 2-5 项，每项必须是对象并包含 title, why, source, keywords；"
+        "readings: 2 项，每项必须是对象并包含 title, why, source, keywords；"
         "source 写课程知识库文档名、上传资料页码、官方文档或真实公开链接，不确定真实链接时写可追溯资料名称，不得编造 DOI 或不存在 URL；"
         "keywords 至少 1 条。\n"
-        "quiz: 3-5 项，全部使用选择题；每项包含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。"
+        "quiz: 2-3 项，全部使用选择题；每项包含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。"
         "question_type 只能是 single 或 multiple；options 为 3-5 个对象，每个包含 label 和 text；"
         "single 的 answer 是一个选项 label，例如 A；multiple 的 answer 用英文逗号连接，例如 A,C；"
         "explanation 必须解释为什么正确项正确、为什么常见错误项不对；hint 是学生答错后看的提示，不直接泄露答案。\n"
         "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
-        "reflection_prompts: 3-6 条。safety_notes: 至少 1 条。\n"
+        "reflection_prompts: 3 条。safety_notes: 至少 1 条。\n"
         "严禁省略字段，严禁只返回 slides。字段缺失会触发一次自动修复；修复仍失败会被系统直接判定为生成失败。\n"
         "如果某字段暂时无法确定，必须基于学习项、课程知识库和项目目标生成可执行内容；不得返回空字符串、空数组或占位符。\n"
         "文献综述模式必须给出论文/资料列表、摘要要点、来源字段、对比矩阵和阅读任务；不得编造已发表事实。\n"
@@ -1765,7 +1767,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"mode_hint：{mode_hint}\n"
         f"补充要求：{instruction}\n"
     )
-    raw = _qwen_chat_raw_json(system_prompt, user_prompt)
+    raw = _qwen_chat_raw_json(system_prompt, user_prompt, max_tokens=CLASSROOM_PACKAGE_MAX_TOKENS, timeout_seconds=get_settings().qwen_classroom_timeout_seconds)
     try:
         return _validate_classroom_package(raw, project, item)
     except LLMResponseError as first_error:
@@ -1800,7 +1802,7 @@ def build_rag_context_for_classroom(project: LearningProject, item: LearningSyll
     db = object_session(project)
     if db is None:
         raise LLMResponseError("课堂生成无法获取数据库会话，不能检索课程知识库")
-    return build_rag_context(db, query, limit=8)
+    return build_rag_context(db, query, limit=4)
 
 
 def _classroom_mode_hint(project: LearningProject, item: LearningSyllabusItem) -> str:
@@ -1865,19 +1867,32 @@ def _repair_classroom_package_json(
         "voice_script, reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
         "3. readings 必须是 2-5 个对象，每个对象必须包含 title, why, source, keywords；"
         "source 可以是课程知识库文档名、上传资料页码、官方文档或真实公开链接；不得编造 DOI、论文链接或不存在的网页。\n"
-        "4. slides 必须 4-6 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
+        "4. slides 必须 4 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
         "side_panel, takeaways, source_refs, example, misconception, interaction_prompt。\n"
         "5. quiz 必须是选择题，至少 2 道；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
         "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；reflection_prompts 至少 3 条。\n"
         "7. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
         f"校验错误：{validation_error}\n"
-        f"原始任务要求：{_truncate_for_prompt(original_prompt, 8000)}\n"
-        f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 18000)}\n"
+        f"原始任务要求：{_truncate_for_prompt(original_prompt, 5000)}\n"
+        f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 9000)}\n"
     )
-    return _qwen_chat_raw_json(system_prompt, repair_prompt, max_tokens=9000, temperature=0.1)
+    return _qwen_chat_raw_json(
+        system_prompt,
+        repair_prompt,
+        max_tokens=CLASSROOM_REPAIR_MAX_TOKENS,
+        temperature=0.1,
+        timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
+    )
 
 
-def _qwen_chat_raw_json(system_prompt: str, user_prompt: str, *, max_tokens: int = 9000, temperature: float = 0.2) -> Any:
+def _qwen_chat_raw_json(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 9000,
+    temperature: float = 0.2,
+    timeout_seconds: Optional[int] = None,
+) -> Any:
     settings = get_settings()
     validate_qwen_config()
     payload = {
@@ -1898,10 +1913,11 @@ def _qwen_chat_raw_json(system_prompt: str, user_prompt: str, *, max_tokens: int
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=settings.qwen_timeout_seconds) as response:
+        timeout = timeout_seconds or settings.qwen_timeout_seconds
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
     except (TimeoutError, socket.timeout) as exc:
-        raise LLMResponseError(f"千问接口请求超时：{settings.qwen_timeout_seconds} 秒内未返回") from exc
+        raise LLMResponseError(f"千问接口请求超时：{timeout_seconds or settings.qwen_timeout_seconds} 秒内未返回") from exc
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
         raise LLMResponseError(f"千问接口返回错误：{exc.code} {detail}") from exc
