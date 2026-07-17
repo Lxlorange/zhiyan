@@ -186,6 +186,7 @@ def _register_pgvector_adapter() -> None:
 def init_db() -> None:
     import app.models.learning  # noqa: F401
     import app.models.user  # noqa: F401
+    from app.services.auth_service import seed_demo_users
     from app.services.direction_service import seed_direction_templates
     from app.services.knowledge_service import seed_course_knowledge
 
@@ -195,6 +196,7 @@ def init_db() -> None:
     _apply_lightweight_migrations()
     db = SessionLocal()
     try:
+        seed_demo_users(db)
         seed_course_knowledge(db)
         seed_direction_templates(db)
     finally:

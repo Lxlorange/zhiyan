@@ -40,9 +40,8 @@
           <span class="nav-label">学习过程</span>
         </template>
         <el-menu-item index="profile">学习画像</el-menu-item>
-        <el-menu-item index="resources">资源中心</el-menu-item>
-        <el-menu-item index="tutor">智能辅导</el-menu-item>
-        <el-menu-item index="assessment">练习评估</el-menu-item>
+        <el-menu-item index="resources">数据库</el-menu-item>
+        <el-menu-item index="assessment">练习题目生成</el-menu-item>
       </el-sub-menu>
 
       <el-sub-menu index="system">

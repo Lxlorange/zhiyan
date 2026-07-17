@@ -56,7 +56,7 @@ const routeProps = computed(() => {
   if (currentPage.value === 'classroom') return { projectId: selectedProjectId.value, itemId: selectedItemId.value }
   if (currentPage.value === 'daily-plan') return { projectId: selectedProjectId.value }
   if (currentPage.value === 'settings') return { user: user.value }
-  if (['profile', 'resources', 'tutor', 'assessment', 'literature', 'writing', 'methods'].includes(currentPage.value)) {
+  if (['profile', 'resources', 'assessment', 'literature', 'writing', 'methods'].includes(currentPage.value)) {
     return { mode: currentPage.value }
   }
   if (currentPage.value === 'agents') {

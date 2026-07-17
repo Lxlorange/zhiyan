@@ -8,6 +8,8 @@ from app.schemas import (
     LiteraturePaperCreateRequest,
     LiteraturePaperRead,
     LiteraturePaperUpdateRequest,
+    PracticeGenerateRequest,
+    PracticeGenerateResponse,
     ProfileCenterResponse,
     ProfileEntryUpdateRequest,
     ResearchToolRunRead,
@@ -19,6 +21,7 @@ from app.services.workspace_service import (
     create_literature,
     get_profile_center,
     get_workspace_overview,
+    generate_practice_questions,
     list_literature,
     list_tool_runs,
     run_research_tool,
@@ -104,3 +107,12 @@ def research_tool_run(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMResponseError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/practice/generate", response_model=PracticeGenerateResponse)
+def practice_generate(
+    request: PracticeGenerateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PracticeGenerateResponse:
+    return generate_practice_questions(db, user, request)
