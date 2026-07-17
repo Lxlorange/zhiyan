@@ -23,6 +23,7 @@ services:
         USE_CN_MIRROR: "true"
         APT_MIRROR: mirrors.aliyun.com
         PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+        INSTALL_CJK_FONTS: ${INSTALL_CJK_FONTS:-false}
     container_name: zhiyan-a3-backend
     restart: unless-stopped
     env_file:

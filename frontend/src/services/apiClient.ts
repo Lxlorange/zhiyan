@@ -737,7 +737,7 @@ export function sendClassroomDialogue(sessionId: number, payload: {
   })
 }
 
-export function submitClassroomQuiz(sessionId: number, answers: Record<string, string>) {
+export function submitClassroomQuiz(sessionId: number, answers: Record<string, string | string[]>) {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/quiz`, { answers })
 }
 

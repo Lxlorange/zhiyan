@@ -70,8 +70,13 @@ class _SlideSpec(BaseModel):
 class _QuizSpec(BaseModel):
     id: str
     prompt: str
+    question_type: str = "single"
+    options: list[dict[str, str]] = Field(min_length=3, max_length=6)
     answer: str
     explanation: str
+    hint: str = ""
+    difficulty: str = "medium"
+    knowledge_point: str = ""
 
 
 class _PracticeSpec(BaseModel):
@@ -710,26 +715,79 @@ def submit_quiz(
     item = _item_or_404(db, user, session.syllabus_item_id)
     package = _classroom_package_or_error(session)
     expected = {question.id: question.answer for question in package.quiz}
-    correct_count = sum(1 for question_id, answer in request.answers.items() if expected.get(question_id, "").strip() == answer.strip())
+    results = [_grade_quiz_question(question, request.answers.get(question.id)) for question in package.quiz]
+    correct_count = sum(1 for result in results if result["correct"])
     score = round((correct_count / max(len(package.quiz), 1)) * 100)
     passed = score >= 70
-    feedback = f"答对 {correct_count}/{len(package.quiz)} 题，{'已达到通过标准' if passed else '请重新回看课件后再作答'}。"
+    feedback = f"答对 {correct_count}/{len(package.quiz)} 题，{'已达到通过标准' if passed else '请根据提示修改后再次提交'}。"
     _add_submission(
         db,
         session=session,
         user=user,
         item=item,
         submission_type="quiz",
-        content={"answers": request.answers, "expected": expected},
+        content={"answers": request.answers, "expected": expected, "results": results, "attempt_no": _next_submission_attempt(session, "quiz")},
         score=score,
         passed=passed,
         feedback=feedback,
     )
+    for result in results:
+        if result["correct"]:
+            continue
+        _add_submission(
+            db,
+            session=session,
+            user=user,
+            item=item,
+            submission_type="mistake",
+            content={
+                "source": "quiz",
+                "question_id": result["question_id"],
+                "prompt": result["prompt"],
+                "selected": result["selected"],
+                "expected": result["expected"],
+                "hint": result["hint"],
+                "explanation": result["explanation"],
+                "knowledge_point": result["knowledge_point"],
+            },
+            score=0,
+            passed=False,
+            feedback=result["hint"],
+        )
     session.quiz_passed = passed
     session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, passed, session.practice_passed, session.reflection_passed)
     _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
+
+
+def _grade_quiz_question(question: _QuizSpec, raw_answer: Any) -> dict[str, Any]:
+    selected = _normalize_submitted_answer(raw_answer)
+    expected = _normalize_submitted_answer(question.answer)
+    correct = selected == expected
+    return {
+        "question_id": question.id,
+        "prompt": question.prompt,
+        "question_type": question.question_type,
+        "options": question.options,
+        "selected": ",".join(selected),
+        "expected": ",".join(expected),
+        "correct": correct,
+        "hint": question.hint,
+        "explanation": question.explanation,
+        "knowledge_point": question.knowledge_point,
+    }
+
+
+def _normalize_submitted_answer(value: Any) -> list[str]:
+    parts: list[str] = []
+    for item_value in _as_list(value):
+        parts.extend(part for part in re.split(r"[,，、\s]+", str(item_value).strip().upper()) if part)
+    return sorted(set(parts))
+
+
+def _next_submission_attempt(session: ClassroomSession, submission_type: str) -> int:
+    return 1 + sum(1 for submission in session.submissions if submission.submission_type == submission_type)
 
 
 def complete_slides(
@@ -1601,7 +1659,10 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "voice_script: 包含 one_minute, five_minutes, segments。\n"
         "reproduction_demo: 包含 title, task, input_format, code_skeleton, steps, expected_output, parameters, common_errors, report_suggestions。\n"
         "readings: 2-5 项，每项包含 title, why, source, keywords。\n"
-        "quiz: 2-5 项，每项包含 id, prompt, answer, explanation。\n"
+        "quiz: 3-5 项，全部使用选择题；每项包含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。"
+        "question_type 只能是 single 或 multiple；options 为 3-5 个对象，每个包含 label 和 text；"
+        "single 的 answer 是一个选项 label，例如 A；multiple 的 answer 用英文逗号连接，例如 A,C；"
+        "explanation 必须解释为什么正确项正确、为什么常见错误项不对；hint 是学生答错后看的提示，不直接泄露答案。\n"
         "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
         "reflection_prompts: 3-6 条。safety_notes: 至少 1 条。\n"
         "严禁省略字段，严禁只返回 slides。字段缺失会被系统直接判定为生成失败。\n"
@@ -1775,9 +1836,6 @@ def _normalize_slide(raw: Any, index: int) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"课堂包 JSON slides[{index}] 必须是对象")
     slide = raw
-    bullets = _as_str_list(slide.get("bullets") or slide.get("points") or slide.get("content") or slide.get("items"))
-    if len(bullets) < 2:
-        raise LLMResponseError(f"课堂包 JSON slides[{index}].bullets 至少需要 2 条")
     visual_blocks = [_normalize_slide_visual_block(value, index, block_index) for block_index, value in enumerate(_as_list(slide.get("visual_blocks")), start=1)]
     if len(visual_blocks) < 2:
         raise LLMResponseError(f"课堂包 JSON slides[{index}].visual_blocks 至少需要 2 个视觉块")
@@ -1785,6 +1843,7 @@ def _normalize_slide(raw: Any, index: int) -> dict:
     takeaways = _as_str_list(slide.get("takeaways"))
     if len(takeaways) < 2:
         raise LLMResponseError(f"课堂包 JSON slides[{index}].takeaways 至少需要 2 条")
+    bullets = _normalize_slide_bullets(slide, visual_blocks, takeaways, index)
     source_refs = [_normalize_slide_source_ref(value, index, ref_index) for ref_index, value in enumerate(_as_list(slide.get("source_refs") or slide.get("sources")), start=1)]
     if not source_refs:
         raise LLMResponseError(f"课堂包 JSON slides[{index}].source_refs 至少需要 1 条")
@@ -1810,6 +1869,26 @@ def _normalize_slide_layout(value: Any, index: int) -> str:
     if layout not in allowed:
         raise LLMResponseError(f"classroom.slides[{index}].layout 必须是 {sorted(allowed)} 之一，当前为 {layout}")
     return layout
+
+
+def _normalize_slide_bullets(slide: dict[str, Any], visual_blocks: list[dict[str, str]], takeaways: list[str], index: int) -> list[str]:
+    bullets = _as_str_list(slide.get("bullets") or slide.get("points") or slide.get("content") or slide.get("items"))
+    if len(bullets) < 2:
+        bullets.extend(str(block.get("content", "")).strip() for block in visual_blocks)
+    if len([item for item in bullets if item.strip()]) < 2:
+        bullets.extend(takeaways)
+    if len([item for item in bullets if item.strip()]) < 2:
+        notes = str(slide.get("speaker_notes") or slide.get("notes") or "").strip()
+        if notes:
+            bullets.extend(_split_compact_sentences(notes))
+    cleaned: list[str] = []
+    for bullet in bullets:
+        text = _compact_text(str(bullet), 110)
+        if text and text not in cleaned:
+            cleaned.append(text)
+    if len(cleaned) < 2:
+        raise LLMResponseError(f"课堂包 JSON slides[{index}] 缺少可用于课堂展示的要点；请让模型为 bullets、visual_blocks 或 takeaways 提供至少 2 条具体内容")
+    return cleaned[:6]
 
 
 def _normalize_slide_visual_block(raw: Any, slide_index: int, block_index: int) -> dict[str, str]:
@@ -1855,12 +1934,69 @@ def _normalize_quiz(raw: Any, index: int, item: LearningSyllabusItem) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"课堂包 JSON quiz[{index}] 必须是对象")
     question = raw
+    options = _normalize_quiz_options(question.get("options") or question.get("choices"), index)
+    option_labels = {option["label"] for option in options}
+    question_type = str(question.get("question_type") or question.get("type") or "single").strip().lower()
+    if question_type in {"single_choice", "choice", "radio"}:
+        question_type = "single"
+    if question_type in {"multiple_choice", "multi", "checkbox"}:
+        question_type = "multiple"
+    if question_type not in {"single", "multiple"}:
+        raise LLMResponseError(f"classroom.quiz[{index}].question_type 必须是 single 或 multiple")
+    answer = _normalize_quiz_answer(question.get("answer") or question.get("expected_answer") or question.get("correct_answer"), option_labels, question_type, index)
     return {
         "id": _require_text(question.get("id"), f"classroom.quiz[{index}].id"),
         "prompt": _require_text(question.get("prompt") or question.get("question"), f"classroom.quiz[{index}].prompt"),
-        "answer": _require_text(question.get("answer") or question.get("expected_answer"), f"classroom.quiz[{index}].answer"),
+        "question_type": question_type,
+        "options": options,
+        "answer": answer,
         "explanation": _require_text(question.get("explanation") or question.get("analysis"), f"classroom.quiz[{index}].explanation"),
+        "hint": _require_text(question.get("hint") or question.get("tip") or question.get("feedback_hint"), f"classroom.quiz[{index}].hint"),
+        "difficulty": str(question.get("difficulty") or "medium").strip()[:24],
+        "knowledge_point": str(question.get("knowledge_point") or question.get("point") or (item.knowledge_points[0] if item.knowledge_points else item.title)).strip()[:80],
     }
+
+
+def _normalize_quiz_options(raw: Any, index: int) -> list[dict[str, str]]:
+    values = _as_list(raw)
+    if len(values) < 3:
+        raise LLMResponseError(f"classroom.quiz[{index}].options 至少需要 3 个选项")
+    labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    options: list[dict[str, str]] = []
+    for option_index, value in enumerate(values[:6]):
+        if isinstance(value, dict):
+            label = str(value.get("label") or value.get("key") or value.get("id") or labels[option_index]).strip().upper()
+            text = _require_text(value.get("text") or value.get("content") or value.get("label_text") or value.get("value"), f"classroom.quiz[{index}].options[{option_index + 1}].text")
+        else:
+            label = labels[option_index]
+            text = str(value).strip()
+        if not re.fullmatch(r"[A-Z]", label):
+            raise LLMResponseError(f"classroom.quiz[{index}].options[{option_index + 1}].label 必须是 A-Z 单个字母")
+        if not text:
+            raise LLMResponseError(f"classroom.quiz[{index}].options[{option_index + 1}].text 不能为空")
+        options.append({"label": label, "text": _compact_text(text, 140)})
+    if len({option["label"] for option in options}) != len(options):
+        raise LLMResponseError(f"classroom.quiz[{index}].options 存在重复 label")
+    return options
+
+
+def _normalize_quiz_answer(raw: Any, option_labels: set[str], question_type: str, index: int) -> str:
+    answers: list[str] = []
+    for value in _as_list(raw):
+        if isinstance(value, str):
+            parts = re.split(r"[,，、\s]+", value.strip())
+            answers.extend(part for part in parts if part)
+        else:
+            answers.append(str(value).strip())
+    normalized = [answer.strip().upper() for answer in answers if answer.strip()]
+    if not normalized:
+        raise LLMResponseError(f"classroom.quiz[{index}].answer 不能为空")
+    invalid = [answer for answer in normalized if answer not in option_labels]
+    if invalid:
+        raise LLMResponseError(f"classroom.quiz[{index}].answer 引用了不存在的选项：{', '.join(invalid)}")
+    if question_type == "single" and len(normalized) != 1:
+        raise LLMResponseError(f"classroom.quiz[{index}] 是单选题，answer 只能包含 1 个选项")
+    return ",".join(sorted(set(normalized)))
 
 
 def _normalize_practice(raw: Any, item: LearningSyllabusItem) -> dict:
@@ -1998,11 +2134,22 @@ def _as_str_list(value: Any) -> list[str]:
     return result
 
 
+def _compact_text(value: str, max_length: int) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", "", value)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_length].rstrip()
+
+
+def _split_compact_sentences(value: str) -> list[str]:
+    parts = re.split(r"[。！？!?；;]\s*", value)
+    return [_compact_text(part, 110) for part in parts if _compact_text(part, 110)]
+
+
 def _require_text(value: Any, field_path: str) -> str:
     texts = _as_str_list(value)
     if not texts:
         raise LLMResponseError(f"模型 JSON 缺少必填字段 {field_path}")
-    return texts[0]
+    return _compact_text(texts[0], 500)
 
 
 # OpenMAIC-style interactive widget generation.

@@ -3,6 +3,7 @@ FROM python:3.12-slim-bookworm
 ARG USE_CN_MIRROR=true
 ARG APT_MIRROR=mirrors.aliyun.com
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG INSTALL_CJK_FONTS=false
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -17,8 +18,11 @@ RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update \
     && apt-get install -y --no-install-recommends \
         libgl1 libglib2.0-0 libgomp1 poppler-utils \
-        tesseract-ocr tesseract-ocr-chi-sim fonts-noto-cjk \
+        tesseract-ocr tesseract-ocr-chi-sim \
         libreoffice-core libreoffice-writer libreoffice-impress \
+    && if [ "$INSTALL_CJK_FONTS" = "true" ]; then \
+        apt-get install -y --no-install-recommends fonts-noto-cjk; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -287,18 +287,51 @@
               <div v-if="classroom?.quiz_passed" key="quiz-done" class="gate-complete-panel">
                 <strong>例题已通过</strong>
                 <p v-if="latestQuizFeedback" class="task-feedback">{{ latestQuizFeedback }}</p>
-                <div class="classroom-action-row"><el-button type="primary" @click="activeGate = 'practice'">进入实操</el-button></div>
+                <div v-if="latestQuizResults.length" class="quiz-review-list">
+                  <article v-for="result in latestQuizResults" :key="result.question_id" class="quiz-result-card" :class="{ correct: result.correct }">
+                    <header>
+                      <strong>{{ result.prompt }}</strong>
+                      <el-tag :type="quizResultType(result)">{{ result.correct ? '正确' : '需复习' }}</el-tag>
+                    </header>
+                    <p>你的选择：{{ result.selected || '未作答' }}</p>
+                    <p>正确答案：{{ result.expected }}</p>
+                    <p>{{ result.explanation }}</p>
+                  </article>
+                </div>
+                <div class="classroom-action-row is-sticky"><el-button type="primary" @click="activeGate = 'practice'">进入实操</el-button></div>
               </div>
               <div v-else key="quiz-form" class="classroom-form-stack">
                 <el-alert v-if="!classroom?.slides_completed" title="请先翻完动态课件并完成课件学习" type="warning" :closable="false" />
                 <div v-else class="quiz-list">
-                  <label v-for="question in quizQuestions" :key="question.id">
-                    <span>{{ question.id }}. {{ question.prompt }}</span>
-                    <el-input v-model="quizAnswers[question.id]" placeholder="填写你的答案" />
-                  </label>
+                  <article v-for="question in quizQuestions" :key="question.id" class="quiz-card">
+                    <header>
+                      <strong>{{ question.id }}. {{ question.prompt }}</strong>
+                      <el-tag size="small" effect="plain">{{ question.question_type === 'multiple' ? '多选' : '单选' }}</el-tag>
+                    </header>
+                    <el-checkbox-group v-if="question.question_type === 'multiple'" :model-value="quizAnswerArray(question.id)" @update:model-value="(value) => setQuizAnswer(question.id, value)">
+                      <el-checkbox-button v-for="option in question.options" :key="option.label" :label="option.label">
+                        {{ option.label }}. {{ option.text }}
+                      </el-checkbox-button>
+                    </el-checkbox-group>
+                    <el-radio-group v-else :model-value="quizAnswerText(question.id)" @update:model-value="(value) => setQuizAnswer(question.id, value)">
+                      <el-radio-button v-for="option in question.options" :key="option.label" :label="option.label">
+                        {{ option.label }}. {{ option.text }}
+                      </el-radio-button>
+                    </el-radio-group>
+                    <div v-if="quizResultMap[question.id]" class="quiz-result-inline" :class="{ correct: quizResultMap[question.id].correct }">
+                      <strong>{{ quizResultMap[question.id].correct ? '回答正确' : '再想一想' }}</strong>
+                      <p v-if="!quizResultMap[question.id].correct">提示：{{ quizResultMap[question.id].hint }}</p>
+                      <p>{{ quizResultMap[question.id].explanation }}</p>
+                    </div>
+                  </article>
                 </div>
                 <p v-if="latestQuizFeedback" class="task-feedback">{{ latestQuizFeedback }}</p>
-                <div class="classroom-action-row">
+                <div v-if="quizMistakes.length" class="mistake-strip">
+                  <strong>错题已加入错题本</strong>
+                  <span v-for="mistake in quizMistakes" :key="mistake.question_id">{{ mistake.question_id }} · {{ mistake.knowledge_point }}</span>
+                </div>
+                <div class="classroom-action-row is-sticky">
+                  <el-button v-if="latestQuizResults.length" @click="resetQuizAttempt">清空重答</el-button>
                   <el-button type="primary" :disabled="!classroom?.slides_completed" :loading="submittingQuiz" @click="handleSubmitQuiz">提交例题</el-button>
                 </div>
               </div>
@@ -416,7 +449,7 @@ const showLectureSubtitle = ref(false)
 const noteMarkdown = ref('')
 const chatMessage = ref('')
 const unresolvedQuestionsText = ref('')
-const quizAnswers = reactive<Record<string, string>>({})
+const quizAnswers = reactive<Record<string, string | string[]>>({})
 const practiceForm = reactive({ report: '', artifact_url: '', key_result: '' })
 const reflectionForm = reactive({ reflection: '', next_action: '' })
 const quickActions = ['讲简单点', '举例', '出一道题', '联系科研方向', '总结本页']
@@ -572,6 +605,13 @@ const latestSubmission = computed(() => {
 })
 const latestFeedback = computed(() => latestSubmission.value?.feedback || '')
 const latestQuizFeedback = computed(() => latestSubmissionByType('quiz')?.feedback || '')
+const latestQuizSubmission = computed(() => latestSubmissionByType('quiz'))
+const latestQuizResults = computed<Array<Record<string, any>>>(() => {
+  const results = latestQuizSubmission.value?.content?.results
+  return Array.isArray(results) ? results : []
+})
+const quizResultMap = computed<Record<string, Record<string, any>>>(() => Object.fromEntries(latestQuizResults.value.map((result) => [String(result.question_id), result])))
+const quizMistakes = computed(() => latestQuizResults.value.filter((result) => !result.correct))
 const latestPracticeFeedback = computed(() => latestSubmissionByType('practice')?.feedback || '')
 const latestReflectionFeedback = computed(() => latestSubmissionByType('reflection')?.feedback || '')
 const dialogueMessages = computed(() => {
@@ -796,11 +836,44 @@ function askGuidingQuestion(question: string) {
   void handleSendDialogue()
 }
 
+function quizOptionLabel(question: Record<string, any>, value: string) {
+  const options = Array.isArray(question.options) ? question.options : []
+  const option = options.find((item: Record<string, any>) => String(item.label) === value)
+  return option ? `${option.label}. ${option.text}` : value
+}
+
+function quizAnswerText(questionId: string) {
+  const value = quizAnswers[questionId]
+  return Array.isArray(value) ? value[0] || '' : String(value || '')
+}
+
+function quizAnswerArray(questionId: string) {
+  const value = quizAnswers[questionId]
+  if (Array.isArray(value)) return value
+  return value ? [String(value)] : []
+}
+
+function setQuizAnswer(questionId: string, value: string | string[]) {
+  quizAnswers[questionId] = value
+}
+
+function quizResultType(result: Record<string, any> | undefined) {
+  if (!result) return 'info'
+  return result.correct ? 'success' : 'warning'
+}
+
+function resetQuizAttempt() {
+  for (const question of quizQuestions.value) {
+    quizAnswers[question.id] = question.question_type === 'multiple' ? [] : ''
+  }
+}
+
 async function handleSubmitQuiz() {
   if (!classroom.value) return
   submittingQuiz.value = true
   try {
-    const { data } = await submitClassroomQuiz(classroom.value.id, { ...quizAnswers })
+    const answers = Object.fromEntries(Object.entries(quizAnswers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]))
+    const { data } = await submitClassroomQuiz(classroom.value.id, answers)
     classroom.value = data
     if (data.quiz_passed) activeGate.value = 'practice'
     ElMessage.success(data.quiz_passed ? '例题已通过' : '例题未通过，请修改后再提交')
@@ -878,7 +951,7 @@ async function refreshSyllabus() {
 
 function hydrateQuizAnswers() {
   for (const question of quizQuestions.value) {
-    if (!quizAnswers[question.id]) quizAnswers[question.id] = ''
+    if (quizAnswers[question.id] === undefined) quizAnswers[question.id] = question.question_type === 'multiple' ? [] : ''
   }
 }
 
