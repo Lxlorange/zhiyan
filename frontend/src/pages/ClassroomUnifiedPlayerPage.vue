@@ -226,6 +226,11 @@
                         </section>
 
                         <section v-else-if="activeAssistantTab === 'interactive'" key="interactive" class="om-tool-panel om-visual-panel">
+                          <div class="visual-kind-row">
+                            <el-select v-model="visualizationKind" size="small" class="visual-kind-select" :disabled="generatingVisualization">
+                              <el-option v-for="option in visualizationKindOptions" :key="option.value" :label="option.label" :value="option.value" />
+                            </el-select>
+                          </div>
                           <header>
                             <strong>互动演示</strong>
                             <el-button type="primary" :loading="generatingVisualization" :disabled="!pptPackage" @click="handleGenerateVisualization">
@@ -372,6 +377,7 @@ import {
   submitClassroomQuiz,
   submitClassroomReflection,
   viewClassroomResource,
+  type ClassroomVisualizationKind,
   type ClassroomResourceRead,
   type ClassroomSessionRead,
   type ClassroomSubmissionRead,
@@ -403,6 +409,7 @@ const activeAssistantTab = ref<AssistantTabKey | null>(null)
 const activeSlideIndex = ref(0)
 const visitedSlideIndices = ref<Set<number>>(new Set([0]))
 const visualizationInstruction = ref('')
+const visualizationKind = ref<ClassroomVisualizationKind>('auto')
 const visualizationUrl = ref('')
 const isSpeaking = ref(false)
 const showLectureSubtitle = ref(false)
@@ -417,6 +424,15 @@ const assistantTabs = [
   { key: 'lecture' as AssistantTabKey, label: '讲解' },
   { key: 'interactive' as AssistantTabKey, label: '互动' },
   { key: 'workspace' as AssistantTabKey, label: '产物' }
+]
+
+const visualizationKindOptions: Array<{ label: string; value: ClassroomVisualizationKind }> = [
+  { label: '自动', value: 'auto' },
+  { label: '图解', value: 'diagram' },
+  { label: '模拟', value: 'simulation' },
+  { label: '代码', value: 'code' },
+  { label: '时间线', value: 'timeline' },
+  { label: '3D', value: 'visualization3d' }
 ]
 
 const currentItem = computed(() => syllabus.value?.items.find((item) => item.id === props.itemId) || null)
@@ -663,7 +679,10 @@ async function handleGenerateVisualization() {
       `页面要点：${(currentSlide.value?.bullets || []).join('；')}`,
       `用户要求：${visualizationInstruction.value}`
     ].join('\n')
-    const { data } = await generateClassroomVisualization(classroom.value.id, pageContext)
+    const { data } = await generateClassroomVisualization(classroom.value.id, {
+      instruction: pageContext,
+      preferred_kind: visualizationKind.value
+    })
     classroom.value = data
     await loadVisualizationView()
     activeTool.value = 'visualization'

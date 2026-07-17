@@ -2,10 +2,11 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 ENV NODE_OPTIONS=--max-old-space-size=2048
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --registry=${NPM_REGISTRY}
 
 COPY . .
 RUN npm run build

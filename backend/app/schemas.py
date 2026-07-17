@@ -659,6 +659,7 @@ class ClassroomPptGenerateRequest(BaseModel):
 
 class ClassroomVisualizationGenerateRequest(BaseModel):
     instruction: str = Field(default="", max_length=1200)
+    preferred_kind: str = Field(default="auto", pattern="^(auto|diagram|simulation|code|timeline|visualization3d)$")
 
 
 class ClassroomVoiceGenerateRequest(BaseModel):

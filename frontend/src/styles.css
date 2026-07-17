@@ -5586,6 +5586,16 @@ textarea {
   line-height: 1.35;
 }
 
+.visual-kind-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -6px;
+}
+
+.visual-kind-select {
+  width: 132px;
+}
+
 .om-lecture-text {
   margin: 0;
   padding: 14px;

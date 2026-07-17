@@ -694,8 +694,16 @@ export function generateClassroomPpt(sessionId: number, instruction = '') {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/ppt`, { instruction })
 }
 
-export function generateClassroomVisualization(sessionId: number, instruction = '') {
-  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/visualization`, { instruction }, {
+export type ClassroomVisualizationKind = 'auto' | 'diagram' | 'simulation' | 'code' | 'timeline' | 'visualization3d'
+
+export function generateClassroomVisualization(
+  sessionId: number,
+  payload: string | { instruction?: string; preferred_kind?: ClassroomVisualizationKind } = ''
+) {
+  const body = typeof payload === 'string'
+    ? { instruction: payload, preferred_kind: 'auto' as ClassroomVisualizationKind }
+    : { preferred_kind: 'auto' as ClassroomVisualizationKind, ...payload }
+  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/visualization`, body, {
     timeout: GENERATION_TIMEOUT_MS
   })
 }

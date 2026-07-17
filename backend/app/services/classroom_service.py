@@ -45,6 +45,7 @@ from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.json_repair_service import LLMJsonParseError, parse_llm_json
 from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
+from app.services.adaptive_visualization_renderer import render_adaptive_visualization_html
 from app.services.visualization_3d_renderer import render_three_physics_html
 
 
@@ -146,6 +147,9 @@ class _VisualizationFrame(BaseModel):
     label: str
     metrics: dict[str, float]
     narrative: str
+    active_nodes: list[str] = Field(default_factory=list)
+    active_edges: list[str] = Field(default_factory=list)
+    annotations: list[str] = Field(default_factory=list)
 
 
 class _VisualizationControl(BaseModel):
@@ -179,6 +183,7 @@ class _PhysicsSceneSpec(BaseModel):
 class _VisualizationDemo(BaseModel):
     title: str
     demo_type: str
+    widget_type: str = "diagram"
     learning_goal: str
     description: str
     variables: list[str] = Field(min_length=2, max_length=8)
@@ -187,7 +192,10 @@ class _VisualizationDemo(BaseModel):
     teaching_points: list[str] = Field(min_length=3, max_length=8)
     student_tasks: list[str] = Field(min_length=2, max_length=6)
     safety_notes: list[str] = Field(min_length=1)
-    physics_scene: _PhysicsSceneSpec
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, str]] = Field(default_factory=list)
+    code_snippet: str = ""
+    physics_scene: Optional[_PhysicsSceneSpec] = None
 
 
 class _DialogueCard(BaseModel):
@@ -541,6 +549,7 @@ def generate_classroom_visualization(
     package = _classroom_package_or_error(session)
     demo = _generate_visualization_demo(project, item, package, request.instruction)
     html_path = _write_visualization_html(session.id, item, demo)
+    widget_type = demo.widget_type
 
     resource = ClassroomResource(
         session_id=session.id,
@@ -551,7 +560,7 @@ def generate_classroom_visualization(
         title=demo.title,
         content_data=demo.model_dump(mode="json"),
         file_path=str(html_path),
-        source="THU-MAIC/OpenMAIC-inspired; Three.js; cannon-es",
+        source=f"THU-MAIC/OpenMAIC-inspired; widget_type={widget_type}",
         status="ready",
     )
     db.add(resource)
@@ -559,10 +568,10 @@ def generate_classroom_visualization(
         AgentTaskRecord(
             session_id=f"classroom-{session.id}",
             user_id=user.id,
-            agent="VisualizationAgent+PhysicsSimulationAgent",
+            agent="VisualizationAgent+InteractiveWidgetRouter",
             status="completed",
             input_summary=f"{project.title} / {item.title}",
-            output_summary=f"生成 3D 物理演示：{demo.title}",
+            output_summary=f"生成互动演示：{demo.title}",
             latency_ms=0,
         )
     )
@@ -571,7 +580,7 @@ def generate_classroom_visualization(
         project,
         user,
         "classroom_visualization_generated",
-        f"生成 3D 物理演示：{demo.title}",
+        f"生成互动演示：{demo.title}",
         {"session_id": session.id, "demo_type": demo.demo_type},
     )
     db.commit()
@@ -1258,7 +1267,7 @@ def _generate_visualization_demo(
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     raw = _qwen_chat_raw_json(
         (
-            "你是 VisualizationAgent + PhysicsSimulationAgent，负责为高校 AI 课堂生成 Three.js + cannon-es "
+            "你是 LegacyVisualizationAgent，此旧分支已被文件末尾的 OpenMAIC 互动演示路由器覆盖。"
             "可交互 3D 物理演示规格。只输出 JSON，不输出 Markdown、HTML 或 JavaScript。"
         ),
         (
@@ -1994,4 +2003,339 @@ def _require_text(value: Any, field_path: str) -> str:
     if not texts:
         raise LLMResponseError(f"模型 JSON 缺少必填字段 {field_path}")
     return texts[0]
+
+
+# OpenMAIC-style interactive widget generation.
+# Keep this section after the legacy helpers so Python binds these names last.
+
+_VISUAL_WIDGET_TYPES = {"diagram", "simulation", "code", "timeline", "visualization3d"}
+_NON_3D_DEMO_TYPES = {
+    "diagram": {"concept_map", "system_diagram", "flowchart", "comparison_map"},
+    "simulation": {"state_machine", "data_flow", "algorithm_trace", "process_simulation"},
+    "code": {"code_walkthrough", "debug_trace", "api_flow", "reproduction_demo"},
+    "timeline": {"research_plan", "experiment_schedule", "paper_workflow", "defense_process"},
+}
+
+
+def generate_classroom_visualization(
+    db: Session,
+    user: User,
+    session_id: int,
+    request: ClassroomVisualizationGenerateRequest,
+) -> ClassroomSession:
+    session = _get_session(db, user, session_id)
+    item = _item_or_404(db, user, session.syllabus_item_id)
+    project = _project_or_404(db, user, session.project_id)
+    package = _classroom_package_or_error(session)
+    demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind)
+    html_path = _write_visualization_html(session.id, item, demo)
+
+    resource = ClassroomResource(
+        session_id=session.id,
+        syllabus_item_id=item.id,
+        project_id=project.id,
+        user_id=user.id,
+        resource_type="interactive_visualization",
+        title=demo.title,
+        content_data=demo.model_dump(mode="json"),
+        file_path=str(html_path),
+        source=f"THU-MAIC/OpenMAIC scene widget; widget_type={demo.widget_type}",
+        status="ready",
+    )
+    db.add(resource)
+    db.add(
+        AgentTaskRecord(
+            session_id=f"classroom-{session.id}",
+            user_id=user.id,
+            agent="SceneOutlineAgent+InteractiveWidgetRouter",
+            status="completed",
+            input_summary=f"{project.title} / {item.title}",
+            output_summary=f"生成 {demo.widget_type} 互动演示：{demo.title}",
+            latency_ms=0,
+        )
+    )
+    _write_event(
+        db,
+        project,
+        user,
+        "classroom_visualization_generated",
+        f"生成 {demo.widget_type} 互动演示：{demo.title}",
+        {"session_id": session.id, "demo_type": demo.demo_type, "widget_type": demo.widget_type},
+    )
+    db.commit()
+    return _get_session(db, user, session.id)
+
+
+def _generate_visualization_demo(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    package: _ClassroomPackage,
+    instruction: str,
+    preferred_kind: str = "auto",
+) -> _VisualizationDemo:
+    widget_preference = _normalize_widget_type(preferred_kind, allow_auto=True)
+    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
+    raw = _qwen_chat_raw_json(
+        (
+            "你是 OpenMAIC 风格的 SceneOutlineAgent + InteractiveWidgetRouter。"
+            "为当前课堂页生成一个可交互教学场景规格。"
+            "先判断内容最适合 diagram、simulation、code、timeline 还是 visualization3d。"
+            "只有真实空间结构、物理装置、几何、机械、分子、3D 坐标关系等内容才允许使用 visualization3d。"
+            "只输出严格 JSON，不输出 Markdown、HTML 或 JavaScript。"
+        ),
+        (
+            "输出顶层字段必须完整包含：title, widget_type, demo_type, learning_goal, description, "
+            "variables, nodes, edges, frames, controls, teaching_points, student_tasks, safety_notes, "
+            "code_snippet, physics_scene。\n"
+            "widget_type 只能是 diagram, simulation, code, timeline, visualization3d。\n"
+            f"用户偏好：{widget_preference}。如果为 auto，你必须根据主题自行选择最清楚的形态，不要默认 3D。\n"
+            "diagram 适合概念关系、系统结构、论文脉络、课程知识框架；"
+            "simulation 适合算法迭代、状态变化、数据流、协议交互、训练过程；"
+            "code 适合 Python/工程复现/API/实验脚本讲解；"
+            "timeline 适合科研计划、实验阶段、论文写作、答辩准备；"
+            "visualization3d 只适合空间、物理、机械、几何、分子、传感器布置等确实需要三维理解的内容。\n"
+            "当 widget_type 不是 visualization3d 时：physics_scene 必须为 null；nodes 至少 4 个；edges 至少 3 个；"
+            "每个 node 必须包含 id, label, kind, x, y, color, detail；x/y 是 0-100 的数字；"
+            "每个 edge 必须包含 source, target, label；source/target 必须引用已有 node id；"
+            "frames 需要 4-8 帧，每帧必须包含 label, narrative, metrics, active_nodes, active_edges；"
+            "active_nodes/active_edges 必须引用节点 id 和边 id/source-target。\n"
+            "当 widget_type 是 code 时，code_snippet 必须给出与主题相关、可阅读的短代码；"
+            "当 widget_type 是 visualization3d 时：physics_scene 必须包含 scene_kind, gravity, camera, objects，"
+            "objects 4-9 个且每个对象包含 id, label, role, shape, size, position, velocity, mass, color。\n"
+            "controls 至少 2 个，每个包含 name, label, min_value, max_value, default_value, description。\n"
+            "teaching_points 至少 3 条，student_tasks 至少 2 条，safety_notes 至少 1 条。\n"
+            "所有内容必须贴合课堂当前页和知识库来源，不得输出空数组、占位符、模板化泛泛描述。\n"
+            f"项目：{project.title}\n"
+            f"研究/学习方向：{project.research_direction}\n"
+            f"学习项：{item.title}\n"
+            f"学习目标：{item.objective}\n"
+            f"知识点：{item.knowledge_points}\n"
+            f"课堂摘要：{package.learning_summary}\n"
+            f"课程知识库来源：\n{knowledge_context}\n"
+            f"当前页/用户要求：{instruction}\n"
+        ),
+    )
+    normalized = _normalize_visualization_demo(raw, widget_preference)
+    try:
+        return _VisualizationDemo.model_validate(normalized)
+    except Exception as exc:
+        raise LLMResponseError(f"互动演示 JSON 结构校验失败：{exc}") from exc
+
+
+def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dict:
+    if not isinstance(raw, dict):
+        raise LLMResponseError("互动演示 JSON 顶层必须是对象")
+    widget_type = _normalize_widget_type(raw.get("widget_type") or raw.get("type"), allow_auto=False)
+    preferred = _normalize_widget_type(preferred_kind, allow_auto=True)
+    if preferred != "auto" and widget_type != preferred:
+        raise LLMResponseError(f"互动演示 widget_type 与用户选择不一致：期望 {preferred}，实际 {widget_type}")
+
+    variables = [_normalize_visualization_variable(value) for value in _as_list(raw.get("variables"))]
+    variables = [value for value in variables if value]
+    if len(variables) < 2:
+        raise LLMResponseError("互动演示 JSON 缺少 variables，至少需要 2 个变量")
+
+    controls = [
+        _normalize_visualization_control(control, index)
+        for index, control in enumerate(_as_list(raw.get("controls")), start=1)
+    ]
+    if len(controls) < 2:
+        raise LLMResponseError("互动演示 JSON 缺少 controls，至少需要 2 个控制项")
+
+    safety_notes = _as_str_list(raw.get("safety_notes"))
+    if not safety_notes:
+        raise LLMResponseError("互动演示 JSON 缺少 safety_notes")
+    teaching_points = _as_str_list(raw.get("teaching_points"))
+    if len(teaching_points) < 3:
+        raise LLMResponseError("互动演示 JSON 缺少 teaching_points，至少需要 3 条")
+    student_tasks = _as_str_list(raw.get("student_tasks"))
+    if len(student_tasks) < 2:
+        raise LLMResponseError("互动演示 JSON 缺少 student_tasks，至少需要 2 条")
+
+    if widget_type == "visualization3d":
+        demo_type = _normalize_demo_type(_require_text(raw.get("demo_type"), "visualization.demo_type"))
+        frames = [
+            _normalize_visualization_frame(frame, index, variables)
+            for index, frame in enumerate(_as_list(raw.get("frames")), start=1)
+        ]
+        if len(frames) < 4:
+            raise LLMResponseError("3D 演示 JSON 缺少 frames，至少需要 4 帧")
+        physics_scene = _normalize_physics_scene(raw.get("physics_scene"), demo_type)
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, str]] = []
+    else:
+        demo_type = _normalize_non_3d_demo_type(widget_type, _require_text(raw.get("demo_type"), "visualization.demo_type"))
+        nodes = [
+            _normalize_visual_node(node, index)
+            for index, node in enumerate(_as_list(raw.get("nodes")), start=1)
+        ]
+        if len(nodes) < 4:
+            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 4 个 nodes")
+        node_ids = {node["id"] for node in nodes}
+        edges = [
+            _normalize_visual_edge(edge, index, node_ids)
+            for index, edge in enumerate(_as_list(raw.get("edges")), start=1)
+        ]
+        if len(edges) < 3:
+            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 3 条 edges")
+        edge_ids = {edge["id"] for edge in edges}
+        frames = [
+            _normalize_adaptive_visual_frame(frame, index, variables, node_ids, edge_ids)
+            for index, frame in enumerate(_as_list(raw.get("frames")), start=1)
+        ]
+        if len(frames) < 4:
+            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 4 帧")
+        physics_scene = None
+
+    code_snippet = str(raw.get("code_snippet") or raw.get("code") or "").strip()
+    if widget_type == "code" and len(code_snippet) < 40:
+        raise LLMResponseError("code 演示 JSON 缺少有效 code_snippet")
+
+    return {
+        "title": _require_text(raw.get("title"), "visualization.title"),
+        "demo_type": demo_type,
+        "widget_type": widget_type,
+        "learning_goal": _require_text(raw.get("learning_goal"), "visualization.learning_goal"),
+        "description": _require_text(raw.get("description"), "visualization.description"),
+        "variables": variables[:8],
+        "frames": frames[:12],
+        "controls": controls,
+        "teaching_points": teaching_points[:8],
+        "student_tasks": student_tasks[:6],
+        "safety_notes": safety_notes,
+        "nodes": nodes[:12],
+        "edges": edges[:18],
+        "code_snippet": code_snippet,
+        "physics_scene": physics_scene,
+    }
+
+
+def _normalize_widget_type(value: Any, allow_auto: bool) -> str:
+    text = str(value or "auto").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "3d": "visualization3d",
+        "visualization_3d": "visualization3d",
+        "visualisation3d": "visualization3d",
+        "graph": "diagram",
+        "mindmap": "diagram",
+        "flow": "simulation",
+        "sim": "simulation",
+        "coding": "code",
+        "schedule": "timeline",
+    }
+    text = aliases.get(text, text)
+    allowed = set(_VISUAL_WIDGET_TYPES)
+    if allow_auto:
+        allowed.add("auto")
+    if text not in allowed:
+        raise LLMResponseError(f"互动演示 widget_type 非法：{value}；允许值：{', '.join(sorted(allowed))}")
+    return text
+
+
+def _normalize_non_3d_demo_type(widget_type: str, value: str) -> str:
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    allowed = _NON_3D_DEMO_TYPES[widget_type]
+    if normalized not in allowed:
+        raise LLMResponseError(f"{widget_type} 演示 demo_type 非法：{value}；允许值：{', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _normalize_visual_node(raw: Any, index: int) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"互动演示 nodes[{index}] 必须是对象")
+    node_id = _require_text(raw.get("id"), f"visualization.nodes[{index}].id")
+    return {
+        "id": re.sub(r"[^a-zA-Z0-9_-]", "_", node_id)[:48],
+        "label": _require_text(raw.get("label") or raw.get("title"), f"visualization.nodes[{index}].label")[:40],
+        "kind": _require_text(raw.get("kind") or raw.get("type") or "concept", f"visualization.nodes[{index}].kind")[:32],
+        "x": _bounded_coordinate(raw.get("x"), f"visualization.nodes[{index}].x"),
+        "y": _bounded_coordinate(raw.get("y"), f"visualization.nodes[{index}].y"),
+        "color": _visual_color(raw.get("color")),
+        "detail": _require_text(raw.get("detail") or raw.get("description"), f"visualization.nodes[{index}].detail")[:140],
+    }
+
+
+def _normalize_visual_edge(raw: Any, index: int, node_ids: set[str]) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"互动演示 edges[{index}] 必须是对象")
+    source = re.sub(r"[^a-zA-Z0-9_-]", "_", _require_text(raw.get("source"), f"visualization.edges[{index}].source"))[:48]
+    target = re.sub(r"[^a-zA-Z0-9_-]", "_", _require_text(raw.get("target"), f"visualization.edges[{index}].target"))[:48]
+    if source not in node_ids or target not in node_ids:
+        raise LLMResponseError(f"互动演示 edges[{index}] 引用了不存在的 node：{source}->{target}")
+    edge_id = str(raw.get("id") or f"{source}->{target}").strip()
+    return {
+        "id": re.sub(r"[^a-zA-Z0-9_>.-]", "_", edge_id)[:96],
+        "source": source,
+        "target": target,
+        "label": _require_text(raw.get("label") or raw.get("relation"), f"visualization.edges[{index}].label")[:48],
+    }
+
+
+def _normalize_adaptive_visual_frame(
+    raw: Any,
+    index: int,
+    variables: list[str],
+    node_ids: set[str],
+    edge_ids: set[str],
+) -> dict:
+    if not isinstance(raw, dict):
+        raise LLMResponseError(f"互动演示 frames[{index}] 必须是对象")
+    metrics = _numeric_metrics(raw.get("metrics") if isinstance(raw.get("metrics"), dict) else {})
+    if not metrics:
+        raise LLMResponseError(f"互动演示 frames[{index}] 缺少可渲染 metrics")
+    active_nodes = _normalize_frame_targets(raw.get("active_nodes") or raw.get("nodes"), node_ids, f"frames[{index}].active_nodes")
+    active_edges = _normalize_frame_targets(raw.get("active_edges") or raw.get("edges"), edge_ids, f"frames[{index}].active_edges")
+    if not active_nodes:
+        raise LLMResponseError(f"互动演示 frames[{index}] 至少需要 1 个 active_nodes")
+    return {
+        "label": _require_text(raw.get("label"), f"visualization.frames[{index}].label"),
+        "metrics": metrics,
+        "narrative": _require_text(raw.get("narrative"), f"visualization.frames[{index}].narrative"),
+        "active_nodes": active_nodes,
+        "active_edges": active_edges,
+        "annotations": _as_str_list(raw.get("annotations"))[:4],
+    }
+
+
+def _normalize_frame_targets(raw: Any, allowed: set[str], field_path: str) -> list[str]:
+    targets: list[str] = []
+    for value in _as_list(raw):
+        text = str(value).strip()
+        if not text:
+            continue
+        normalized = re.sub(r"[^a-zA-Z0-9_>.-]", "_", text)[:96]
+        if normalized not in allowed:
+            raise LLMResponseError(f"互动演示 {field_path} 引用了不存在的 id：{text}")
+        targets.append(normalized)
+    return targets
+
+
+def _bounded_coordinate(value: Any, field_path: str) -> float:
+    metric = _metric_value(value)
+    if metric is None:
+        raise LLMResponseError(f"互动演示 {field_path} 必须是 0-100 的数字")
+    if 0 <= metric <= 1:
+        metric *= 100
+    return max(0.0, min(100.0, float(metric)))
+
+
+def _visual_color(value: Any) -> str:
+    if value is None:
+        raise LLMResponseError("互动演示 node.color 为必填字段")
+    color = str(value).strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        raise LLMResponseError(f"互动演示 node.color 必须是 #RRGGBB：{color}")
+    return color
+
+
+def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo: _VisualizationDemo) -> Path:
+    output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization.html"
+    if demo.widget_type == "visualization3d":
+        html_doc = render_three_physics_html(demo.model_dump(mode="json"), demo.title)
+    else:
+        html_doc = render_adaptive_visualization_html(demo.model_dump(mode="json"), demo.title)
+    path.write_text(html_doc, encoding="utf-8")
+    return path
 
