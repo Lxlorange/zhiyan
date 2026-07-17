@@ -382,6 +382,7 @@ class LearningProjectRead(BaseModel):
     related_course: str
     related_knowledge_points: List[str]
     related_documents: List[str]
+    research_training: Dict[str, object] = Field(default_factory=dict)
     status: str
     current_stage: str
     progress: int

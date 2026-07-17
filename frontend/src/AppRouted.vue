@@ -39,7 +39,7 @@ import { ElMessage } from 'element-plus'
 import AppShell from './components/AppShell.vue'
 import LoginPage from './pages/LoginPage.vue'
 import { pageMeta, pageRouteNames } from './router'
-import { clearAuth, getCurrentUser, readStoredUser, type LearningProjectRead, type User } from './services/apiClient'
+import { clearAuth, getCurrentUserSilently, readStoredUser, type LearningProjectRead, type User } from './services/apiClient'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,11 +73,12 @@ onMounted(async () => {
   }
 
   try {
-    const { data } = await getCurrentUser()
+    const { data } = await getCurrentUserSilently()
     user.value = data
   } catch {
     clearAuth()
     user.value = null
+    checkingAuth.value = false
     if (currentPage.value !== 'signin') await router.replace({ name: 'signin', query: { from: route.fullPath } })
   } finally {
     checkingAuth.value = false

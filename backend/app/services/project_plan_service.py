@@ -32,6 +32,32 @@ class RecommendedResource(BaseModel):
     verified: bool = False
 
 
+class ResearchReadingItem(BaseModel):
+    level: str = Field(..., pattern="^(foundation|classic|seminal|frontier)$")
+    order: int = Field(..., ge=1, le=40)
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    year: str = ""
+    venue: str = ""
+    arxiv_url: str = ""
+    doi_url: str = ""
+    source_url: str = ""
+    summary: str
+    why_read: str
+    reading_task: str
+    review_focus: list[str] = Field(default_factory=list)
+
+
+class ResearchTrainingPlan(BaseModel):
+    enabled: bool = False
+    field_name: str = ""
+    reading_levels: list[str] = Field(default_factory=list)
+    reading_list: list[ResearchReadingItem] = Field(default_factory=list)
+    review_cycle: str = ""
+    review_rubric: list[str] = Field(default_factory=list)
+    planning_requirements: list[str] = Field(default_factory=list)
+
+
 class ProjectPlanAgentResult(BaseModel):
     title: str
     summary: str
@@ -47,6 +73,7 @@ class ProjectPlanAgentResult(BaseModel):
     next_questions: list[str]
     assistant_message: str
     suggested_project: ProjectSuggestion
+    research_training: ResearchTrainingPlan = Field(default_factory=ResearchTrainingPlan)
 
 
 def _message(role: str, content: str) -> dict:
@@ -87,7 +114,8 @@ def _run_project_plan_agent(
         prompt,
         ProjectPlanAgentResult,
     )
-    return _verify_recommended_resources(result, learning_goal)
+    result = _verify_recommended_resources(result, learning_goal)
+    return _verify_research_training(result, learning_type, learning_goal)
 
 
 def _build_project_plan_prompt(
@@ -140,6 +168,15 @@ def _build_project_plan_prompt(
 
 8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；url 必须是你确信真实存在且与学习目标直接相关的 http/https 链接，例如官方文档、课程主页、arXiv/DOI/Semantic Scholar/OpenAlex、教材官网、权威教程或用户上传/知识库来源。不得只给资源标题让后端猜链接，不得编造 DOI、论文链接或官网链接；没有可靠链接时不要放入 recommended_resources，改写入 risk_notes。
 9. 对通用技能学习目标优先推荐官方文档、权威教程、课程主页和实践项目；只有用户明确要求论文、综述、科研选题、实验或引用时，才推荐论文数据库链接。
+10. 当 learning_type 为 research_project 时，必须启用 research_training.enabled=true，并返回四级阅读清单：
+    - foundation：基础论文/教程
+    - classic：领域经典论文
+    - seminal：开山论文
+    - frontier：科研前沿论文
+    每一级至少 1 篇，总数 4-12 篇；每篇必须包含阅读顺序 order、摘要 summary、阅读原因 why_read、复盘任务 reading_task。
+    每篇论文必须尽量提供 arxiv_url、doi_url 或 source_url 之一；链接必须是 http/https，不能编造 DOI 或 arXiv。
+    research_training.review_rubric 必须包含详实程度、关联度、工作量、规划性、批判性思考五个维度。
+    planning_requirements 必须要求学生按周期提交“论文复盘总结 + 下一步计划”。
 schema:
 {json.dumps(ProjectPlanAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
 """
@@ -413,6 +450,7 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         related_course=suggestion.related_course,
         related_knowledge_points=suggestion.related_knowledge_points,
         related_documents=suggestion.related_documents,
+        research_training=result.research_training.model_dump(mode="json"),
         status="resources_queued",
         current_stage="项目资源准备中",
         risk_notes=suggestion.risk_notes,
@@ -484,3 +522,93 @@ def _verify_recommended_resources(result: ProjectPlanAgentResult, learning_goal:
     result.recommended_resources = verified
     result.risk_notes = risk_notes
     return result
+
+
+def _verify_research_training(
+    result: ProjectPlanAgentResult,
+    learning_type: str,
+    learning_goal: str,
+) -> ProjectPlanAgentResult:
+    if learning_type != "research_project":
+        result.research_training.enabled = False
+        return result
+
+    training = result.research_training
+    if not training.enabled:
+        raise LLMResponseError("科研项目必须返回 research_training.enabled=true")
+
+    required_levels = {"foundation", "classic", "seminal", "frontier"}
+    items_by_level: dict[str, list[ResearchReadingItem]] = {level: [] for level in required_levels}
+    verified_items: list[ResearchReadingItem] = []
+    risk_notes = list(result.risk_notes)
+
+    for item in sorted(training.reading_list, key=lambda value: value.order):
+        url = _reading_item_url(item)
+        if not url:
+            risk_notes.append(f"论文阅读项「{item.title}」缺少 arXiv、DOI 或真实来源链接，已从阅读清单移除。")
+            continue
+        if not _is_http_url(url):
+            risk_notes.append(f"论文阅读项「{item.title}」链接格式非法：{url}，已从阅读清单移除。")
+            continue
+        try:
+            hit = verify_candidate_resource_url(title=item.title, url=url, topic=learning_goal)
+        except ScholarlySearchError as exc:
+            raise LLMResponseError(f"无法验证科研阅读清单链接：{exc}") from exc
+        if hit is None:
+            risk_notes.append(f"论文阅读项「{item.title}」链接未通过主题相关性校验，已从阅读清单移除：{url}")
+            continue
+        item.source_url = hit.url
+        if not item.arxiv_url and "arxiv.org" in hit.url:
+            item.arxiv_url = hit.url
+        if not item.doi_url and ("doi.org" in hit.url or "dx.doi.org" in hit.url):
+            item.doi_url = hit.url
+        verified_items.append(item)
+        items_by_level[item.level].append(item)
+
+    missing_levels = [level for level, items in items_by_level.items() if not items]
+    if missing_levels:
+        raise LLMResponseError(f"科研项目四级阅读清单缺少可验证链接的层级：{', '.join(missing_levels)}")
+
+    required_rubric = {"详实程度", "关联度", "工作量", "规划性", "批判性思考"}
+    if not required_rubric.issubset(set(training.review_rubric)):
+        training.review_rubric = ["详实程度", "关联度", "工作量", "规划性", "批判性思考"]
+
+    training.reading_levels = ["foundation", "classic", "seminal", "frontier"]
+    training.reading_list = verified_items[:12]
+    if not training.review_cycle:
+        training.review_cycle = "每 3-7 天提交一篇论文复盘总结与下一步计划。"
+    if not training.planning_requirements:
+        training.planning_requirements = ["每篇论文复盘必须包含核心问题、方法、证据、局限、与本人选题的关系、下一步计划。"]
+
+    result.research_training = training
+    result.risk_notes = risk_notes
+    result.recommended_resources = _merge_reading_resources(result.recommended_resources, verified_items)
+    return result
+
+
+def _reading_item_url(item: ResearchReadingItem) -> str:
+    return item.arxiv_url or item.doi_url or item.source_url
+
+
+def _is_http_url(value: str) -> bool:
+    return value.startswith("http://") or value.startswith("https://")
+
+
+def _merge_reading_resources(resources: list[RecommendedResource], readings: list[ResearchReadingItem]) -> list[RecommendedResource]:
+    existing = {resource.url for resource in resources if resource.url}
+    merged = list(resources)
+    for reading in readings:
+        url = _reading_item_url(reading)
+        if not url or url in existing:
+            continue
+        merged.append(
+            RecommendedResource(
+                title=reading.title,
+                url=url,
+                source=reading.level,
+                reason=reading.why_read,
+                verified=True,
+            )
+        )
+        existing.add(url)
+    return merged[:12]

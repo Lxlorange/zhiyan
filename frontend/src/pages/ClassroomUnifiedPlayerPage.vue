@@ -308,12 +308,12 @@
                       <strong>{{ question.id }}. {{ question.prompt }}</strong>
                       <el-tag size="small" effect="plain">{{ question.question_type === 'multiple' ? '多选' : '单选' }}</el-tag>
                     </header>
-                    <el-checkbox-group v-if="question.question_type === 'multiple'" :model-value="quizAnswerArray(question.id)" @update:model-value="setMultipleQuizAnswerValue(question.id, $event)">
+                    <el-checkbox-group v-if="question.question_type === 'multiple'" :model-value="quizAnswerArray(question.id)" @update:model-value="updateQuizAnswer(question.id, true, $event)">
                       <el-checkbox-button v-for="option in question.options" :key="option.label" :label="option.label">
                         {{ option.label }}. {{ option.text }}
                       </el-checkbox-button>
                     </el-checkbox-group>
-                    <el-radio-group v-else :model-value="quizAnswerText(question.id)" @update:model-value="setSingleQuizAnswerValue(question.id, $event)">
+                    <el-radio-group v-else :model-value="quizAnswerText(question.id)" @update:model-value="updateQuizAnswer(question.id, false, $event)">
                       <el-radio-button v-for="option in question.options" :key="option.label" :label="option.label">
                         {{ option.label }}. {{ option.text }}
                       </el-radio-button>
@@ -365,17 +365,37 @@
             <Transition name="panel-swap" mode="out-in">
               <div v-if="classroom?.reflection_passed" key="reflection-done" class="gate-complete-panel">
                 <strong>复盘已通过</strong>
+                <div v-if="latestReflectionRubric.length" class="research-rubric-scoreboard">
+                  <article v-for="score in latestReflectionRubric" :key="score.label">
+                    <span>{{ score.label }}</span>
+                    <strong>{{ score.value }}</strong>
+                    <el-progress :percentage="score.value" :stroke-width="8" />
+                  </article>
+                </div>
                 <p v-if="latestReflectionFeedback" class="task-feedback">{{ latestReflectionFeedback }}</p>
                 <div class="classroom-action-row"><el-button @click="goBackToSyllabus">返回学习清单</el-button></div>
               </div>
               <div v-else key="reflection-form" class="classroom-form-stack">
-                <h4>提交学习复盘</h4>
+                <h4>{{ isResearchClassroom ? '提交论文复盘总结 + 下一步计划' : '提交学习复盘' }}</h4>
                 <div v-if="reflectionPrompts.length" class="classroom-prompts">
                   <div v-for="prompt in reflectionPrompts" :key="prompt">{{ prompt }}</div>
                 </div>
-                <el-input v-model="reflectionForm.reflection" type="textarea" :rows="8" placeholder="写下本节学到的内容、完成证据、仍然薄弱的知识点" />
+                <el-alert
+                  v-if="isResearchClassroom"
+                  title="科研复盘将按详实程度、关联度、工作量、规划性、批判性思考五个维度评分。"
+                  type="info"
+                  :closable="false"
+                />
+                <el-input v-model="reflectionForm.reflection" type="textarea" :rows="8" :placeholder="reflectionPlaceholder" />
                 <el-input v-model="unresolvedQuestionsText" type="textarea" :rows="3" placeholder="未解决问题，每行一个" />
-                <el-input v-model="reflectionForm.next_action" placeholder="下一步行动" />
+                <el-input v-model="reflectionForm.next_action" :placeholder="isResearchClassroom ? '下一步计划：下一篇读什么、要补什么实验/资料、何时完成' : '下一步行动'" />
+                <div v-if="latestReflectionRubric.length" class="research-rubric-scoreboard">
+                  <article v-for="score in latestReflectionRubric" :key="score.label">
+                    <span>{{ score.label }}</span>
+                    <strong>{{ score.value }}</strong>
+                    <el-progress :percentage="score.value" :stroke-width="8" />
+                  </article>
+                </div>
                 <p v-if="latestReflectionFeedback" class="task-feedback">{{ latestReflectionFeedback }}</p>
                 <div class="classroom-action-row">
                   <el-button type="primary" :disabled="!pptPackage" :loading="submittingReflection" @click="handleSubmitReflection">提交复盘</el-button>
@@ -614,6 +634,23 @@ const quizResultMap = computed<Record<string, Record<string, any>>>(() => Object
 const quizMistakes = computed(() => latestQuizResults.value.filter((result) => !result.correct))
 const latestPracticeFeedback = computed(() => latestSubmissionByType('practice')?.feedback || '')
 const latestReflectionFeedback = computed(() => latestSubmissionByType('reflection')?.feedback || '')
+const latestReflectionRubric = computed(() => {
+  const scores = latestSubmissionByType('reflection')?.content?.rubric_scores
+  if (!scores || typeof scores !== 'object') return []
+  return ['详实程度', '关联度', '工作量', '规划性', '批判性思考']
+    .map((label) => ({ label, value: Number((scores as Record<string, unknown>)[label] || 0) }))
+    .filter((item) => Number.isFinite(item.value) && item.value > 0)
+})
+const isResearchClassroom = computed(() => {
+  const itemType = String(currentItem.value?.item_type || '')
+  const classroomTypes = currentItem.value?.classroom_types || []
+  return ['paper_reading', 'literature_review', 'paper_writing', 'mock_defense'].includes(itemType)
+    || classroomTypes.some((type: string) => ['paper_ppt', 'paper_review', 'research_planning'].includes(type))
+})
+const reflectionPlaceholder = computed(() => {
+  if (!isResearchClassroom.value) return '写下本节学到的内容、完成证据、仍然薄弱的知识点'
+  return '论文复盘总结：论文解决什么问题、方法是什么、证据是否充分、局限在哪里、和你的选题有什么关系、你下一步准备怎么做'
+})
 const dialogueMessages = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions
@@ -857,12 +894,10 @@ function setQuizAnswer(questionId: string, value: string | string[]) {
   quizAnswers[questionId] = value
 }
 
-function setMultipleQuizAnswerValue(questionId: string, value: unknown) {
-  quizAnswers[questionId] = Array.isArray(value) ? value.map(String) : []
-}
-
-function setSingleQuizAnswerValue(questionId: string, value: unknown) {
-  quizAnswers[questionId] = String(value || '')
+function updateQuizAnswer(questionId: string, multiple: boolean, value: unknown) {
+  quizAnswers[questionId] = multiple
+    ? Array.isArray(value) ? value.map(String) : []
+    : String(value || '')
 }
 
 function quizResultType(result: Record<string, any> | undefined) {

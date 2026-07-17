@@ -5,6 +5,12 @@ const TOKEN_KEY = 'access_token'
 const USER_KEY = 'current_user'
 const GENERATION_TIMEOUT_MS = 180000
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipErrorPopup?: boolean
+  }
+}
+
 export const api = axios.create({
   baseURL: '/api',
   timeout: 120000
@@ -19,6 +25,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<{ detail?: string | Record<string, unknown> }>) => {
+    if (error.config?.skipErrorPopup) return Promise.reject(error)
+
     const method = error.config?.method?.toUpperCase() || 'GET'
     const url = error.config?.url || '-'
     const status = error.response?.status || 'NETWORK'
@@ -125,6 +133,7 @@ export interface LearningProjectRead {
   related_course: string
   related_knowledge_points: string[]
   related_documents: string[]
+  research_training: Record<string, any>
   status: string
   current_stage: string
   progress: number
@@ -463,7 +472,13 @@ export function clearAuth() {
 
 export function readStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY)
-  return raw ? (JSON.parse(raw) as User) : null
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as User
+  } catch {
+    clearAuth()
+    return null
+  }
 }
 
 export function loginUser(username: string, password: string) {
@@ -485,6 +500,13 @@ export function registerUser(payload: {
 
 export function getCurrentUser() {
   return api.get<User>('/auth/me')
+}
+
+export function getCurrentUserSilently() {
+  return api.get<User>('/auth/me', {
+    timeout: 8000,
+    skipErrorPopup: true
+  })
 }
 
 export function updateCurrentUser(payload: Partial<User>) {
@@ -615,8 +637,12 @@ export function parseProjectPlanAttachment(file: File) {
   })
 }
 
-export function listLearningProjects() {
-  return api.get<LearningProjectRead[]>('/learning-projects')
+export function listLearningProjects(options: { includeDeleted?: boolean } = {}) {
+  return api.get<LearningProjectRead[]>('/learning-projects', {
+    params: {
+      include_deleted: options.includeDeleted || undefined
+    }
+  })
 }
 
 export function archiveLearningProject(projectId: number) {
@@ -629,6 +655,26 @@ export function pauseLearningProject(projectId: number) {
 
 export function resumeLearningProject(projectId: number) {
   return api.post<LearningProjectRead>(`/learning-projects/${projectId}/resume`)
+}
+
+export function restoreLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/restore`)
+}
+
+export function updateLearningProject(projectId: number, payload: Partial<{
+  title: string
+  learning_goal: string
+  expected_output: string
+  recommended_period: string
+  daily_minutes: number
+  study_weekends: boolean
+  study_weekdays: number[]
+  difficulty: string
+  status: string
+  deadline: string | null
+  teacher_notes: string
+}>) {
+  return api.patch<LearningProjectRead>(`/learning-projects/${projectId}`, payload)
 }
 
 export function copyLearningProject(projectId: number) {
