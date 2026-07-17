@@ -381,6 +381,25 @@ export interface ResearchToolRunRead {
   created_at: string
 }
 
+export interface PracticeQuestionRead {
+  id: string
+  type: 'choice' | 'judgement' | 'short' | string
+  point: string
+  prompt: string
+  options: string[]
+  answer: string
+  explanation: string
+  source_title: string
+  source_excerpt: string
+  difficulty: string
+}
+
+export interface PracticeGenerateResponse {
+  questions: PracticeQuestionRead[]
+  used_llm: boolean
+  source_summary: string
+}
+
 export interface AgentTraceRead {
   agent: string
   status: string
@@ -458,6 +477,57 @@ export interface KnowledgeImportJobRead {
   options: Record<string, any>
   created_at: string
   updated_at: string
+}
+
+export interface DatabaseCitation {
+  id: string
+  source_type: string
+  title: string
+  document_type: string
+  knowledge_point: string
+  content: string
+  source_uri: string
+  page_no?: number | null
+  slide_no?: number | null
+  section_title: string
+  score?: number | null
+  review_url: string
+}
+
+export interface DatabaseAskResponse {
+  answer: string
+  citations: DatabaseCitation[]
+  related_points: string[]
+  follow_up_questions: string[]
+  confidence: 'low' | 'medium' | 'high' | string
+  used_llm: boolean
+}
+
+export interface DatabaseGraphNode {
+  id: string
+  name: string
+  category: string
+  description: string
+  count: number
+}
+
+export interface DatabaseGraphEdge {
+  source: string
+  target: string
+  relation: string
+}
+
+export interface DatabaseGraphResponse {
+  nodes: DatabaseGraphNode[]
+  edges: DatabaseGraphEdge[]
+}
+
+export interface DatabaseNodeDetailResponse {
+  name: string
+  description: string
+  citations: DatabaseCitation[]
+  related_points: string[]
+  suggested_questions: string[]
 }
 
 export function saveAuth(payload: TokenResponse) {
@@ -920,6 +990,18 @@ export function runResearchTool(payload: {
   })
 }
 
+export function generatePracticeQuestions(payload: {
+  weak_points: string[]
+  question_types: string[]
+  project_id?: number | null
+  difficulty?: 'easy' | 'medium' | 'hard'
+  count_per_point?: number
+}) {
+  return api.post<PracticeGenerateResponse>('/workspace/practice/generate', payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
 export function listKnowledgePoints() {
   return api.get<KnowledgePointRead[]>('/course/knowledge-points')
 }
@@ -932,6 +1014,36 @@ export function searchKnowledgeEnhanced(query: string, limit = 8) {
   return api.post<KnowledgeSearchHit[]>('/course/knowledge/search/enhanced', { query, limit }, {
     timeout: GENERATION_TIMEOUT_MS
   })
+}
+
+export function askDatabase(payload: {
+  question: string
+  project_id?: number | null
+  knowledge_points?: string[]
+  limit?: number
+}) {
+  return api.post<DatabaseAskResponse>('/database/ask', payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function getDatabaseGraph(payload: {
+  project_id?: number | null
+  scope?: 'all' | 'project'
+} = {}) {
+  return api.get<DatabaseGraphResponse>('/database/graph', {
+    params: payload
+  })
+}
+
+export function getDatabaseNodeDetail(name: string, projectId?: number | null) {
+  return api.get<DatabaseNodeDetailResponse>(`/database/nodes/${encodeURIComponent(name)}`, {
+    params: { project_id: projectId || undefined }
+  })
+}
+
+export function getDatabaseChunkReview(chunkId: number) {
+  return api.get(`/database/chunks/${chunkId}/review`)
 }
 
 export function importKnowledgePackage(file: File, payload: {

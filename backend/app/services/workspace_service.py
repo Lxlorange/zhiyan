@@ -23,6 +23,9 @@ from app.schemas import (
     LiteraturePaperCreateRequest,
     LiteraturePaperRead,
     LiteraturePaperUpdateRequest,
+    PracticeGenerateRequest,
+    PracticeGenerateResponse,
+    PracticeQuestionRead,
     ProfileCenterResponse,
     ProfileEntryRead,
     ProfileEntryUpdateRequest,
@@ -31,7 +34,7 @@ from app.schemas import (
     ResearchToolRunRequest,
     WorkspaceOverviewResponse,
 )
-from app.services.llm_client import qwen_chat_json
+from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json
 from app.services.knowledge_service import search_knowledge
 
 
@@ -70,6 +73,11 @@ class _ResearchToolOutput(BaseModel):
     source_notes: list[str] = Field(default_factory=list)
     safety_notes: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+
+
+class _PracticeQuestionLLM(BaseModel):
+    questions: list[PracticeQuestionRead] = Field(default_factory=list)
+    source_summary: str = ""
 
 
 def get_workspace_overview(db: Session, user: User) -> WorkspaceOverviewResponse:
@@ -383,6 +391,185 @@ def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) 
     db.commit()
     db.refresh(run)
     return ResearchToolRunRead.model_validate(run)
+
+
+def generate_practice_questions(
+    db: Session,
+    user: User,
+    request: PracticeGenerateRequest,
+) -> PracticeGenerateResponse:
+    points = _practice_points(db, user, request)
+    source_context = _practice_source_context(db, user, points, request.project_id)
+    if not points:
+        points = ["核心概念理解"]
+
+    try:
+        output = _generate_practice_with_llm(points, source_context, request)
+        questions = output.questions[: max(1, len(points) * request.count_per_point * len(request.question_types))]
+        if questions:
+            return PracticeGenerateResponse(
+                questions=questions,
+                used_llm=True,
+                source_summary=output.source_summary or _source_summary(source_context),
+            )
+    except (LLMConfigurationError, LLMResponseError):
+        pass
+
+    return PracticeGenerateResponse(
+        questions=_fallback_practice_questions(points, source_context, request),
+        used_llm=False,
+        source_summary=_source_summary(source_context),
+    )
+
+
+def _practice_points(db: Session, user: User, request: PracticeGenerateRequest) -> list[str]:
+    points = [str(point).strip() for point in request.weak_points if str(point).strip()]
+    if points:
+        return list(dict.fromkeys(points))[:12]
+    profile = get_profile_center(db, user)
+    for entry in profile.entries:
+        if entry.key == "weak_points":
+            raw = entry.value
+            if isinstance(raw, list):
+                points.extend(str(item).strip() for item in raw)
+            else:
+                points.extend(part.strip() for part in str(raw or "").replace("，", ",").split(","))
+    return [point for point in dict.fromkeys(points) if point][:12]
+
+
+def _practice_source_context(db: Session, user: User, points: list[str], project_id: int | None) -> list[dict[str, Any]]:
+    query = " ".join(points) or "练习 题目 薄弱点"
+    hits = [hit.model_dump(mode="json") for hit in search_knowledge(db, query, limit=10)]
+    if project_id:
+        project = db.get(LearningProject, project_id)
+        if project is not None and project.user_id == user.id:
+            hits.insert(
+                0,
+                {
+                    "document_title": project.title,
+                    "document_type": "learning_project",
+                    "knowledge_point": "项目目标",
+                    "content": f"{project.learning_goal}\n{project.foundation_summary}\n{project.expected_output}",
+                    "source_uri": f"project:{project.id}",
+                },
+            )
+    return hits[:12]
+
+
+def _generate_practice_with_llm(
+    points: list[str],
+    source_context: list[dict[str, Any]],
+    request: PracticeGenerateRequest,
+) -> _PracticeQuestionLLM:
+    context = "\n\n".join(
+        f"[{index}] {item.get('document_title', '')} / {item.get('knowledge_point', '')}\n{item.get('content', '')}"
+        for index, item in enumerate(source_context, start=1)
+    )
+    prompt = f"""
+请基于学生薄弱点和资料库片段生成练习题，只输出 JSON。
+
+薄弱点：{points}
+题型：{request.question_types}
+难度：{request.difficulty}
+每个薄弱点每种题型数量：{request.count_per_point}
+
+资料库片段：
+{context}
+
+要求：
+1. questions 中每题包含 id、type、point、prompt、options、answer、explanation、source_title、source_excerpt、difficulty。
+2. type 使用 choice、judgement、short 三类之一；选择题必须给 4 个 options。
+3. 题目必须贴合资料库片段或项目目标；资料不足时用基础概念题，但 explanation 说明需要补充资料。
+4. source_excerpt 保留不超过 120 字。
+5. source_summary 概括本次题目依据。
+"""
+    return qwen_chat_json(
+        "你是高校个性化学习系统的练习题生成 Agent，负责把画像薄弱点和资料库证据转成可练习题目。",
+        prompt,
+        _PracticeQuestionLLM,
+    )
+
+
+def _fallback_practice_questions(
+    points: list[str],
+    source_context: list[dict[str, Any]],
+    request: PracticeGenerateRequest,
+) -> list[PracticeQuestionRead]:
+    question_types = request.question_types or ["choice"]
+    questions: list[PracticeQuestionRead] = []
+    source_by_point = _source_by_point(source_context)
+    for point_index, point in enumerate(points):
+        source = source_by_point.get(point) or (source_context[point_index % len(source_context)] if source_context else {})
+        source_title = str(source.get("document_title") or "当前学习资料")
+        source_excerpt = str(source.get("content") or "")[:160]
+        for type_index, question_type in enumerate(question_types):
+            for count_index in range(request.count_per_point):
+                question_id = f"{point_index + 1}-{question_type}-{count_index + 1}"
+                if question_type == "judgement":
+                    questions.append(
+                        PracticeQuestionRead(
+                            id=question_id,
+                            type="judgement",
+                            point=point,
+                            prompt=f"判断：学习「{point}」时，只记住定义就足够，不需要结合资料或项目场景验证。",
+                            answer="错误",
+                            explanation=f"「{point}」需要结合概念、资料证据和应用边界一起理解。",
+                            source_title=source_title,
+                            source_excerpt=source_excerpt,
+                            difficulty=request.difficulty,
+                        )
+                    )
+                elif question_type == "short":
+                    questions.append(
+                        PracticeQuestionRead(
+                            id=question_id,
+                            type="short",
+                            point=point,
+                            prompt=f"请用 3-5 句话说明「{point}」的核心含义，并写出一个你还需要继续查证的问题。",
+                            answer="参考答案应包含概念解释、适用场景、易错点和下一步查证问题。",
+                            explanation="简答题用于暴露理解缺口，便于后续更新学习画像。",
+                            source_title=source_title,
+                            source_excerpt=source_excerpt,
+                            difficulty=request.difficulty,
+                        )
+                    )
+                else:
+                    questions.append(
+                        PracticeQuestionRead(
+                            id=question_id,
+                            type="choice",
+                            point=point,
+                            prompt=f"围绕「{point}」，下列哪一项最能体现该知识点在学习项目中的正确使用？",
+                            options=[
+                                f"先说明 {point} 的概念，再结合资料或案例验证",
+                                "直接套用结论，不说明适用条件",
+                                "只给最终答案，不记录推理过程",
+                                "忽略数据来源和实验边界",
+                            ],
+                            answer=f"先说明 {point} 的概念，再结合资料或案例验证",
+                            explanation="正确使用知识点需要概念、证据和边界条件同时成立。",
+                            source_title=source_title,
+                            source_excerpt=source_excerpt,
+                            difficulty=request.difficulty,
+                        )
+                    )
+    return questions
+
+
+def _source_by_point(source_context: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for item in source_context:
+        point = str(item.get("knowledge_point") or "")
+        if point and point not in result:
+            result[point] = item
+    return result
+
+
+def _source_summary(source_context: list[dict[str, Any]]) -> str:
+    if not source_context:
+        return "未检索到资料库片段，已基于画像薄弱点生成基础练习。"
+    titles = [str(item.get("document_title") or "资料片段") for item in source_context[:3]]
+    return f"已参考 {len(source_context)} 个资料片段：{'、'.join(titles)}。"
 
 
 def _research_source_context(db: Session, user: User, request: ResearchToolRunRequest) -> str:

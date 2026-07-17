@@ -75,8 +75,8 @@ const emit = defineEmits<{
 const mode = ref<'login' | 'register'>('login')
 const loading = ref(false)
 const loginForm = reactive({
-  username: '',
-  password: ''
+  username: 'student01',
+  password: 'password123'
 })
 const registerForm = reactive({
   username: '',
