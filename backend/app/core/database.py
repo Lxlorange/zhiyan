@@ -59,6 +59,8 @@ def _apply_lightweight_migrations() -> None:
         "ALTER TABLE research_directions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP NULL",
         "ALTER TABLE learning_projects ADD COLUMN IF NOT EXISTS deadline TIMESTAMP NULL",
         "ALTER TABLE learning_projects ADD COLUMN IF NOT EXISTS teacher_notes TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE learning_projects ADD COLUMN IF NOT EXISTS study_weekends BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE learning_projects ADD COLUMN IF NOT EXISTS study_weekdays JSONB NOT NULL DEFAULT '[0, 1, 2, 3, 4]'::jsonb",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(512) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS school VARCHAR(128) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS major VARCHAR(128) NOT NULL DEFAULT ''",

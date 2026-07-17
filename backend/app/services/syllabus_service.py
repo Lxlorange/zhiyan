@@ -355,8 +355,8 @@ def generate_syllabus(
         title=f"{project.title} 每日学习计划",
         start_date=datetime.utcnow(),
         daily_minutes=project.daily_minutes,
-        study_weekends=False,
-        study_weekdays=[0, 1, 2, 3, 4],
+        study_weekends=project.study_weekends,
+        study_weekdays=project.study_weekdays or [0, 1, 2, 3, 4],
         generation_reason=f"学习清单 v{version.version_no} 生成后自动排期",
     )
     _write_project_event(
@@ -974,6 +974,9 @@ def generate_daily_plan(
         },
     )
     project.status = "daily_plan_ready"
+    project.daily_minutes = daily_minutes
+    project.study_weekends = request.study_weekends
+    project.study_weekdays = study_weekdays
     project.current_stage = "每日计划已生成"
     project.next_step = "按每日计划进入课堂学习"
     db.commit()

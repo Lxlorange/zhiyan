@@ -119,6 +119,8 @@ export interface LearningProjectRead {
   expected_output: string
   recommended_period: string
   daily_minutes: number
+  study_weekends: boolean
+  study_weekdays: number[]
   difficulty: string
   related_course: string
   related_knowledge_points: string[]
@@ -615,6 +617,26 @@ export function parseProjectPlanAttachment(file: File) {
 
 export function listLearningProjects() {
   return api.get<LearningProjectRead[]>('/learning-projects')
+}
+
+export function archiveLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/archive`)
+}
+
+export function pauseLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/pause`)
+}
+
+export function resumeLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/resume`)
+}
+
+export function copyLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/copy`)
+}
+
+export function deleteLearningProject(projectId: number) {
+  return api.delete<void>(`/learning-projects/${projectId}`)
 }
 
 export function generateSyllabus(projectId: number, generationGoal = '') {

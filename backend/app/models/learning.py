@@ -270,6 +270,8 @@ class LearningProject(Base):
     expected_output: Mapped[str] = mapped_column(Text, nullable=False)
     recommended_period: Mapped[str] = mapped_column(String(64), nullable=False)
     daily_minutes: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
+    study_weekends: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    study_weekdays: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     difficulty: Mapped[str] = mapped_column(String(32), nullable=False)
     related_course: Mapped[str] = mapped_column(String(255), nullable=False)
     related_knowledge_points: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)

@@ -407,6 +407,8 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         expected_output=suggestion.expected_output,
         recommended_period=suggestion.recommended_period,
         daily_minutes=suggestion.daily_minutes,
+        study_weekends=False,
+        study_weekdays=[0, 1, 2, 3, 4],
         difficulty=suggestion.difficulty,
         related_course=suggestion.related_course,
         related_knowledge_points=suggestion.related_knowledge_points,

@@ -308,12 +308,12 @@
                       <strong>{{ question.id }}. {{ question.prompt }}</strong>
                       <el-tag size="small" effect="plain">{{ question.question_type === 'multiple' ? '多选' : '单选' }}</el-tag>
                     </header>
-                    <el-checkbox-group v-if="question.question_type === 'multiple'" :model-value="quizAnswerArray(question.id)" @update:model-value="(value) => setQuizAnswer(question.id, value)">
+                    <el-checkbox-group v-if="question.question_type === 'multiple'" :model-value="quizAnswerArray(question.id)" @update:model-value="setMultipleQuizAnswerValue(question.id, $event)">
                       <el-checkbox-button v-for="option in question.options" :key="option.label" :label="option.label">
                         {{ option.label }}. {{ option.text }}
                       </el-checkbox-button>
                     </el-checkbox-group>
-                    <el-radio-group v-else :model-value="quizAnswerText(question.id)" @update:model-value="(value) => setQuizAnswer(question.id, value)">
+                    <el-radio-group v-else :model-value="quizAnswerText(question.id)" @update:model-value="setSingleQuizAnswerValue(question.id, $event)">
                       <el-radio-button v-for="option in question.options" :key="option.label" :label="option.label">
                         {{ option.label }}. {{ option.text }}
                       </el-radio-button>
@@ -855,6 +855,14 @@ function quizAnswerArray(questionId: string) {
 
 function setQuizAnswer(questionId: string, value: string | string[]) {
   quizAnswers[questionId] = value
+}
+
+function setMultipleQuizAnswerValue(questionId: string, value: unknown) {
+  quizAnswers[questionId] = Array.isArray(value) ? value.map(String) : []
+}
+
+function setSingleQuizAnswerValue(questionId: string, value: unknown) {
+  quizAnswers[questionId] = String(value || '')
 }
 
 function quizResultType(result: Record<string, any> | undefined) {

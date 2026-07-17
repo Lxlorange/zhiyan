@@ -343,6 +343,8 @@ class LearningProjectCreateRequest(BaseModel):
     direction_id: int
     title: Optional[str] = None
     daily_minutes: Optional[int] = Field(default=None, ge=10, le=300)
+    study_weekends: bool = False
+    study_weekdays: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
     recommended_period: Optional[str] = None
     difficulty: Optional[str] = None
     deadline: Optional[datetime] = None
@@ -354,6 +356,8 @@ class LearningProjectUpdateRequest(BaseModel):
     expected_output: Optional[str] = None
     recommended_period: Optional[str] = None
     daily_minutes: Optional[int] = Field(default=None, ge=10, le=300)
+    study_weekends: Optional[bool] = None
+    study_weekdays: Optional[List[int]] = None
     difficulty: Optional[str] = None
     status: Optional[str] = None
     deadline: Optional[datetime] = None
@@ -372,6 +376,8 @@ class LearningProjectRead(BaseModel):
     expected_output: str
     recommended_period: str
     daily_minutes: int
+    study_weekends: bool = False
+    study_weekdays: List[int] = Field(default_factory=list)
     difficulty: str
     related_course: str
     related_knowledge_points: List[str]

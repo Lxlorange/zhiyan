@@ -1296,6 +1296,14 @@ textarea {
   line-height: 1.25;
 }
 
+.project-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .project-goal,
 .project-section p {
   margin: 0;

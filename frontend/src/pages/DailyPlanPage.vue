@@ -18,6 +18,9 @@
         <el-button type="primary" :loading="generating" :disabled="!selectedProjectId" @click="handleGeneratePlan">
           {{ activePlan ? '重新排期' : '生成计划' }}
         </el-button>
+        <el-button :disabled="!selectedProjectId" @click="openSyllabus">
+          管理清单
+        </el-button>
       </div>
     </section>
 
@@ -146,6 +149,7 @@
               <el-button :loading="movingItemId === item.id" @click="handleShiftItem(item, 'previous')">提前</el-button>
               <el-button :loading="movingItemId === item.id" @click="handleShiftItem(item, 'next')">顺延</el-button>
               <el-button :loading="movingItemId === item.id" :disabled="!moveDates[item.id]" @click="handleMoveItem(item)">移动</el-button>
+              <el-button @click="openSyllabusItem(item)">管理课程</el-button>
               <el-button type="primary" :disabled="!item.can_start" @click="handleStartLearning(item)">开始</el-button>
             </div>
           </article>
@@ -242,6 +246,7 @@ const form = reactive({
   study_weekends: false,
   study_weekdays: [0, 1, 2, 3, 4]
 })
+let syncingWeekendFields = false
 
 const weekdayOptions = [
   { label: '周一', value: 0 },
@@ -335,6 +340,35 @@ watch(selectedProject, (project) => {
   if (project) form.daily_minutes = project.daily_minutes || 40
 })
 
+watch(
+  () => form.study_weekends,
+  (studyWeekends) => {
+    if (syncingWeekendFields) return
+    syncingWeekendFields = true
+    const weekdays = new Set(form.study_weekdays)
+    if (studyWeekends) {
+      weekdays.add(5)
+      weekdays.add(6)
+    } else {
+      weekdays.delete(5)
+      weekdays.delete(6)
+    }
+    form.study_weekdays = normalizeWeekdaySelection([...weekdays], studyWeekends)
+    syncingWeekendFields = false
+  }
+)
+
+watch(
+  () => [...form.study_weekdays],
+  (studyWeekdays) => {
+    if (syncingWeekendFields) return
+    syncingWeekendFields = true
+    form.study_weekdays = normalizeWeekdaySelection(studyWeekdays, studyWeekdays.some((day) => day >= 5))
+    form.study_weekends = form.study_weekdays.some((day) => day >= 5)
+    syncingWeekendFields = false
+  }
+)
+
 async function loadProjects() {
   loadingProjects.value = true
   try {
@@ -376,7 +410,7 @@ async function handleGeneratePlan() {
       start_date: toBackendDate(form.start_date),
       daily_minutes: form.daily_minutes,
       study_weekends: form.study_weekends,
-      study_weekdays: form.study_weekdays,
+      study_weekdays: normalizeWeekdaySelection(form.study_weekdays, form.study_weekends),
       title: selectedProject.value ? `${selectedProject.value.title} 每日学习计划` : ''
     })
     plans.value = [data, ...plans.value.filter((plan) => plan.id !== data.id)]
@@ -443,6 +477,20 @@ async function handleStartLearning(item: DailyPlanItemRead) {
   })
 }
 
+async function openSyllabus() {
+  if (!selectedProjectId.value) return
+  await router.push({ name: 'project-syllabus', params: { projectId: selectedProjectId.value } })
+}
+
+async function openSyllabusItem(item: DailyPlanItemRead) {
+  if (!item.syllabus_item_id) return
+  await router.push({
+    name: 'project-syllabus',
+    params: { projectId: item.project_id },
+    hash: `#item-${item.syllabus_item_id}`
+  })
+}
+
 function setFilter(filter: TodoFilter) {
   activeFilter.value = filter
   activeDate.value = ''
@@ -465,8 +513,10 @@ function hydrateFormFromPlan(plan: DailyPlanRead | null) {
   if (!plan) return
   form.start_date = toDateInput(plan.start_date)
   form.daily_minutes = plan.daily_minutes
-  form.study_weekends = plan.study_weekends
-  form.study_weekdays = plan.study_weekdays.length ? plan.study_weekdays : [0, 1, 2, 3, 4]
+  syncingWeekendFields = true
+  form.study_weekdays = normalizeWeekdaySelection(plan.study_weekdays.length ? plan.study_weekdays : [0, 1, 2, 3, 4], plan.study_weekends)
+  form.study_weekends = plan.study_weekends || form.study_weekdays.some((day) => day >= 5)
+  syncingWeekendFields = false
   hydrateMoveDates()
 }
 
@@ -528,6 +578,23 @@ function toDateInput(value: string | Date) {
 
 function toBackendDate(value: string) {
   return `${value}T00:00:00`
+}
+
+function normalizeWeekdaySelection(values: Array<number | string>, studyWeekends: boolean) {
+  const normalized = new Set(
+    values
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+  )
+  if (studyWeekends) {
+    normalized.add(5)
+    normalized.add(6)
+  } else {
+    normalized.delete(5)
+    normalized.delete(6)
+  }
+  if (!normalized.size) return [0, 1, 2, 3, 4]
+  return [...normalized].sort((left, right) => left - right)
 }
 
 function formatDayTitle(value: string) {

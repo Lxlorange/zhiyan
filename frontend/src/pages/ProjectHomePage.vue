@@ -35,7 +35,21 @@
             <span>{{ activeProject.subject }} / {{ activeProject.goal_type }}</span>
             <h3>{{ activeProject.title }}</h3>
           </div>
-          <el-tag>{{ activeProject.status }}</el-tag>
+          <div class="project-head-actions">
+            <el-tag>{{ statusLabel(activeProject.status) }}</el-tag>
+            <el-dropdown trigger="click" @command="handleProjectCommand">
+              <el-button>管理项目</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="pause" :disabled="activeProject.status === 'paused'">暂停项目</el-dropdown-item>
+                  <el-dropdown-item command="resume" :disabled="activeProject.status !== 'paused'">恢复项目</el-dropdown-item>
+                  <el-dropdown-item command="copy">复制项目</el-dropdown-item>
+                  <el-dropdown-item command="archive" divided>归档项目</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除项目</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
 
         <p class="project-goal">{{ activeProject.learning_goal }}</p>
@@ -69,6 +83,7 @@
           <div>
             <span>每日学习</span>
             <strong>{{ activeProject.daily_minutes }} 分钟</strong>
+            <small>{{ studyDaysLabel(activeProject) }}</small>
           </div>
           <div>
             <span>当前阶段</span>
@@ -137,7 +152,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { listLearningProjects, type LearningProjectRead } from '../services/apiClient'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  archiveLearningProject,
+  copyLearningProject,
+  deleteLearningProject,
+  listLearningProjects,
+  pauseLearningProject,
+  resumeLearningProject,
+  type LearningProjectRead
+} from '../services/apiClient'
 
 const props = defineProps<{
   selectedProjectId: number | null
@@ -186,5 +210,78 @@ async function loadProjects() {
 async function handleSelectProject(projectId: number) {
   activeProjectId.value = projectId
   await router.push({ name: 'project-detail', params: { projectId } })
+}
+
+async function handleProjectCommand(command: string | number | object) {
+  if (!activeProject.value || typeof command !== 'string') return
+  if (command === 'pause') await mutateProject(activeProject.value.id, () => pauseLearningProject(activeProject.value!.id), '项目已暂停')
+  if (command === 'resume') await mutateProject(activeProject.value.id, () => resumeLearningProject(activeProject.value!.id), '项目已恢复')
+  if (command === 'copy') await copyProject(activeProject.value.id)
+  if (command === 'archive') await archiveProject(activeProject.value)
+  if (command === 'delete') await deleteProject(activeProject.value)
+}
+
+async function mutateProject(projectId: number, action: () => Promise<{ data: LearningProjectRead }>, message: string) {
+  const { data } = await action()
+  projects.value = projects.value.map((project) => (project.id === projectId ? data : project))
+  ElMessage.success(message)
+}
+
+async function copyProject(projectId: number) {
+  const { data } = await copyLearningProject(projectId)
+  projects.value = [data, ...projects.value]
+  activeProjectId.value = data.id
+  await router.push({ name: 'project-detail', params: { projectId: data.id } })
+  ElMessage.success('项目副本已创建')
+}
+
+async function archiveProject(project: LearningProjectRead) {
+  await ElMessageBox.confirm(`确认归档“${project.title}”？归档后仍会保留历史数据。`, '归档项目', {
+    confirmButtonText: '归档',
+    cancelButtonText: '取消',
+    type: 'warning'
+  })
+  await mutateProject(project.id, () => archiveLearningProject(project.id), '项目已归档')
+}
+
+async function deleteProject(project: LearningProjectRead) {
+  await ElMessageBox.confirm(`确认删除“${project.title}”？项目会从主页隐藏，已生成的学习记录会保留用于审计。`, '删除项目', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    type: 'warning',
+    confirmButtonClass: 'el-button--danger'
+  })
+  await deleteLearningProject(project.id)
+  projects.value = projects.value.filter((item) => item.id !== project.id)
+  const nextProject = projects.value[0] || null
+  activeProjectId.value = nextProject?.id || null
+  if (nextProject) await router.push({ name: 'project-detail', params: { projectId: nextProject.id } })
+  else await router.push({ name: 'projects' })
+  ElMessage.success('项目已删除')
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    draft: '草稿',
+    learning: '学习中',
+    paused: '已暂停',
+    archived: '已归档',
+    syllabus_generating: '清单生成中',
+    syllabus_ready: '清单已就绪',
+    daily_plan_ready: '计划已就绪',
+    resources_generating: '资源生成中',
+    resources_ready: '资源已就绪',
+    needs_replan: '待重规划'
+  }
+  return labels[status] || status
+}
+
+function studyDaysLabel(project: LearningProjectRead) {
+  const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  const days = (project.study_weekdays?.length ? project.study_weekdays : [0, 1, 2, 3, 4])
+    .filter((day) => day >= 0 && day <= 6)
+    .sort((left, right) => left - right)
+    .map((day) => labels[day])
+  return days.length ? days.join(' / ') : '周一 / 周二 / 周三 / 周四 / 周五'
 }
 </script>

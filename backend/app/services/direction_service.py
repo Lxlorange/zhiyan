@@ -381,6 +381,8 @@ def create_project(db: Session, user: User, request: LearningProjectCreateReques
         expected_output=suggestion.expected_output,
         recommended_period=request.recommended_period or suggestion.recommended_period,
         daily_minutes=request.daily_minutes or suggestion.daily_minutes,
+        study_weekends=request.study_weekends,
+        study_weekdays=[0, 1, 2, 3, 4, 5, 6] if request.study_weekends else request.study_weekdays,
         difficulty=request.difficulty or suggestion.difficulty,
         deadline=request.deadline,
         related_course=suggestion.related_course,
@@ -412,14 +414,16 @@ def create_project(db: Session, user: User, request: LearningProjectCreateReques
 
 def list_projects(db: Session, user: User) -> list[LearningProjectRead]:
     rows = db.scalars(
-        select(LearningProject).where(LearningProject.user_id == user.id).order_by(LearningProject.updated_at.desc())
+        select(LearningProject)
+        .where(LearningProject.user_id == user.id, LearningProject.status != "deleted")
+        .order_by(LearningProject.updated_at.desc())
     ).all()
     return [LearningProjectRead.model_validate(row) for row in rows]
 
 
 def get_project_or_404(db: Session, user: User, project_id: int) -> LearningProject:
     project = db.get(LearningProject, project_id)
-    if project is None or project.user_id != user.id:
+    if project is None or project.user_id != user.id or project.status == "deleted":
         raise KeyError("project not found")
     return project
 
@@ -471,6 +475,14 @@ def archive_project(db: Session, user: User, project_id: int) -> LearningProject
     db.commit()
     db.refresh(project)
     return project
+
+
+def delete_project(db: Session, user: User, project_id: int) -> None:
+    project = get_project_or_404(db, user, project_id)
+    project.status = "deleted"
+    project.current_stage = "项目已删除"
+    db.add(LearningProjectEvent(project_id=project.id, user_id=user.id, event_type="deleted", summary="用户删除项目。"))
+    db.commit()
 
 
 def pause_project(db: Session, user: User, project_id: int) -> LearningProject:
@@ -528,6 +540,8 @@ def copy_project(db: Session, user: User, project_id: int) -> LearningProject:
         expected_output=source.expected_output,
         recommended_period=source.recommended_period,
         daily_minutes=source.daily_minutes,
+        study_weekends=source.study_weekends,
+        study_weekdays=source.study_weekdays,
         difficulty=source.difficulty,
         related_course=source.related_course,
         related_knowledge_points=source.related_knowledge_points,

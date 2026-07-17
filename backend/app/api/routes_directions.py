@@ -36,6 +36,7 @@ from app.services.direction_service import (
     create_direction,
     create_direction_template,
     create_project,
+    delete_project,
     export_project,
     get_direction_or_404,
     get_project_or_404,
@@ -383,6 +384,18 @@ def learning_project_archive(
 ) -> LearningProjectRead:
     try:
         return LearningProjectRead.model_validate(archive_project(db, user, project_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.delete("/learning-projects/{project_id}", status_code=204)
+def learning_project_delete(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        delete_project(db, user, project_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
 
