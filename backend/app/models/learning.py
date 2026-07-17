@@ -276,6 +276,7 @@ class LearningProject(Base):
     related_course: Mapped[str] = mapped_column(String(255), nullable=False)
     related_knowledge_points: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     related_documents: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    research_training: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(128), default="方向确认", nullable=False)
     progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

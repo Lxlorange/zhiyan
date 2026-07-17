@@ -382,6 +382,7 @@ class LearningProjectRead(BaseModel):
     related_course: str
     related_knowledge_points: List[str]
     related_documents: List[str]
+    research_training: Dict[str, object] = Field(default_factory=dict)
     status: str
     current_stage: str
     progress: int
@@ -875,6 +876,33 @@ class ResearchToolRunRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PracticeQuestionRead(BaseModel):
+    id: str
+    type: str
+    point: str
+    prompt: str
+    options: List[str] = Field(default_factory=list)
+    answer: str
+    explanation: str = ""
+    source_title: str = ""
+    source_excerpt: str = ""
+    difficulty: str = "medium"
+
+
+class PracticeGenerateRequest(BaseModel):
+    weak_points: List[str] = Field(default_factory=list, max_length=12)
+    question_types: List[str] = Field(default_factory=lambda: ["choice", "judgement"], max_length=3)
+    project_id: Optional[int] = None
+    difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
+    count_per_point: int = Field(default=1, ge=1, le=3)
+
+
+class PracticeGenerateResponse(BaseModel):
+    questions: List[PracticeQuestionRead]
+    used_llm: bool = False
+    source_summary: str = ""
+
+
 class WorkspaceOverviewResponse(BaseModel):
     projects: List[LearningProjectRead] = Field(default_factory=list)
     profile: ProfileCenterResponse
@@ -884,3 +912,61 @@ class WorkspaceOverviewResponse(BaseModel):
     literature: List[LiteraturePaperRead] = Field(default_factory=list)
     tool_runs: List[ResearchToolRunRead] = Field(default_factory=list)
     metrics: Dict[str, int] = Field(default_factory=dict)
+
+
+class DatabaseAskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=3000)
+    project_id: Optional[int] = None
+    knowledge_points: List[str] = Field(default_factory=list)
+    limit: int = Field(default=8, ge=1, le=16)
+
+
+class DatabaseCitation(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    document_type: str = ""
+    knowledge_point: str = ""
+    content: str
+    source_uri: str = ""
+    page_no: Optional[int] = None
+    slide_no: Optional[int] = None
+    section_title: str = ""
+    score: Optional[float] = None
+    review_url: str = ""
+
+
+class DatabaseAskResponse(BaseModel):
+    answer: str
+    citations: List[DatabaseCitation] = Field(default_factory=list)
+    related_points: List[str] = Field(default_factory=list)
+    follow_up_questions: List[str] = Field(default_factory=list)
+    confidence: str = "medium"
+    used_llm: bool = False
+
+
+class DatabaseGraphNode(BaseModel):
+    id: str
+    name: str
+    category: str
+    description: str = ""
+    count: int = 0
+
+
+class DatabaseGraphEdge(BaseModel):
+    source: str
+    target: str
+    relation: str = "related"
+
+
+class DatabaseGraphResponse(BaseModel):
+    nodes: List[DatabaseGraphNode] = Field(default_factory=list)
+    edges: List[DatabaseGraphEdge] = Field(default_factory=list)
+
+
+class DatabaseNodeDetailResponse(BaseModel):
+    name: str
+    description: str = ""
+    citations: List[DatabaseCitation] = Field(default_factory=list)
+    related_points: List[str] = Field(default_factory=list)
+    suggested_questions: List[str] = Field(default_factory=list)

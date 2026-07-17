@@ -235,6 +235,20 @@ class _ReflectionEvaluation(BaseModel):
     feedback: str
 
 
+class _ResearchReflectionEvaluation(BaseModel):
+    detail_score: int = Field(ge=0, le=100)
+    relevance_score: int = Field(ge=0, le=100)
+    workload_score: int = Field(ge=0, le=100)
+    planning_score: int = Field(ge=0, le=100)
+    critical_score: int = Field(ge=0, le=100)
+    score: int = Field(ge=0, le=100)
+    passed: bool
+    feedback: str
+    strengths: list[str] = Field(default_factory=list)
+    improvement_suggestions: list[str] = Field(default_factory=list)
+    next_plan_suggestions: list[str] = Field(default_factory=list)
+
+
 def _item_or_404(db: Session, user: User, item_id: int) -> LearningSyllabusItem:
     item = db.scalar(
         select(LearningSyllabusItem).where(LearningSyllabusItem.id == item_id, LearningSyllabusItem.user_id == user.id)
@@ -869,25 +883,48 @@ def submit_reflection(
 ) -> ClassroomSession:
     session = _get_session(db, user, session_id)
     item = _item_or_404(db, user, session.syllabus_item_id)
-    evaluation = qwen_chat_json(
-        "你是高校课程复盘评估助教。请只输出 JSON，判断复盘是否具体、真实、能支持后续路径调整。",
-        (
-            f"学习项：{item.title}\n"
-            f"完成标准：{item.completion_criteria}\n"
-            f"复盘内容：{request.reflection}\n"
-            f"未解决问题：{request.unresolved_questions}\n"
-            f"下一步行动：{request.next_action}\n"
-            '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
-        ),
-        _ReflectionEvaluation,
-    )
+    project = _project_or_404(db, user, session.project_id)
+    if _is_research_reflection(project, item):
+        research_evaluation = _evaluate_research_reflection(project, item, request)
+        evaluation = _ReflectionEvaluation(
+            score=research_evaluation.score,
+            passed=research_evaluation.passed,
+            feedback=research_evaluation.feedback,
+        )
+        content = {
+            **request.model_dump(),
+            "rubric_scores": {
+                "详实程度": research_evaluation.detail_score,
+                "关联度": research_evaluation.relevance_score,
+                "工作量": research_evaluation.workload_score,
+                "规划性": research_evaluation.planning_score,
+                "批判性思考": research_evaluation.critical_score,
+            },
+            "strengths": research_evaluation.strengths,
+            "improvement_suggestions": research_evaluation.improvement_suggestions,
+            "next_plan_suggestions": research_evaluation.next_plan_suggestions,
+        }
+    else:
+        evaluation = qwen_chat_json(
+            "你是高校课程复盘评估助教。请只输出 JSON，判断复盘是否具体、真实、能支持后续路径调整。",
+            (
+                f"学习项：{item.title}\n"
+                f"完成标准：{item.completion_criteria}\n"
+                f"复盘内容：{request.reflection}\n"
+                f"未解决问题：{request.unresolved_questions}\n"
+                f"下一步行动：{request.next_action}\n"
+                '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
+            ),
+            _ReflectionEvaluation,
+        )
+        content = request.model_dump()
     _add_submission(
         db,
         session=session,
         user=user,
         item=item,
         submission_type="reflection",
-        content=request.model_dump(),
+        content=content,
         score=evaluation.score,
         passed=evaluation.passed,
         feedback=evaluation.feedback,
@@ -929,6 +966,41 @@ def save_classroom_note(
     )
     db.commit()
     return _get_session(db, user, session.id)
+
+
+def _is_research_reflection(project: LearningProject, item: LearningSyllabusItem) -> bool:
+    return bool(project.research_training) or item.item_type in {"paper_reading", "literature_review", "paper_writing", "mock_defense"}
+
+
+def _evaluate_research_reflection(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    request: ClassroomReflectionSubmitRequest,
+) -> _ResearchReflectionEvaluation:
+    paper_context = _paper_focus_context(item)
+    return qwen_chat_json(
+        "你是高校科研训练复盘评估 Agent。请只输出 JSON，并严格按五维量表评分。",
+        (
+            f"科研项目：{project.title}\n"
+            f"科研方向：{project.research_direction}\n"
+            f"学习项：{item.title}\n"
+            f"单篇论文焦点：{paper_context}\n"
+            f"完成标准：{item.completion_criteria}\n"
+            f"复盘内容：{request.reflection}\n"
+            f"未解决问题：{request.unresolved_questions}\n"
+            f"下一步计划：{request.next_action}\n"
+            "评分维度：\n"
+            "1. detail_score 详实程度：是否具体覆盖论文问题、方法、证据、结论、局限。\n"
+            "2. relevance_score 关联度：是否关联学生科研方向、选题边界和后续实验。\n"
+            "3. workload_score 工作量：是否体现真实阅读、摘录、对比或复现实操投入。\n"
+            "4. planning_score 规划性：下一步计划是否可执行、可检查、有时间/任务边界。\n"
+            "5. critical_score 批判性思考：是否指出假设、局限、反例、可改进点或争议。\n"
+            "总分 score 为五维加权平均；passed 只有在总分 >= 70 且五维都 >= 50 时为 true。\n"
+            "输出字段：detail_score, relevance_score, workload_score, planning_score, critical_score, "
+            "score, passed, feedback, strengths, improvement_suggestions, next_plan_suggestions。"
+        ),
+        _ResearchReflectionEvaluation,
+    )
 
 
 def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _ClassroomPackage) -> Path:
@@ -1627,6 +1699,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
 
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
     mode_hint = _classroom_mode_hint(project, item)
+    paper_focus = _paper_focus_context(item)
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
     system_prompt = (
         "你是面向高校学生的 OpenMAIC + PPTAgent 风格多智能体课堂生成系统。"
@@ -1640,6 +1713,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "slides、quizzes、interactive/practice、PBL/reflection、interactive HTML simulation、presentation planning、visual layout。\n"
         "必须输出顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, voice_script, "
         "reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
+        "禁止只输出 slides、deck、ppt 或 markdown；所有顶层字段必须一次性完整输出。\n"
         "slides: 4-6 页，每页必须包含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, side_panel, "
         "takeaways, source_refs, example, misconception, interaction_prompt。"
         "layout 只能使用 cover, split_visual, process_timeline, comparison_matrix, evidence_cards, lab_workbench, defense_panel 中的一种；"
@@ -1658,20 +1732,25 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "guiding_questions: 3-6 项，每项包含 prompt, intent, hint。\n"
         "voice_script: 包含 one_minute, five_minutes, segments。\n"
         "reproduction_demo: 包含 title, task, input_format, code_skeleton, steps, expected_output, parameters, common_errors, report_suggestions。\n"
-        "readings: 2-5 项，每项包含 title, why, source, keywords。\n"
+        "readings: 2-5 项，每项必须是对象并包含 title, why, source, keywords；"
+        "source 写课程知识库文档名、上传资料页码、官方文档或真实公开链接，不确定真实链接时写可追溯资料名称，不得编造 DOI 或不存在 URL；"
+        "keywords 至少 1 条。\n"
         "quiz: 3-5 项，全部使用选择题；每项包含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。"
         "question_type 只能是 single 或 multiple；options 为 3-5 个对象，每个包含 label 和 text；"
         "single 的 answer 是一个选项 label，例如 A；multiple 的 answer 用英文逗号连接，例如 A,C；"
         "explanation 必须解释为什么正确项正确、为什么常见错误项不对；hint 是学生答错后看的提示，不直接泄露答案。\n"
         "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
         "reflection_prompts: 3-6 条。safety_notes: 至少 1 条。\n"
-        "严禁省略字段，严禁只返回 slides。字段缺失会被系统直接判定为生成失败。\n"
-        "如果某字段暂时无法确定，必须基于学习项生成可执行内容；不得返回空字符串、空数组或占位符。\n"
+        "严禁省略字段，严禁只返回 slides。字段缺失会触发一次自动修复；修复仍失败会被系统直接判定为生成失败。\n"
+        "如果某字段暂时无法确定，必须基于学习项、课程知识库和项目目标生成可执行内容；不得返回空字符串、空数组或占位符。\n"
         "文献综述模式必须给出论文/资料列表、摘要要点、来源字段、对比矩阵和阅读任务；不得编造已发表事实。\n"
         "选题凝练模式必须形成具体题目、研究问题、方法边界、数据与指标、预期贡献和不可做事项。\n"
         "实验助手模式必须生成技术路线、数据采集方案、评价指标、实验变量、图表规范建议和阶段计划。\n"
         "论文写作模式必须围绕课程论文结构、引用规范、图表规范和防幻觉边界设计练习。\n"
         "模拟答辩模式必须在 slides/guiding_questions/quiz/practice/reflection_prompts 中体现开题、中期、答辩问题、追问、评分和修改建议。\n"
+        "如果 mode_hint 为 paper_reading，则本次课堂必须是“一篇论文一个 PPT”："
+        "slides 围绕同一篇论文组织，依次讲清研究问题、背景脉络、方法/模型、实验证据、局限与启发、对学生选题的下一步计划；"
+        "readings 中必须包含当前论文及 1-3 条延伸阅读；quiz/practice/reflection_prompts 必须围绕该论文理解与复盘。\n"
         f"项目：{project.title}\n"
         f"研究方向：{project.research_direction}\n"
         f"学习目标：{project.learning_goal}\n"
@@ -1679,6 +1758,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"学习项目标：{item.objective}\n"
         f"知识点：{item.knowledge_points}\n"
         f"关联资料：{item.related_documents}\n"
+        f"单篇论文焦点：{paper_focus}\n"
         f"课程知识库来源：\n{knowledge_context}\n"
         f"完成标准：{item.completion_criteria}\n"
         f"评估方式：{item.assessment_method}\n"
@@ -1686,11 +1766,22 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"补充要求：{instruction}\n"
     )
     raw = _qwen_chat_raw_json(system_prompt, user_prompt)
-    normalized = _normalize_classroom_package(raw, project, item)
     try:
-        return _ClassroomPackage.model_validate(normalized)
-    except Exception as exc:
-        raise LLMResponseError(f"课堂包 JSON 归一化后仍未通过结构校验：{exc}") from exc
+        return _validate_classroom_package(raw, project, item)
+    except LLMResponseError as first_error:
+        repaired = _repair_classroom_package_json(
+            system_prompt=system_prompt,
+            original_prompt=user_prompt,
+            raw=raw,
+            validation_error=str(first_error),
+        )
+        try:
+            return _validate_classroom_package(repaired, project, item)
+        except LLMResponseError as second_error:
+            raise LLMResponseError(
+                "课堂包 JSON 自动修复后仍未通过结构校验："
+                f"{second_error}；首次错误：{first_error}"
+            ) from second_error
 
 
 def build_rag_context_for_classroom(project: LearningProject, item: LearningSyllabusItem, instruction: str = "") -> str:
@@ -1730,6 +1821,8 @@ def _classroom_mode_hint(project: LearningProject, item: LearningSyllabusItem) -
         return "experiment_assistant"
     if any(keyword in text for keyword in ["选题", "topic", "研究问题"]):
         return "topic_selection"
+    if item.item_type == "paper_reading" or any(keyword in text for keyword in ["paper_ppt", "论文精读", "单篇论文"]):
+        return "paper_reading"
     if any(keyword in text for keyword in ["文献", "literature", "综述", "paper"]):
         return "literature_review"
     if any(keyword in text for keyword in ["论文", "写作", "格式", "引用"]):
@@ -1737,7 +1830,54 @@ def _classroom_mode_hint(project: LearningProject, item: LearningSyllabusItem) -
     return "general_ai4s_lesson"
 
 
-def _qwen_chat_raw_json(system_prompt: str, user_prompt: str) -> Any:
+def _paper_focus_context(item: LearningSyllabusItem) -> dict[str, str]:
+    if item.item_type != "paper_reading":
+        return {}
+    source = str((item.related_documents or [""])[0])
+    title, _, url = source.partition(" | ")
+    return {
+        "title": title.strip() or item.title,
+        "source_url": url.strip(),
+        "review_requirement": "学生必须提交论文复盘总结和下一步计划，系统按五维量表评分。",
+    }
+
+
+def _validate_classroom_package(raw: Any, project: LearningProject, item: LearningSyllabusItem) -> _ClassroomPackage:
+    normalized = _normalize_classroom_package(raw, project, item)
+    try:
+        return _ClassroomPackage.model_validate(normalized)
+    except Exception as exc:
+        raise LLMResponseError(f"课堂包 JSON 归一化后仍未通过结构校验：{exc}") from exc
+
+
+def _repair_classroom_package_json(
+    *,
+    system_prompt: str,
+    original_prompt: str,
+    raw: Any,
+    validation_error: str,
+) -> Any:
+    repair_prompt = (
+        "你刚才输出的课堂包 JSON 未通过系统结构校验。请只返回修复后的完整 JSON 对象，不要 Markdown，不要解释。\n"
+        "修复原则：\n"
+        "1. 必须保留原课堂主题和原始教学意图，只补齐或改正不合格字段。\n"
+        "2. 不得删除必填顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, "
+        "voice_script, reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
+        "3. readings 必须是 2-5 个对象，每个对象必须包含 title, why, source, keywords；"
+        "source 可以是课程知识库文档名、上传资料页码、官方文档或真实公开链接；不得编造 DOI、论文链接或不存在的网页。\n"
+        "4. slides 必须 4-6 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
+        "side_panel, takeaways, source_refs, example, misconception, interaction_prompt。\n"
+        "5. quiz 必须是选择题，至少 2 道；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
+        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；reflection_prompts 至少 3 条。\n"
+        "7. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
+        f"校验错误：{validation_error}\n"
+        f"原始任务要求：{_truncate_for_prompt(original_prompt, 8000)}\n"
+        f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 18000)}\n"
+    )
+    return _qwen_chat_raw_json(system_prompt, repair_prompt, max_tokens=9000, temperature=0.1)
+
+
+def _qwen_chat_raw_json(system_prompt: str, user_prompt: str, *, max_tokens: int = 9000, temperature: float = 0.2) -> Any:
     settings = get_settings()
     validate_qwen_config()
     payload = {
@@ -1746,8 +1886,8 @@ def _qwen_chat_raw_json(system_prompt: str, user_prompt: str) -> Any:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": 6000,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1791,7 +1931,21 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
     guiding_questions = [_normalize_guiding_question(value, item) for value in _as_list(data.get("guiding_questions") or data.get("questions_to_think"))]
     if len(guiding_questions) < 3:
         raise LLMResponseError("课堂包 JSON 缺少 guiding_questions，至少需要 3 个引导问题")
-    readings = [_normalize_reading(value, item) for value in _as_list(data.get("readings") or data.get("resources"))]
+    readings_source = (
+        data.get("readings")
+        or data.get("recommended_readings")
+        or data.get("reading_resources")
+        or data.get("learning_resources")
+        or data.get("resources")
+    )
+    if isinstance(readings_source, dict):
+        readings_source = (
+            readings_source.get("readings")
+            or readings_source.get("recommended_readings")
+            or readings_source.get("items")
+            or readings_source.get("resources")
+        )
+    readings = [_normalize_reading(value, item) for value in _as_list(readings_source)]
     if len(readings) < 2:
         raise LLMResponseError("课堂包 JSON 缺少 readings，至少需要 2 条阅读资源")
     slides = [_normalize_slide(slide, index) for index, slide in enumerate(_as_list(data.get("slides") or data.get("ppt") or data.get("deck")), start=1)]
@@ -2111,6 +2265,13 @@ def _normalize_reading(raw: Any, item: LearningSyllabusItem) -> dict:
         "source": _require_text(value.get("source") or value.get("uri"), "classroom.readings[].source"),
         "keywords": keywords[:8],
     }
+
+
+def _truncate_for_prompt(value: str, max_length: int) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", "", value)
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + "\n...[已截断，保留前文供修复 JSON 结构使用]"
 
 
 def _as_list(value: Any) -> list[Any]:

@@ -2,7 +2,7 @@
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.learning import (
     AgentTaskRecord,
+    DailyLearningPlan,
     LearningProject,
     LearningProjectEvent,
     ResearchDirection,
@@ -388,6 +389,7 @@ def create_project(db: Session, user: User, request: LearningProjectCreateReques
         related_course=suggestion.related_course,
         related_knowledge_points=suggestion.related_knowledge_points,
         related_documents=suggestion.related_documents,
+        research_training={},
         status="draft",
         risk_notes=suggestion.risk_notes,
         personalization_strategy=suggestion.personalization_strategy,
@@ -412,10 +414,13 @@ def create_project(db: Session, user: User, request: LearningProjectCreateReques
     return project
 
 
-def list_projects(db: Session, user: User) -> list[LearningProjectRead]:
+def list_projects(db: Session, user: User, include_deleted: bool = False) -> list[LearningProjectRead]:
+    conditions = [LearningProject.user_id == user.id]
+    if not include_deleted:
+        conditions.append(LearningProject.status != "deleted")
     rows = db.scalars(
         select(LearningProject)
-        .where(LearningProject.user_id == user.id, LearningProject.status != "deleted")
+        .where(*conditions)
         .order_by(LearningProject.updated_at.desc())
     ).all()
     return [LearningProjectRead.model_validate(row) for row in rows]
@@ -436,8 +441,15 @@ def update_project(
 ) -> LearningProject:
     project = get_project_or_404(db, user, project_id)
     data = request.model_dump(exclude_unset=True)
+    schedule_keys = {"daily_minutes", "study_weekends", "study_weekdays"}
+    should_sync_daily_plan = bool(schedule_keys & set(data))
+    if "study_weekdays" in data:
+        data["study_weekdays"] = _normalize_project_weekdays(data["study_weekdays"], data.get("study_weekends", project.study_weekends))
     for key, value in data.items():
         setattr(project, key, value)
+    if should_sync_daily_plan:
+        project.study_weekdays = _normalize_project_weekdays(project.study_weekdays, project.study_weekends)
+        _sync_active_daily_plan_settings(db, project)
     db.add(
         LearningProjectEvent(
             project_id=project.id,
@@ -450,6 +462,81 @@ def update_project(
     db.commit()
     db.refresh(project)
     return project
+
+
+def _normalize_project_weekdays(weekdays: list[int], study_weekends: bool) -> list[int]:
+    normalized: set[int] = set()
+    for day in weekdays:
+        try:
+            value = int(day)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("study_weekdays must contain integers from 0 to 6") from exc
+        if value < 0 or value > 6:
+            raise ValueError("study_weekdays must contain integers from 0 to 6")
+        normalized.add(value)
+    if not normalized:
+        raise ValueError("study_weekdays cannot be empty")
+    if not study_weekends and any(day >= 5 for day in normalized):
+        raise ValueError("study_weekdays cannot include weekend days when study_weekends is false")
+    if study_weekends:
+        normalized.update({5, 6})
+    return sorted(normalized)
+
+
+def _sync_active_daily_plan_settings(db: Session, project: LearningProject) -> None:
+    active_plan = db.scalar(
+        select(DailyLearningPlan).where(
+            DailyLearningPlan.project_id == project.id,
+            DailyLearningPlan.user_id == project.user_id,
+            DailyLearningPlan.status == "active",
+        )
+    )
+    if active_plan is None:
+        return
+    active_plan.daily_minutes = project.daily_minutes
+    active_plan.study_weekends = project.study_weekends
+    active_plan.study_weekdays = project.study_weekdays
+    active_plan.generation_reason = f"按项目学习配置同步：每日 {project.daily_minutes} 分钟"
+    _reschedule_daily_plan_items(active_plan)
+
+
+def _reschedule_daily_plan_items(plan: DailyLearningPlan) -> None:
+    allowed_weekdays = _normalize_project_weekdays(plan.study_weekdays, plan.study_weekends)
+    start_date = _next_project_study_date(_date_floor(plan.start_date or datetime.utcnow()), allowed_weekdays)
+    plan.start_date = start_date
+    current_date = start_date
+    day_index = 1
+    used_minutes = 0
+    order_in_day = 1
+    active_items = sorted(
+        [item for item in plan.items if item.status not in {"removed", "deleted", "skipped"}],
+        key=lambda item: (item.planned_date, item.user_order, item.id),
+    )
+    for item in active_items:
+        item_minutes = max(1, int(item.estimated_minutes or plan.daily_minutes))
+        if used_minutes > 0 and used_minutes + item_minutes > plan.daily_minutes:
+            current_date = _next_project_study_date(current_date + timedelta(days=1), allowed_weekdays)
+            day_index += 1
+            used_minutes = 0
+            order_in_day = 1
+        item.planned_date = current_date
+        item.day_index = day_index
+        item.user_order = order_in_day
+        used_minutes += item_minutes
+        order_in_day += 1
+
+
+def _date_floor(value: datetime) -> datetime:
+    return datetime(value.year, value.month, value.day)
+
+
+def _next_project_study_date(value: datetime, allowed_weekdays: list[int]) -> datetime:
+    next_date = _date_floor(value)
+    for _ in range(3700):
+        if next_date.weekday() in allowed_weekdays:
+            return next_date
+        next_date += timedelta(days=1)
+    raise ValueError("cannot find a study date in configured weekdays")
 
 
 def project_home(db: Session, user: User, project_id: int) -> LearningProjectHomeResponse:
@@ -503,6 +590,20 @@ def resume_project(db: Session, user: User, project_id: int) -> LearningProject:
     return project
 
 
+def restore_project(db: Session, user: User, project_id: int) -> LearningProject:
+    project = db.get(LearningProject, project_id)
+    if project is None or project.user_id != user.id:
+        raise KeyError("project not found")
+    if project.status != "deleted":
+        raise ValueError("only deleted projects can be restored")
+    project.status = "learning"
+    project.current_stage = "项目已恢复"
+    db.add(LearningProjectEvent(project_id=project.id, user_id=user.id, event_type="restored", summary="用户恢复已删除项目。"))
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 def request_project_syllabus_regeneration(db: Session, user: User, project_id: int) -> LearningProject:
     project = get_project_or_404(db, user, project_id)
     project.status = "needs_replan"
@@ -546,6 +647,7 @@ def copy_project(db: Session, user: User, project_id: int) -> LearningProject:
         related_course=source.related_course,
         related_knowledge_points=source.related_knowledge_points,
         related_documents=source.related_documents,
+        research_training=source.research_training,
         status="draft",
         current_stage=source.current_stage,
         progress=0,

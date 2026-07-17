@@ -331,6 +331,11 @@ def generate_syllabus(
     for index, generated in enumerate(result.items, start=1):
         db.add(_item_from_generated(generated, version=version, project=project, user=user, order=index))
     db.flush()
+    next_order = len(result.items) + 1
+    for reading_item in _research_reading_items_from_project(project):
+        db.add(_item_from_research_reading(reading_item, version=version, project=project, user=user, order=next_order))
+        next_order += 1
+    db.flush()
 
     db.add(
         AgentTaskRecord(
@@ -399,6 +404,63 @@ def _item_from_generated(
         completion_criteria=generated.completion_criteria,
         assessment_method=generated.assessment_method,
         user_order=order,
+    )
+
+
+def _research_reading_items_from_project(project: LearningProject) -> list[dict]:
+    training = project.research_training or {}
+    if not training.get("enabled"):
+        return []
+    readings = training.get("reading_list")
+    if not isinstance(readings, list):
+        return []
+    return [reading for reading in readings if isinstance(reading, dict)]
+
+
+def _item_from_research_reading(
+    reading: dict,
+    *,
+    version: LearningSyllabusVersion,
+    project: LearningProject,
+    user: User,
+    order: int,
+) -> LearningSyllabusItem:
+    level = str(reading.get("level") or "paper").strip()
+    title = str(reading.get("title") or "").strip()
+    if not title:
+        raise ValueError("research reading item title is required")
+    url = str(reading.get("arxiv_url") or reading.get("doi_url") or reading.get("source_url") or "").strip()
+    source = f"{title} | {url}" if url else title
+    level_labels = {
+        "foundation": "基础论文/教程",
+        "classic": "领域经典论文",
+        "seminal": "开山论文",
+        "frontier": "科研前沿论文",
+    }
+    level_label = level_labels.get(level, level)
+    return LearningSyllabusItem(
+        syllabus_version_id=version.id,
+        project_id=project.id,
+        user_id=user.id,
+        title=f"{level_label}精读：{title}",
+        item_type="paper_reading",
+        stage=f"论文精读 · {level_label}",
+        difficulty=project.difficulty or "medium",
+        estimated_minutes=max(45, min(180, int(project.daily_minutes or 60) * 2)),
+        recommendation_reason=str(reading.get("why_read") or "科研项目要求按阅读顺序完成论文复盘。"),
+        objective=(
+            f"围绕论文《{title}》完成一份可评分复盘：核心问题、方法证据、局限、"
+            "与本人选题的关系，以及下一步计划。"
+        ),
+        prerequisites=[],
+        knowledge_points=[project.research_direction, level_label, *list(reading.get("review_focus") or [])][:8],
+        related_documents=[source],
+        recommended_resource_types=["单篇论文 PPT", "论文复盘评分", "下一步计划"],
+        classroom_types=["paper_ppt", "paper_review", "research_planning"],
+        completion_criteria="完成单篇论文 PPT 学习、例题、实操任务，并提交论文复盘总结与下一步计划。",
+        assessment_method="按详实程度、关联度、工作量、规划性、批判性思考五个维度评分。",
+        user_order=order,
+        is_manual=False,
     )
 
 

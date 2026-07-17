@@ -3,6 +3,7 @@
     <section class="workspace-hero">
       <div>
         <h2>{{ currentMeta.title }}</h2>
+        <p>{{ currentMeta.description }}</p>
       </div>
       <el-button :loading="loading" @click="loadOverview">刷新数据</el-button>
     </section>
@@ -18,6 +19,23 @@
       </section>
 
       <section v-if="mode === 'profile'" class="workspace-grid two">
+        <article class="panel-like workspace-panel wide workspace-insight-strip">
+          <div>
+            <span>画像完整度</span>
+            <strong>{{ enabledProfileEntries.length }} / {{ profileEntryOptions.length }}</strong>
+            <small>启用条目会参与推荐、出题和资源生成。</small>
+          </div>
+          <div>
+            <span>平均置信度</span>
+            <strong>{{ profileConfidenceAverage }}%</strong>
+            <small>低置信度条目建议人工确认或重新描述。</small>
+          </div>
+          <div>
+            <span>当前版本</span>
+            <strong>Revision {{ overview?.profile.current_revision || 0 }}</strong>
+            <small>每次手动或对话更新都会形成记录。</small>
+          </div>
+        </article>
         <article class="panel-like workspace-panel">
           <header>
             <strong>当前画像条目</strong>
@@ -72,8 +90,39 @@
       </section>
 
       <section v-else-if="mode === 'resources'" class="workspace-grid two">
+        <article class="panel-like workspace-panel wide workspace-insight-strip">
+          <div v-for="card in databaseHealthCards" :key="card.label">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.hint }}</small>
+          </div>
+        </article>
         <article class="panel-like workspace-panel">
-          <header><strong>课程知识库检索</strong><span>Knowledge Base</span></header>
+          <header><strong>资料上传与数据库沉淀</strong><span>Knowledge Deposit</span></header>
+          <div class="deposit-summary">
+            <div>
+              <strong>{{ overview?.resources.length || 0 }}</strong>
+              <span>生成资源</span>
+            </div>
+            <div>
+              <strong>{{ overview?.literature.length || 0 }}</strong>
+              <span>文献笔记</span>
+            </div>
+            <div>
+              <strong>{{ knowledgePoints.length }}</strong>
+              <span>知识点</span>
+            </div>
+          </div>
+          <el-upload
+            class="deposit-upload"
+            drag
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleKnowledgeUpload"
+          >
+            <strong>上传课程资料 / 论文 / 笔记</strong>
+            <small>资料会进入知识库，后续用于 RAG 问答、知识图谱和题目生成。</small>
+          </el-upload>
           <div class="knowledge-search-row">
             <el-input v-model="knowledgeQuery" placeholder="搜索知识点、实验、资料来源" @keyup.enter="handleSearchKnowledge" />
             <el-button type="primary" :loading="searchingKnowledge" :disabled="!knowledgeQuery.trim()" @click="handleSearchKnowledge">
@@ -90,19 +139,90 @@
           </div>
         </article>
 
-        <article class="panel-like workspace-panel">
-          <header><strong>课程知识点总览</strong><span>{{ knowledgePoints.length }} points</span></header>
-          <div class="knowledge-point-scroll">
-            <button v-for="point in knowledgePoints" :key="point.id" type="button" @click="searchByPoint(point.name)">
-              <strong>{{ point.name }}</strong>
-              <span>{{ point.chapter }} · {{ point.difficulty }}</span>
-              <small>{{ point.description }}</small>
+        <article class="panel-like workspace-panel knowledge-graph-panel">
+          <header><strong>3D 知识图谱</strong><span>{{ knowledgeGraphNodes.length }} nodes</span></header>
+          <div class="knowledge-graph-stage">
+            <button
+              v-for="node in knowledgeGraphNodes"
+              :key="node.id"
+              type="button"
+              class="knowledge-node"
+              :style="node.style"
+              @click="searchByPoint(node.name)"
+            >
+              <strong>{{ node.name }}</strong>
+              <span>{{ node.chapter }}</span>
             </button>
+            <i
+              v-for="edge in knowledgeGraphEdges"
+              :key="edge.id"
+              class="knowledge-edge"
+              :style="edge.style"
+            />
+          </div>
+          <small class="graph-hint">节点按章节和先修关系组织，点击节点可联动检索资料片段。</small>
+        </article>
+
+        <article class="panel-like workspace-panel">
+          <header><strong>数据库 RAG 问答</strong><span>Retrieval QA</span></header>
+          <div class="rag-scope-row">
+            <el-select v-model="ragProjectId" clearable placeholder="全部项目资料">
+              <el-option
+                v-for="project in overview?.projects || []"
+                :key="project.id"
+                :label="project.title"
+                :value="project.id"
+              />
+            </el-select>
+            <el-select v-model="ragKnowledgePoints" multiple collapse-tags collapse-tags-tooltip clearable placeholder="限定知识点">
+              <el-option v-for="point in knowledgePoints" :key="point.id" :label="point.name" :value="point.name" />
+            </el-select>
+          </div>
+          <el-input
+            v-model="ragQuestion"
+            type="textarea"
+            :rows="4"
+            placeholder="围绕已上传资料、课堂 PPT、笔记或知识点提问，例如：召回率为什么比准确率更适合跌倒检测？"
+          />
+          <div class="classroom-action-row">
+            <el-button type="primary" :loading="generatingRag" :disabled="!ragQuestion.trim()" @click="handleRagAsk">
+              基于数据库回答
+            </el-button>
+          </div>
+          <div v-if="ragAnswer" class="rag-answer">
+            <strong>回答</strong>
+            <p>{{ ragAnswer }}</p>
+            <div v-if="ragResponse?.related_points.length" class="rag-tags">
+              <el-tag v-for="point in ragResponse.related_points" :key="point" size="small" @click="searchByPoint(point)">
+                {{ point }}
+              </el-tag>
+            </div>
+            <small>
+              {{ ragResponse?.used_llm ? '由后端 RAG 结合大模型生成' : '由后端 RAG 检索结果生成' }}
+              · 置信度 {{ ragResponse?.confidence || 'medium' }}
+            </small>
+            <div v-if="ragResponse?.citations.length" class="citation-list">
+              <div v-for="(citation, index) in ragResponse.citations" :key="citation.id" class="citation-card">
+                <span>来源 {{ index + 1 }} · {{ citation.source_type }}</span>
+                <strong>{{ citation.title }}</strong>
+                <p>{{ citation.content }}</p>
+                <small>{{ citation.knowledge_point || citation.document_type }} {{ citation.section_title ? `· ${citation.section_title}` : '' }} {{ citation.page_no ? `· 第 ${citation.page_no} 页` : '' }} {{ citation.slide_no ? `· 第 ${citation.slide_no} 页` : '' }}</small>
+                <div class="citation-actions">
+                  <el-button size="small" @click="locateCitation(citation)">定位片段</el-button>
+                  <el-button v-if="citation.review_url" size="small" @click="openCitationReview(citation)">回看材料</el-button>
+                </div>
+              </div>
+            </div>
+            <div v-if="ragResponse?.follow_up_questions.length" class="follow-up-list">
+              <button v-for="question in ragResponse.follow_up_questions" :key="question" type="button" @click="ragQuestion = question">
+                {{ question }}
+              </button>
+            </div>
           </div>
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>生成资源</strong><span>{{ overview?.resources.length || 0 }} items</span></header>
+          <header><strong>沉淀内容</strong><span>{{ overview?.resources.length || 0 }} items</span></header>
           <div class="resource-list">
             <div v-for="resource in overview?.resources || []" :key="resource.id" class="resource-card">
               <span>{{ resource.resource_type }}</span>
@@ -111,58 +231,102 @@
               <small>{{ formatDate(resource.created_at) }}</small>
             </div>
           </div>
-          <el-empty v-if="!overview?.resources.length" description="还没有生成资源。项目构建后系统会在后台按学习清单预生成课堂、课件、图解、演示和语音稿。" />
+          <el-empty v-if="!overview?.resources.length" description="还没有沉淀内容。可以先上传资料，或从学习清单进入课堂生成 PPT、图解、演示和笔记。" />
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>Agent 生成轨迹</strong><span>Trace</span></header>
-          <div class="agent-trace-list">
-            <div v-for="task in overview?.agent_tasks || []" :key="`${task.agent}-${task.output_summary}-${task.latency_ms}`">
-              <el-tag :type="task.status === 'completed' || task.status === 'done' ? 'success' : task.status === 'failed' ? 'danger' : 'warning'" size="small">
-                {{ task.status }}
-              </el-tag>
-              <strong>{{ task.agent }}</strong>
-              <p>{{ task.output_summary }}</p>
-              <small>{{ task.input_summary }}</small>
-            </div>
+          <header><strong>知识点索引</strong><span>{{ knowledgePoints.length }} points</span></header>
+          <div class="knowledge-point-scroll compact">
+            <button v-for="point in knowledgePoints" :key="point.id" type="button" @click="searchByPoint(point.name)">
+              <strong>{{ point.name }}</strong>
+              <span>{{ point.chapter }} · {{ point.difficulty }}</span>
+              <small>{{ point.description }}</small>
+            </button>
           </div>
         </article>
       </section>
 
       <section v-else-if="mode === 'assessment'" class="workspace-grid two">
+        <article class="panel-like workspace-panel wide workspace-insight-strip">
+          <div>
+            <span>薄弱点候选</span>
+            <strong>{{ weakPointOptions.length }}</strong>
+            <small>来自画像条目和知识库知识点。</small>
+          </div>
+          <div>
+            <span>已选薄弱点</span>
+            <strong>{{ selectedWeakPoints.length }}</strong>
+            <small>每个薄弱点会按题型生成练习。</small>
+          </div>
+          <div>
+            <span>资料范围</span>
+            <strong>{{ exerciseProjectId ? '项目内' : '全部' }}</strong>
+            <small>可限定项目资料，减少题目跑偏。</small>
+          </div>
+        </article>
         <article class="panel-like workspace-panel">
-          <header><strong>最近提交</strong><span>Evidence</span></header>
-          <div class="submission-list">
-            <div v-for="submission in overview?.submissions || []" :key="submission.id">
-              <strong>{{ submission.submission_type }} · {{ submission.score }} 分</strong>
-              <el-tag :type="submission.passed ? 'success' : 'warning'" size="small">
-                {{ submission.passed ? '通过' : '待改进' }}
-              </el-tag>
-              <p>{{ submission.feedback }}</p>
-              <small>{{ formatDate(submission.created_at) }}</small>
+          <header><strong>选择薄弱点</strong><span>Weak Points</span></header>
+          <div class="exercise-control-grid">
+            <el-select v-model="exerciseProjectId" clearable placeholder="全部项目资料">
+              <el-option
+                v-for="project in overview?.projects || []"
+                :key="project.id"
+                :label="project.title"
+                :value="project.id"
+              />
+            </el-select>
+            <el-segmented
+              v-model="exerciseDifficulty"
+              :options="[
+                { label: '基础', value: 'easy' },
+                { label: '适中', value: 'medium' },
+                { label: '进阶', value: 'hard' }
+              ]"
+            />
+            <el-input-number v-model="exerciseCountPerPoint" :min="1" :max="3" controls-position="right" />
+          </div>
+          <el-checkbox-group v-model="selectedWeakPoints" class="weak-point-picker">
+            <el-checkbox-button v-for="point in weakPointOptions" :key="point" :label="point" />
+          </el-checkbox-group>
+          <header class="sub-header"><strong>题型</strong><span>Question Types</span></header>
+          <el-checkbox-group v-model="selectedQuestionTypes" class="question-type-picker">
+            <el-checkbox label="choice">选择题</el-checkbox>
+            <el-checkbox label="judgement">判断题</el-checkbox>
+            <el-checkbox label="short">简答题</el-checkbox>
+          </el-checkbox-group>
+          <div class="classroom-action-row">
+            <el-button type="primary" :loading="generatingExercises" :disabled="!selectedWeakPoints.length" @click="handleGenerateExercises">
+              智能生成练习题
+            </el-button>
+          </div>
+        </article>
+        <article class="panel-like workspace-panel">
+          <header><strong>生成结果</strong><span>{{ generatedQuestions.length }} questions</span></header>
+          <div v-if="exerciseSourceSummary" class="exercise-source-summary">
+            <span>{{ exerciseUsedLlm ? '模型生成' : '规则生成' }}</span>
+            <p>{{ exerciseSourceSummary }}</p>
+          </div>
+          <div class="exercise-list">
+            <div v-for="question in generatedQuestions" :key="question.id">
+              <div class="exercise-card-head">
+                <el-tag size="small">{{ questionTypeLabel(question.type) }}</el-tag>
+                <span>{{ question.difficulty }}</span>
+              </div>
+              <strong>{{ question.prompt }}</strong>
+              <ol v-if="question.options?.length">
+                <li v-for="option in question.options" :key="option">{{ option }}</li>
+              </ol>
+              <small>关联薄弱点：{{ question.point }} · 参考答案：{{ question.answer }}</small>
+              <p v-if="question.explanation" class="exercise-explanation">{{ question.explanation }}</p>
+              <small v-if="question.source_title" class="exercise-source">依据：{{ question.source_title }} {{ question.source_excerpt ? `· ${question.source_excerpt}` : '' }}</small>
             </div>
           </div>
+          <el-empty v-if="!generatedQuestions.length" description="请选择薄弱点和题型后生成针对性练习。" />
         </article>
         <article class="panel-like workspace-panel">
-          <header><strong>动态优化建议</strong><span>Next Action</span></header>
+          <header><strong>最近练习证据</strong><span>Evidence</span></header>
           <div class="workspace-list">
             <p v-for="item in assessmentSuggestions" :key="item">{{ item }}</p>
-          </div>
-        </article>
-      </section>
-
-      <section v-else-if="mode === 'tutor'" class="workspace-grid two">
-        <article class="panel-like workspace-panel">
-          <header><strong>智能辅导入口</strong><span>Tutor Flow</span></header>
-          <div class="module-action-strip">
-            <el-button type="primary" @click="router.push({ name: 'projects' })">进入项目</el-button>
-            <el-button @click="router.push({ name: 'daily-plan' })">查看计划</el-button>
-          </div>
-        </article>
-        <article class="panel-like workspace-panel">
-          <header><strong>最近 Agent 回答</strong><span>DialogueAgent</span></header>
-          <div class="workspace-list">
-            <p v-for="task in tutorTasks" :key="`${task.agent}-${task.output_summary}`">{{ task.output_summary }}</p>
           </div>
         </article>
       </section>
@@ -306,23 +470,30 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  askDatabase,
   createLiterature,
+  generatePracticeQuestions,
   getWorkspaceOverview,
+  importKnowledgePackage,
   listKnowledgePoints,
   searchKnowledge,
   runResearchTool,
   updateLiterature,
   updateProfileEntry,
   updateProfileByDialogue,
+  type DatabaseAskResponse,
+  type DatabaseCitation,
   type KnowledgePointRead,
   type KnowledgeSearchHit,
+  type PracticeQuestionRead,
   type ProfileEntryRead,
   type LiteraturePaperRead,
   type WorkspaceOverviewResponse
 } from '../services/apiClient'
 
-type Mode = 'profile' | 'resources' | 'tutor' | 'assessment' | 'literature' | 'writing' | 'methods'
+type Mode = 'profile' | 'resources' | 'assessment' | 'literature' | 'writing' | 'methods'
 type ToolType = 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce' | 'topic' | 'defense' | 'paper_reading'
+type GeneratedQuestion = PracticeQuestionRead
 
 const props = defineProps<{ mode: Mode }>()
 const router = useRouter()
@@ -331,13 +502,28 @@ const savingLiterature = ref(false)
 const runningTool = ref(false)
 const updatingProfile = ref(false)
 const searchingKnowledge = ref(false)
+const generatingRag = ref(false)
+const generatingExercises = ref(false)
 const savingProfileEntry = ref(false)
 const overview = ref<WorkspaceOverviewResponse | null>(null)
 const profileMessage = ref('')
 const knowledgeQuery = ref('')
+const ragQuestion = ref('')
+const ragAnswer = ref('')
+const ragResponse = ref<DatabaseAskResponse | null>(null)
+const ragProjectId = ref<number | null>(null)
+const ragKnowledgePoints = ref<string[]>([])
 const knowledgeHits = ref<KnowledgeSearchHit[]>([])
 const knowledgePoints = ref<KnowledgePointRead[]>([])
 const profileDrawerVisible = ref(false)
+const selectedWeakPoints = ref<string[]>([])
+const selectedQuestionTypes = ref(['choice', 'judgement'])
+const generatedQuestions = ref<GeneratedQuestion[]>([])
+const exerciseProjectId = ref<number | null>(null)
+const exerciseDifficulty = ref<'easy' | 'medium' | 'hard'>('medium')
+const exerciseCountPerPoint = ref(1)
+const exerciseSourceSummary = ref('')
+const exerciseUsedLlm = ref(false)
 const literatureForm = reactive({ title: '', authors: '', venue: '', year: '', abstract: '' })
 const toolForm = reactive({
   tool_type: 'polish' as ToolType,
@@ -353,10 +539,9 @@ const profileEntryForm = reactive({
 })
 
 const metaMap: Record<Mode, { eyebrow: string; title: string; description: string }> = {
-  profile: { eyebrow: 'Profile', title: '学习画像', description: '后台化维护画像条目、版本和个性化调用建议。' },
-  resources: { eyebrow: 'Resources', title: '资源中心', description: '集中查看课堂 PPT、互动演示、语音稿和多智能体生成记录。' },
-  tutor: { eyebrow: 'Tutor', title: '智能辅导', description: '课堂内持续追问，回答会进入学习证据。' },
-  assessment: { eyebrow: 'Assessment', title: '练习评估', description: '汇总课堂测验、实操和复盘反馈，形成下一步优化建议。' },
+  profile: { eyebrow: 'Profile', title: '学习画像', description: '沉淀学生近期学习行为、薄弱点、资源偏好和画像版本，用于后续个性化推荐。' },
+  resources: { eyebrow: 'Knowledge Database', title: '数据库', description: '集中管理上传资料、学习笔记、课堂生成 PPT 和知识点关系，并提供基于资料库的 RAG 问答。' },
+  assessment: { eyebrow: 'Exercise Generator', title: '练习题目生成', description: '根据学习画像中的薄弱点生成选择题、判断题和简答题，形成针对性训练。' },
   literature: { eyebrow: 'Literature', title: '文献知识库', description: '保存论文、资料、摘要、引用文本和阅读状态。' },
   writing: { eyebrow: 'Writing', title: '论文写作', description: '提供选题凝练、综述写作、论文润色、引用规范和模拟答辩。' },
   methods: { eyebrow: 'Methods', title: '科研方法', description: '围绕实验设计、论文复现、评估指标和学术规范生成学习建议。' }
@@ -366,14 +551,76 @@ const metrics = computed(() => {
   const data = overview.value?.metrics || {}
   return [
     { label: '项目', value: data.projects || 0 },
-    { label: '资源', value: data.resources || 0 },
-    { label: 'Agent任务', value: data.agent_tasks || 0 },
-    { label: '提交记录', value: data.submissions || 0 },
+    { label: '沉淀资源', value: data.resources || 0 },
+    { label: '智能体记录', value: data.agent_tasks || 0 },
+    { label: '练习证据', value: data.submissions || 0 },
     { label: '文献', value: data.literature || 0 }
   ]
 })
 const profileEntries = computed(() => overview.value?.profile.entries || [])
-const tutorTasks = computed(() => (overview.value?.agent_tasks || []).filter((task) => task.agent.includes('Dialogue')).slice(0, 8))
+const enabledProfileEntries = computed(() => profileEntries.value.filter((entry) => entry.is_enabled))
+const profileConfidenceAverage = computed(() => {
+  if (!profileEntries.value.length) return 0
+  const total = profileEntries.value.reduce((sum, entry) => sum + Number(entry.confidence || 0), 0)
+  return Math.round(total / profileEntries.value.length)
+})
+const databaseHealthCards = computed(() => [
+  { label: '课堂资源', value: overview.value?.resources.length || 0, hint: '可用于回看和问答' },
+  { label: '文献笔记', value: overview.value?.literature.length || 0, hint: '支撑科研写作' },
+  { label: '知识点', value: knowledgePoints.value.length, hint: '驱动检索和出题' },
+  { label: '命中片段', value: knowledgeHits.value.length, hint: '当前检索结果' }
+])
+const weakPointOptions = computed(() => {
+  const entry = profileEntries.value.find((item) => item.key === 'weak_points')
+  const raw = entry?.value
+  const values = Array.isArray(raw) ? raw : String(raw || '').split(/[、,，/]/)
+  const fallback = knowledgePoints.value.slice(0, 6).map((item) => item.name)
+  return Array.from(new Set([...values, ...fallback].map((item) => String(item).trim()).filter(Boolean))).slice(0, 10)
+})
+const knowledgeGraphNodes = computed(() => {
+  const points = knowledgePoints.value.slice(0, 12)
+  const radiusX = 38
+  const radiusY = 30
+  return points.map((point, index) => {
+    const angle = (index / Math.max(1, points.length)) * Math.PI * 2
+    const depth = Math.sin(angle)
+    const x = 50 + Math.cos(angle) * radiusX
+    const y = 50 + Math.sin(angle) * radiusY
+    const scale = 0.86 + (depth + 1) * 0.12
+    return {
+      id: point.id,
+      name: point.name,
+      chapter: point.chapter,
+      style: {
+        left: `${x}%`,
+        top: `${y}%`,
+        transform: `translate(-50%, -50%) scale(${scale}) translateZ(${Math.round(depth * 42)}px)`,
+        zIndex: String(20 + Math.round(depth * 10))
+      }
+    }
+  })
+})
+const knowledgeGraphEdges = computed(() => {
+  const nodes = knowledgeGraphNodes.value
+  return nodes.slice(0, Math.max(0, nodes.length - 1)).map((node, index) => {
+    const next = nodes[index + 1]
+    const x1 = Number(String(node.style.left).replace('%', ''))
+    const y1 = Number(String(node.style.top).replace('%', ''))
+    const x2 = Number(String(next.style.left).replace('%', ''))
+    const y2 = Number(String(next.style.top).replace('%', ''))
+    const length = Math.hypot(x2 - x1, y2 - y1)
+    const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI
+    return {
+      id: `${node.id}-${next.id}`,
+      style: {
+        left: `${x1}%`,
+        top: `${y1}%`,
+        width: `${length}%`,
+        transform: `rotate(${angle}deg)`
+      }
+    }
+  })
+})
 const assessmentSuggestions = computed(() => {
   const failed = (overview.value?.submissions || []).filter((item) => !item.passed).slice(0, 4)
   if (!failed.length) return ['最近提交整体通过，可以继续推进下一项课堂。', '建议保持复盘习惯，用证据更新画像。']
@@ -430,6 +677,7 @@ async function loadOverview() {
   try {
     const { data } = await getWorkspaceOverview()
     overview.value = data
+    if (!selectedWeakPoints.value.length) selectedWeakPoints.value = weakPointOptions.value.slice(0, 2)
     hydratePendingToolDraft()
   } finally {
     loading.value = false
@@ -442,6 +690,77 @@ async function loadKnowledgePoints() {
   if (!knowledgeQuery.value && data.length) {
     knowledgeQuery.value = data[0].name
     await handleSearchKnowledge()
+  }
+}
+
+async function handleKnowledgeUpload(uploadFile: any) {
+  const raw = uploadFile?.raw as File | undefined
+  if (!raw) return
+  try {
+    await importKnowledgePackage(raw, {
+      course_code: 'USER-DEPOSIT',
+      course_title: '用户资料沉淀库',
+      use_ocr: true,
+      rebuild_course: false
+    })
+    ElMessage.success('资料已提交解析，解析完成后会进入数据库沉淀。')
+    await loadOverview()
+  } catch {
+    ElMessage.warning('资料上传未完成，请检查后端模型 Key 或文件格式后重试。')
+  }
+}
+
+async function handleRagAsk() {
+  generatingRag.value = true
+  try {
+    const { data } = await askDatabase({
+      question: ragQuestion.value,
+      project_id: ragProjectId.value,
+      knowledge_points: ragKnowledgePoints.value,
+      limit: 8
+    })
+    ragResponse.value = data
+    ragAnswer.value = data.answer
+    knowledgeHits.value = data.citations.map(citationToKnowledgeHit)
+  } finally {
+    generatingRag.value = false
+  }
+}
+
+function citationToKnowledgeHit(citation: DatabaseCitation): KnowledgeSearchHit {
+  return {
+    chunk_id: citation.id.startsWith('chunk:') ? Number(citation.id.replace('chunk:', '')) : null,
+    document_title: citation.title,
+    document_type: citation.document_type,
+    knowledge_point: citation.knowledge_point,
+    content: citation.content,
+    source_uri: citation.source_uri,
+    keywords: citation.knowledge_point ? [citation.knowledge_point] : [],
+    page_no: citation.page_no,
+    slide_no: citation.slide_no,
+    section_title: citation.section_title,
+    distance: citation.score,
+    keyword_hit: null
+  }
+}
+
+async function handleGenerateExercises() {
+  if (!selectedWeakPoints.value.length) return
+  generatingExercises.value = true
+  try {
+    const { data } = await generatePracticeQuestions({
+      weak_points: selectedWeakPoints.value,
+      question_types: selectedQuestionTypes.value.length ? selectedQuestionTypes.value : ['choice'],
+      project_id: exerciseProjectId.value,
+      difficulty: exerciseDifficulty.value,
+      count_per_point: exerciseCountPerPoint.value
+    })
+    generatedQuestions.value = data.questions
+    exerciseSourceSummary.value = data.source_summary
+    exerciseUsedLlm.value = data.used_llm
+    ElMessage.success(data.used_llm ? '练习题已结合画像和资料库生成' : '已生成基础练习题，可配置 QWEN_API_KEY 启用模型生成')
+  } finally {
+    generatingExercises.value = false
   }
 }
 
@@ -533,6 +852,25 @@ function searchByPoint(point: string) {
   void handleSearchKnowledge()
 }
 
+function locateCitation(citation: DatabaseCitation) {
+  knowledgeQuery.value = citation.knowledge_point || citation.title
+  const focused = citationToKnowledgeHit(citation)
+  knowledgeHits.value = [
+    focused,
+    ...knowledgeHits.value.filter((hit) => hit.content !== focused.content)
+  ].slice(0, 8)
+  ElMessage.success('已定位到答案来源片段，可以在资料检索区继续复习。')
+}
+
+function openCitationReview(citation: DatabaseCitation) {
+  locateCitation(citation)
+  if (citation.review_url.startsWith('/api/classroom-resources/')) {
+    window.open(citation.review_url, '_blank')
+    return
+  }
+  ElMessage.info('知识库片段已在当前页面定位。')
+}
+
 async function handleUpdateProfile() {
   updatingProfile.value = true
   try {
@@ -585,6 +923,15 @@ function readingStatusLabel(status: string) {
     cited: '已引用'
   }
   return labels[status] || status
+}
+
+function questionTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    choice: '选择题',
+    judgement: '判断题',
+    short: '简答题'
+  }
+  return labels[type] || type
 }
 
 function hydratePendingToolDraft() {

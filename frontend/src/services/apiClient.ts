@@ -5,6 +5,12 @@ const TOKEN_KEY = 'access_token'
 const USER_KEY = 'current_user'
 const GENERATION_TIMEOUT_MS = 180000
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipErrorPopup?: boolean
+  }
+}
+
 export const api = axios.create({
   baseURL: '/api',
   timeout: 120000
@@ -19,6 +25,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<{ detail?: string | Record<string, unknown> }>) => {
+    if (error.config?.skipErrorPopup) return Promise.reject(error)
+
     const method = error.config?.method?.toUpperCase() || 'GET'
     const url = error.config?.url || '-'
     const status = error.response?.status || 'NETWORK'
@@ -125,6 +133,7 @@ export interface LearningProjectRead {
   related_course: string
   related_knowledge_points: string[]
   related_documents: string[]
+  research_training: Record<string, any>
   status: string
   current_stage: string
   progress: number
@@ -372,6 +381,25 @@ export interface ResearchToolRunRead {
   created_at: string
 }
 
+export interface PracticeQuestionRead {
+  id: string
+  type: 'choice' | 'judgement' | 'short' | string
+  point: string
+  prompt: string
+  options: string[]
+  answer: string
+  explanation: string
+  source_title: string
+  source_excerpt: string
+  difficulty: string
+}
+
+export interface PracticeGenerateResponse {
+  questions: PracticeQuestionRead[]
+  used_llm: boolean
+  source_summary: string
+}
+
 export interface AgentTraceRead {
   agent: string
   status: string
@@ -451,6 +479,57 @@ export interface KnowledgeImportJobRead {
   updated_at: string
 }
 
+export interface DatabaseCitation {
+  id: string
+  source_type: string
+  title: string
+  document_type: string
+  knowledge_point: string
+  content: string
+  source_uri: string
+  page_no?: number | null
+  slide_no?: number | null
+  section_title: string
+  score?: number | null
+  review_url: string
+}
+
+export interface DatabaseAskResponse {
+  answer: string
+  citations: DatabaseCitation[]
+  related_points: string[]
+  follow_up_questions: string[]
+  confidence: 'low' | 'medium' | 'high' | string
+  used_llm: boolean
+}
+
+export interface DatabaseGraphNode {
+  id: string
+  name: string
+  category: string
+  description: string
+  count: number
+}
+
+export interface DatabaseGraphEdge {
+  source: string
+  target: string
+  relation: string
+}
+
+export interface DatabaseGraphResponse {
+  nodes: DatabaseGraphNode[]
+  edges: DatabaseGraphEdge[]
+}
+
+export interface DatabaseNodeDetailResponse {
+  name: string
+  description: string
+  citations: DatabaseCitation[]
+  related_points: string[]
+  suggested_questions: string[]
+}
+
 export function saveAuth(payload: TokenResponse) {
   localStorage.setItem(TOKEN_KEY, payload.access_token)
   localStorage.setItem(USER_KEY, JSON.stringify(payload.user))
@@ -463,7 +542,13 @@ export function clearAuth() {
 
 export function readStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY)
-  return raw ? (JSON.parse(raw) as User) : null
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as User
+  } catch {
+    clearAuth()
+    return null
+  }
 }
 
 export function loginUser(username: string, password: string) {
@@ -485,6 +570,13 @@ export function registerUser(payload: {
 
 export function getCurrentUser() {
   return api.get<User>('/auth/me')
+}
+
+export function getCurrentUserSilently() {
+  return api.get<User>('/auth/me', {
+    timeout: 8000,
+    skipErrorPopup: true
+  })
 }
 
 export function updateCurrentUser(payload: Partial<User>) {
@@ -615,8 +707,12 @@ export function parseProjectPlanAttachment(file: File) {
   })
 }
 
-export function listLearningProjects() {
-  return api.get<LearningProjectRead[]>('/learning-projects')
+export function listLearningProjects(options: { includeDeleted?: boolean } = {}) {
+  return api.get<LearningProjectRead[]>('/learning-projects', {
+    params: {
+      include_deleted: options.includeDeleted || undefined
+    }
+  })
 }
 
 export function archiveLearningProject(projectId: number) {
@@ -629,6 +725,26 @@ export function pauseLearningProject(projectId: number) {
 
 export function resumeLearningProject(projectId: number) {
   return api.post<LearningProjectRead>(`/learning-projects/${projectId}/resume`)
+}
+
+export function restoreLearningProject(projectId: number) {
+  return api.post<LearningProjectRead>(`/learning-projects/${projectId}/restore`)
+}
+
+export function updateLearningProject(projectId: number, payload: Partial<{
+  title: string
+  learning_goal: string
+  expected_output: string
+  recommended_period: string
+  daily_minutes: number
+  study_weekends: boolean
+  study_weekdays: number[]
+  difficulty: string
+  status: string
+  deadline: string | null
+  teacher_notes: string
+}>) {
+  return api.patch<LearningProjectRead>(`/learning-projects/${projectId}`, payload)
 }
 
 export function copyLearningProject(projectId: number) {
@@ -874,6 +990,18 @@ export function runResearchTool(payload: {
   })
 }
 
+export function generatePracticeQuestions(payload: {
+  weak_points: string[]
+  question_types: string[]
+  project_id?: number | null
+  difficulty?: 'easy' | 'medium' | 'hard'
+  count_per_point?: number
+}) {
+  return api.post<PracticeGenerateResponse>('/workspace/practice/generate', payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
 export function listKnowledgePoints() {
   return api.get<KnowledgePointRead[]>('/course/knowledge-points')
 }
@@ -886,6 +1014,36 @@ export function searchKnowledgeEnhanced(query: string, limit = 8) {
   return api.post<KnowledgeSearchHit[]>('/course/knowledge/search/enhanced', { query, limit }, {
     timeout: GENERATION_TIMEOUT_MS
   })
+}
+
+export function askDatabase(payload: {
+  question: string
+  project_id?: number | null
+  knowledge_points?: string[]
+  limit?: number
+}) {
+  return api.post<DatabaseAskResponse>('/database/ask', payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
+}
+
+export function getDatabaseGraph(payload: {
+  project_id?: number | null
+  scope?: 'all' | 'project'
+} = {}) {
+  return api.get<DatabaseGraphResponse>('/database/graph', {
+    params: payload
+  })
+}
+
+export function getDatabaseNodeDetail(name: string, projectId?: number | null) {
+  return api.get<DatabaseNodeDetailResponse>(`/database/nodes/${encodeURIComponent(name)}`, {
+    params: { project_id: projectId || undefined }
+  })
+}
+
+export function getDatabaseChunkReview(chunkId: number) {
+  return api.get(`/database/chunks/${chunkId}/review`)
 }
 
 export function importKnowledgePackage(file: File, payload: {

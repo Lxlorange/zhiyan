@@ -42,6 +42,46 @@ def create_user(db: Session, payload: UserCreate) -> User:
     return user
 
 
+def seed_demo_users(db: Session) -> None:
+    demo_users = [
+        {
+            "username": "student01",
+            "email": "student01@example.com",
+            "full_name": "演示学生",
+            "role": "student",
+            "password": "password123",
+        },
+        {
+            "username": "teacher01",
+            "email": "teacher01@example.com",
+            "full_name": "演示教师",
+            "role": "teacher",
+            "password": "password123",
+        },
+    ]
+    for item in demo_users:
+        existing = get_user_by_identity(db, item["username"])
+        if existing:
+            existing.email = item["email"]
+            existing.full_name = item["full_name"]
+            existing.role = item["role"]
+            existing.hashed_password = hash_password(item["password"])
+            existing.is_active = True
+            continue
+        if get_user_by_identity(db, item["email"]):
+            continue
+        db.add(
+            User(
+                username=item["username"],
+                email=item["email"],
+                full_name=item["full_name"],
+                role=item["role"],
+                hashed_password=hash_password(item["password"]),
+            )
+        )
+    db.commit()
+
+
 def update_user_profile(db: Session, user: User, payload: UserUpdate) -> User:
     changes = payload.model_dump(exclude_unset=True)
     next_email = changes.get("email")

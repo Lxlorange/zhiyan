@@ -12,6 +12,7 @@ from pypdf.errors import PdfReadError
 
 MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 60000
+MAX_RETURNED_TEXT_CHARS = 52000
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".java", ".ts", ".js", ".html", ".css"}
 
 
@@ -54,7 +55,7 @@ async def parse_project_plan_attachment(file: UploadFile) -> ParsedAttachment:
             content_type=content_type,
             size=size,
             parser="text",
-            text=_validate_text_size(text, filename),
+            text=_fit_text_size(text, filename),
         )
 
     if extension == ".pdf" or content_type == "application/pdf":
@@ -64,7 +65,7 @@ async def parse_project_plan_attachment(file: UploadFile) -> ParsedAttachment:
             content_type=content_type,
             size=size,
             parser="pdf",
-            text=_validate_text_size(text, filename),
+            text=_fit_text_size(text, filename),
             page_count=page_count,
         )
 
@@ -110,10 +111,25 @@ def _extract_pdf_text(content: bytes, filename: str) -> tuple[str, int]:
     return text, len(reader.pages)
 
 
-def _validate_text_size(text: str, filename: str) -> str:
-    if len(text) > MAX_EXTRACTED_CHARS:
+def _fit_text_size(text: str, filename: str) -> str:
+    if len(text) <= MAX_RETURNED_TEXT_CHARS:
+        return text
+
+    notice = (
+        f"【系统提示】附件 {filename} 原始提取正文 {len(text)} 字，"
+        f"已自动节选为 {MAX_RETURNED_TEXT_CHARS} 字以内供项目规划使用；"
+        "保留了文档开头和结尾，建议规划时优先参考这些已提取内容。\n\n"
+    )
+    remaining = MAX_RETURNED_TEXT_CHARS - len(notice)
+    if remaining <= 1000:
         raise AttachmentParseError(
             f"附件正文过长：{filename} 提取 {len(text)} 字，当前上限 {MAX_EXTRACTED_CHARS} 字。请拆分资料或上传节选。",
             413,
         )
-    return text
+
+    head_chars = int(remaining * 0.68)
+    tail_chars = remaining - head_chars
+    omitted = len(text) - head_chars - tail_chars
+    divider = f"\n\n【中间内容已省略 {omitted} 字】\n\n"
+    head_chars = max(0, head_chars - len(divider))
+    return f"{notice}{text[:head_chars].rstrip()}{divider}{text[-tail_chars:].lstrip()}"

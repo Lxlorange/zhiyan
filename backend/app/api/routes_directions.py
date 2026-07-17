@@ -48,6 +48,7 @@ from app.services.direction_service import (
     regenerate_direction,
     request_project_syllabus_regeneration,
     review_direction,
+    restore_project,
     resume_project,
     share_project,
     update_project,
@@ -335,8 +336,12 @@ def learning_project_create(
 
 
 @router.get("/learning-projects", response_model=list[LearningProjectRead])
-def learning_projects(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[LearningProjectRead]:
-    return list_projects(db, user)
+def learning_projects(
+    include_deleted: bool = False,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LearningProjectRead]:
+    return list_projects(db, user, include_deleted=include_deleted)
 
 
 @router.get("/learning-projects/{project_id}", response_model=LearningProjectRead)
@@ -374,6 +379,8 @@ def learning_project_update(
         return LearningProjectRead.model_validate(update_project(db, user, project_id, request))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/learning-projects/{project_id}/archive", response_model=LearningProjectRead)
@@ -422,6 +429,20 @@ def learning_project_resume(
         return LearningProjectRead.model_validate(resume_project(db, user, project_id))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="project not found") from exc
+
+
+@router.post("/learning-projects/{project_id}/restore", response_model=LearningProjectRead)
+def learning_project_restore(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LearningProjectRead:
+    try:
+        return LearningProjectRead.model_validate(restore_project(db, user, project_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/learning-projects/{project_id}/request-syllabus-regeneration", response_model=LearningProjectRead)
