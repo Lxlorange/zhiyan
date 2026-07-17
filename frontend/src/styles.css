@@ -8013,6 +8013,101 @@ body::after {
   opacity: 1 !important;
 }
 
+/* Final project-detail overrides */
+.project-detail-panel .project-dashboard-grid {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 0.34fr) minmax(0, 1fr) !important;
+  gap: 18px !important;
+  border-top: 1px solid var(--study-rule) !important;
+  border-left: 0 !important;
+}
+
+.project-detail-panel .project-dashboard-grid > div {
+  min-height: auto !important;
+  padding: 16px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--study-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.project-detail-panel .project-config-card {
+  align-content: start !important;
+}
+
+.project-detail-panel .project-config-form {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px 12px !important;
+}
+
+.project-detail-panel .project-config-summary {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+
+.project-detail-panel .project-config-edit {
+  min-height: 0 !important;
+}
+
+.todo-load-more {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+  padding: 16px 0 !important;
+  color: var(--study-ink-soft) !important;
+}
+
+@media (max-width: 720px) {
+  .project-detail-panel .project-dashboard-grid,
+  .project-detail-panel .project-config-form {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Final syllabus overview density overrides */
+.syllabus-overview .syllabus-meta-list {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.syllabus-overview .syllabus-meta-list > div {
+  min-height: auto !important;
+  padding: 10px 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--study-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.syllabus-overview .syllabus-meta-list span {
+  display: block !important;
+  margin-bottom: 4px !important;
+}
+
+.syllabus-overview .syllabus-meta-list strong {
+  display: block !important;
+  margin: 0 !important;
+  font-size: 16px !important;
+  line-height: 1.25 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.syllabus-overview .syllabus-stage-nav {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .syllabus-overview .syllabus-meta-list {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
 /* Project overview/detail lock */
 .project-home-page {
   display: grid !important;
@@ -8147,26 +8242,26 @@ body::after {
 
 .project-card-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
-  gap: 14px !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
 }
 
 .project-overview-card {
   position: relative !important;
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
-  gap: 12px !important;
-  align-items: start !important;
-  min-height: 176px !important;
+  grid-template-columns: 34px minmax(0, 1fr) auto !important;
+  gap: 16px !important;
+  align-items: center !important;
+  min-height: 92px !important;
   border: 1px solid rgba(33, 47, 41, 0.1) !important;
-  border-radius: 20px !important;
+  border-radius: 16px !important;
   background: rgba(255, 253, 248, 0.88) !important;
-  padding: 18px !important;
+  padding: 14px 16px !important;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease !important;
 }
 
 .project-overview-card:hover {
-  transform: translateY(-2px) !important;
+  transform: translateX(2px) !important;
   border-color: rgba(15, 95, 84, 0.28) !important;
   box-shadow: var(--study-shadow-soft) !important;
 }
@@ -8177,17 +8272,17 @@ body::after {
 }
 
 .project-select-checkbox {
-  position: absolute !important;
-  top: 14px !important;
-  left: 14px !important;
-  z-index: 2 !important;
+  position: static !important;
+  z-index: 1 !important;
 }
 
 .project-card-main {
   display: grid !important;
-  gap: 11px !important;
+  grid-template-columns: minmax(130px, 0.26fr) minmax(0, 1fr) minmax(150px, 0.32fr) !important;
+  align-items: center !important;
+  gap: 14px !important;
   min-width: 0 !important;
-  padding: 20px 0 0 !important;
+  padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
   text-align: left !important;
@@ -8200,14 +8295,16 @@ body::after {
 
 .project-card-main strong {
   color: var(--study-ink) !important;
-  font-size: clamp(20px, 2vw, 26px) !important;
-  line-height: 1.18 !important;
+  font-size: clamp(18px, 1.7vw, 22px) !important;
+  line-height: 1.22 !important;
   overflow-wrap: anywhere !important;
 }
 
 .project-card-main small {
   color: var(--study-ink-soft) !important;
   font-size: 13px !important;
+  justify-self: end !important;
+  text-align: right !important;
 }
 
 .project-card-tag {
@@ -8218,10 +8315,16 @@ body::after {
 
 .project-card-controls {
   display: flex !important;
-  align-items: flex-end !important;
-  flex-direction: column !important;
+  align-items: center !important;
+  flex-direction: row !important;
+  justify-content: flex-end !important;
   gap: 10px !important;
-  min-width: 92px !important;
+  min-width: 168px !important;
+}
+
+.project-overview-card .el-progress {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
 }
 
 .project-detail-panel {
@@ -8265,28 +8368,64 @@ body::after {
 
 .project-dashboard-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
-  gap: 14px !important;
+  grid-template-columns: minmax(180px, 0.32fr) minmax(0, 1fr) !important;
+  gap: 18px !important;
+  border-top: 1px solid var(--study-rule) !important;
+  border-left: 0 !important;
 }
 
 .project-config-card {
   display: grid !important;
-  gap: 10px !important;
+  gap: 8px !important;
+  align-content: start !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--study-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 16px 0 !important;
 }
 
-.project-config-card > strong {
+.project-config-summary {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+}
+
+.project-config-summary > strong {
   color: var(--study-ink) !important;
-  font-size: 22px !important;
+  font-size: 20px !important;
   line-height: 1.25 !important;
 }
 
-.project-config-card > small {
+.project-config-summary > span,
+.project-config-summary > small {
   color: var(--study-ink-soft) !important;
+  font-size: 13px !important;
+}
+
+.project-config-edit {
+  width: fit-content !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--study-green) !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+  cursor: pointer !important;
+}
+
+.project-config-edit:hover {
+  color: var(--study-green-2) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
 }
 
 .project-config-form {
   display: grid !important;
-  gap: 10px !important;
+  grid-template-columns: minmax(180px, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px 12px !important;
   max-width: 560px !important;
 }
 
@@ -8307,10 +8446,33 @@ body::after {
   flex-wrap: wrap !important;
 }
 
+.project-dashboard-grid > div {
+  min-height: auto !important;
+  padding: 16px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--study-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
 @media (max-width: 900px) {
   .project-card-grid,
   .project-dashboard-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .project-overview-card {
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+  }
+
+  .project-card-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .project-card-main small {
+    justify-self: start !important;
+    text-align: left !important;
   }
 
   .project-detail-head,

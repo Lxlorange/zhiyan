@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
@@ -437,7 +437,7 @@ def _practice_points(db: Session, user: User, request: PracticeGenerateRequest) 
     return [point for point in dict.fromkeys(points) if point][:12]
 
 
-def _practice_source_context(db: Session, user: User, points: list[str], project_id: int | None) -> list[dict[str, Any]]:
+def _practice_source_context(db: Session, user: User, points: list[str], project_id: Optional[int]) -> list[dict[str, Any]]:
     query = " ".join(points) or "练习 题目 薄弱点"
     hits = [hit.model_dump(mode="json") for hit in search_knowledge(db, query, limit=10)]
     if project_id:
@@ -606,7 +606,7 @@ def _build_citation_text(title: str, authors: list[str], venue: str, year: str) 
     return f"{author_text}. {title}. {suffix}."
 
 
-def _parse_datetime(value: Any) -> datetime | None:
+def _parse_datetime(value: Any) -> Optional[datetime]:
     if not value:
         return None
     if isinstance(value, datetime):

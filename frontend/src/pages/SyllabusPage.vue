@@ -50,13 +50,6 @@
             <strong>{{ totalMinutes }} 分钟</strong>
           </div>
         </div>
-
-        <nav v-if="groupedStages.length" class="syllabus-stage-nav" aria-label="学习清单目录">
-          <a v-for="stage in groupedStages" :key="stage.stage" :href="`#stage-${stage.index}`">
-            <span>{{ stage.stage }}</span>
-            <small>{{ stage.items.length }} 项</small>
-          </a>
-        </nav>
       </aside>
 
       <main class="syllabus-content">

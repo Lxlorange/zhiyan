@@ -789,8 +789,8 @@ export function generateDailyPlan(projectId: number, payload: {
   return api.post<DailyPlanRead>(`/learning-projects/${projectId}/daily-plan/generate`, payload)
 }
 
-export function listDailyPlans(projectId: number) {
-  return api.get<DailyPlanRead[]>(`/learning-projects/${projectId}/daily-plans`)
+export function listDailyPlans(projectId: number, limit = 3) {
+  return api.get<DailyPlanRead[]>(`/learning-projects/${projectId}/daily-plans`, { params: { limit } })
 }
 
 export function moveDailyPlanItem(itemId: number, plannedDate: string) {

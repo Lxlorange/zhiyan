@@ -47,12 +47,16 @@
               <el-input-number v-model="form.daily_minutes" :min="10" :max="300" :step="10" />
             </label>
           </div>
-          <el-checkbox-group v-model="form.study_weekdays" class="todo-weekday-grid">
+          <el-checkbox-group
+            v-model="form.study_weekdays"
+            class="todo-weekday-grid"
+            @change="handleWeekdaysChange"
+          >
             <el-checkbox-button v-for="day in weekdayOptions" :key="day.value" :label="day.value">
               {{ day.label }}
             </el-checkbox-button>
           </el-checkbox-group>
-          <el-checkbox v-model="form.study_weekends">周末也学习</el-checkbox>
+          <el-checkbox v-model="form.study_weekends" @change="handleWeekendsChange">周末也学习</el-checkbox>
         </section>
 
         <div v-if="loadingPlans" class="daily-plan-loading">正在加载计划...</div>
@@ -64,7 +68,7 @@
 
         <div v-else class="todo-issue-list">
           <button
-            v-for="day in groupedDays"
+            v-for="day in visibleGroupedDays"
             :key="day.date"
             type="button"
             :class="{ active: activeDate === day.date, today: day.date === todayString }"
@@ -121,9 +125,9 @@
           </div>
         </section>
 
-        <TransitionGroup v-if="activePlan" name="panel-swap" tag="section" class="todo-task-stack">
+        <section v-if="activePlan" class="todo-task-stack">
           <article
-            v-for="item in filteredItems"
+            v-for="item in visibleFilteredItems"
             :key="item.id"
             class="todo-work-card"
             :class="{ active: item.id === activeItemId, done: isDone(item), overdue: item.is_overdue }"
@@ -153,7 +157,11 @@
               <el-button type="primary" :disabled="!item.can_start" @click="handleStartLearning(item)">开始</el-button>
             </div>
           </article>
-        </TransitionGroup>
+          <div v-if="filteredItems.length > visibleTaskLimit" class="todo-load-more">
+            <span>已显示 {{ visibleFilteredItems.length }}/{{ filteredItems.length }}</span>
+            <el-button @click="visibleTaskLimit += 20">显示更多</el-button>
+          </div>
+        </section>
       </main>
 
       <aside class="todo-coach-panel panel-like">
@@ -230,6 +238,7 @@ const activePlanId = ref<number | null>(null)
 const activeFilter = ref<TodoFilter>('today')
 const activeDate = ref('')
 const activeItemId = ref<number | null>(null)
+const visibleTaskLimit = ref(20)
 const loadingProjects = ref(false)
 const loadingPlans = ref(false)
 const generating = ref(false)
@@ -298,6 +307,7 @@ const groupedDays = computed(() => {
       minutes: items.reduce((sum, item) => sum + item.estimated_minutes, 0)
     }))
 })
+const visibleGroupedDays = computed(() => groupedDays.value.slice(0, 60))
 const filteredItems = computed(() => {
   const byDate = activeDate.value ? actionableItems.value.filter((item) => toDateInput(item.planned_date) === activeDate.value) : null
   if (byDate) return sortTodoItems(byDate)
@@ -307,6 +317,7 @@ const filteredItems = computed(() => {
   if (activeFilter.value === 'done') return sortTodoItems(completedItems.value)
   return sortTodoItems(actionableItems.value)
 })
+const visibleFilteredItems = computed(() => filteredItems.value.slice(0, visibleTaskLimit.value))
 const coachPromptChips = computed(() => {
   const title = activeTask.value?.title || '今天的任务'
   return [
@@ -340,35 +351,6 @@ watch(selectedProject, (project) => {
   if (project) form.daily_minutes = project.daily_minutes || 40
 })
 
-watch(
-  () => form.study_weekends,
-  (studyWeekends) => {
-    if (syncingWeekendFields) return
-    syncingWeekendFields = true
-    const weekdays = new Set(form.study_weekdays)
-    if (studyWeekends) {
-      weekdays.add(5)
-      weekdays.add(6)
-    } else {
-      weekdays.delete(5)
-      weekdays.delete(6)
-    }
-    form.study_weekdays = normalizeWeekdaySelection([...weekdays], studyWeekends)
-    syncingWeekendFields = false
-  }
-)
-
-watch(
-  () => [...form.study_weekdays],
-  (studyWeekdays) => {
-    if (syncingWeekendFields) return
-    syncingWeekendFields = true
-    form.study_weekdays = normalizeWeekdaySelection(studyWeekdays, studyWeekdays.some((day) => day >= 5))
-    form.study_weekends = form.study_weekdays.some((day) => day >= 5)
-    syncingWeekendFields = false
-  }
-)
-
 async function loadProjects() {
   loadingProjects.value = true
   try {
@@ -381,10 +363,27 @@ async function loadProjects() {
   }
 }
 
+function handleWeekendsChange(value: string | number | boolean) {
+  const enabled = Boolean(value)
+  syncingWeekendFields = true
+  form.study_weekends = enabled
+  form.study_weekdays = normalizeWeekdaySelection(form.study_weekdays, enabled)
+  syncingWeekendFields = false
+}
+
+function handleWeekdaysChange(value: Array<number | string>) {
+  if (syncingWeekendFields) return
+  const hasWeekend = value.some((day) => Number(day) >= 5)
+  syncingWeekendFields = true
+  form.study_weekends = hasWeekend
+  form.study_weekdays = normalizeWeekdaySelection(value, hasWeekend)
+  syncingWeekendFields = false
+}
+
 async function loadPlans(projectId: number) {
   loadingPlans.value = true
   try {
-    const { data } = await listDailyPlans(projectId)
+    const { data } = await listDailyPlans(projectId, 1)
     plans.value = data
     const current = data.find((plan) => plan.status === 'active') || data[0] || null
     activePlanId.value = current?.id || null
@@ -494,10 +493,12 @@ async function openSyllabusItem(item: DailyPlanItemRead) {
 function setFilter(filter: TodoFilter) {
   activeFilter.value = filter
   activeDate.value = ''
+  visibleTaskLimit.value = 20
 }
 
 function focusDay(date: string) {
   activeDate.value = date
+  visibleTaskLimit.value = 20
   const first = actionableItems.value.find((item) => toDateInput(item.planned_date) === date && !isDone(item))
   activeItemId.value = first?.id || null
 }
@@ -580,7 +581,7 @@ function toBackendDate(value: string) {
   return `${value}T00:00:00`
 }
 
-function normalizeWeekdaySelection(values: Array<number | string>, studyWeekends: boolean) {
+function normalizeWeekdaySelection(values: Array<number | string>, studyWeekends = false) {
   const normalized = new Set(
     values
       .map((value) => Number(value))

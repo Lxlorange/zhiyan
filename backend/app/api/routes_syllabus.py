@@ -355,11 +355,12 @@ def learning_project_daily_plan_generate(
 @router.get("/learning-projects/{project_id}/daily-plans", response_model=list[DailyPlanRead])
 def learning_project_daily_plans(
     project_id: int,
+    limit: int = 3,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DailyPlanRead]:
     try:
-        return [DailyPlanRead.model_validate(plan) for plan in list_daily_plans(db, user, project_id)]
+        return [DailyPlanRead.model_validate(plan) for plan in list_daily_plans(db, user, project_id, limit=limit)]
     except KeyError as exc:
         raise _handle_error(exc) from exc
 

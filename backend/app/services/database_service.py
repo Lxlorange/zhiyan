@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -76,7 +76,7 @@ def ask_database(db: Session, user: User, request: DatabaseAskRequest) -> Databa
         )
 
 
-def build_database_graph(db: Session, user: User, project_id: int | None = None, scope: str = "all") -> DatabaseGraphResponse:
+def build_database_graph(db: Session, user: User, project_id: Optional[int] = None, scope: str = "all") -> DatabaseGraphResponse:
     rows = db.execute(
         select(KnowledgePoint, DocumentChunk)
         .join(DocumentChunk, DocumentChunk.knowledge_point_id == KnowledgePoint.id)
@@ -118,7 +118,7 @@ def build_database_graph(db: Session, user: User, project_id: int | None = None,
     return DatabaseGraphResponse(nodes=nodes, edges=edges)
 
 
-def get_database_node_detail(db: Session, user: User, name: str, project_id: int | None = None) -> DatabaseNodeDetailResponse:
+def get_database_node_detail(db: Session, user: User, name: str, project_id: Optional[int] = None) -> DatabaseNodeDetailResponse:
     query = _scoped_query(db, user, DatabaseAskRequest(question=name, project_id=project_id, knowledge_points=[name], limit=8))
     hits = _retrieve_hits(db, query, 8)
     citations = [_citation_from_hit(hit) for hit in hits]
@@ -211,7 +211,7 @@ def _retrieve_hits(db: Session, query: str, limit: int) -> list[dict[str, Any]]:
         return [hit.model_dump(mode="json") for hit in search_knowledge(db, query, limit=limit)]
 
 
-def _project_sources(db: Session, user: User, project_id: int | None, query: str) -> list[DatabaseCitation]:
+def _project_sources(db: Session, user: User, project_id: Optional[int], query: str) -> list[DatabaseCitation]:
     if not project_id:
         return []
     resources = db.scalars(

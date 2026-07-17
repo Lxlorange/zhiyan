@@ -1010,6 +1010,7 @@ def generate_daily_plan(
     version = get_current_syllabus(db, user, project_id)
     daily_minutes = request.daily_minutes or project.daily_minutes
     study_weekdays = _normalize_weekdays(request.study_weekdays, request.study_weekends)
+    study_weekends = any(day >= 5 for day in study_weekdays)
     plan = _create_daily_plan_for_version(
         db,
         user=user,
@@ -1018,7 +1019,7 @@ def generate_daily_plan(
         title=request.title or f"{project.title} 每日学习计划",
         start_date=request.start_date or datetime.utcnow(),
         daily_minutes=daily_minutes,
-        study_weekends=request.study_weekends,
+        study_weekends=study_weekends,
         study_weekdays=study_weekdays,
         generation_reason=f"按当前清单 v{version.version_no}、每日 {daily_minutes} 分钟与可学习日自动排期",
     )
@@ -1030,14 +1031,14 @@ def generate_daily_plan(
         summary=f"生成每日计划：{plan.title}",
         payload={
             "daily_minutes": daily_minutes,
-            "study_weekends": request.study_weekends,
+            "study_weekends": study_weekends,
             "study_weekdays": study_weekdays,
             "item_count": len(plan.items),
         },
     )
     project.status = "daily_plan_ready"
     project.daily_minutes = daily_minutes
-    project.study_weekends = request.study_weekends
+    project.study_weekends = study_weekends
     project.study_weekdays = study_weekdays
     project.current_stage = "每日计划已生成"
     project.next_step = "按每日计划进入课堂学习"
@@ -1128,10 +1129,6 @@ def _normalize_weekdays(weekdays: list[int], study_weekends: bool) -> list[int]:
     normalized = sorted({int(day) for day in weekdays if 0 <= int(day) <= 6})
     if not normalized:
         normalized = [0, 1, 2, 3, 4]
-    if study_weekends:
-        normalized = sorted(set(normalized) | {5, 6})
-    else:
-        normalized = [day for day in normalized if day < 5] or [0, 1, 2, 3, 4]
     return normalized
 
 
@@ -1352,7 +1349,7 @@ def get_daily_plan(db: Session, user: User, plan_id: int) -> DailyLearningPlan:
     return plan
 
 
-def list_daily_plans(db: Session, user: User, project_id: int) -> list[DailyLearningPlan]:
+def list_daily_plans(db: Session, user: User, project_id: int, limit: int = 3) -> list[DailyLearningPlan]:
     _project_or_404(db, user, project_id)
     plans = list(
         db.scalars(
@@ -1360,6 +1357,7 @@ def list_daily_plans(db: Session, user: User, project_id: int) -> list[DailyLear
             .options(selectinload(DailyLearningPlan.items))
             .where(DailyLearningPlan.project_id == project_id, DailyLearningPlan.user_id == user.id)
             .order_by(DailyLearningPlan.created_at.desc())
+            .limit(max(1, min(limit, 10)))
         )
     )
     for plan in plans:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -32,7 +34,7 @@ def database_ask(
 
 @router.get("/graph", response_model=DatabaseGraphResponse)
 def database_graph(
-    project_id: int | None = Query(default=None),
+    project_id: Optional[int] = Query(default=None),
     scope: str = Query(default="all", pattern="^(all|project)$"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -46,7 +48,7 @@ def database_graph(
 @router.get("/nodes/{name}", response_model=DatabaseNodeDetailResponse)
 def database_node_detail(
     name: str,
-    project_id: int | None = Query(default=None),
+    project_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DatabaseNodeDetailResponse:

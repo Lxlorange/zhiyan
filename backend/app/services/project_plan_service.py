@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime
 from collections.abc import Iterator
+from typing import Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -98,7 +99,7 @@ def _run_project_plan_agent(
     learning_goal: str,
     extra_requirements: str,
     messages: list[dict],
-    current_plan: dict | None = None,
+    current_plan: Optional[dict] = None,
 ) -> ProjectPlanAgentResult:
     knowledge_context = _knowledge_context(db, f"{learning_goal}\n{extra_requirements}")
     prompt = _build_project_plan_prompt(
@@ -124,7 +125,7 @@ def _build_project_plan_prompt(
     extra_requirements: str,
     messages: list[dict],
     knowledge_context: str,
-    current_plan: dict | None = None,
+    current_plan: Optional[dict] = None,
 ) -> str:
     return f"""
 你是高校 AI 个性化学习平台中的 ProjectPlannerAgent。

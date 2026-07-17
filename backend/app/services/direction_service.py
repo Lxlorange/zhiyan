@@ -1,8 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import time
 from datetime import datetime, timedelta
+from typing import Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -160,7 +161,7 @@ def create_direction_template(db: Session, user: User, request: DirectionTemplat
     return DirectionTemplateRead.model_validate(template)
 
 
-def _template_context(template: ResearchDirectionTemplate | None) -> str:
+def _template_context(template: Optional[ResearchDirectionTemplate]) -> str:
     if template is None:
         return "未选择方向模板。"
     return (
@@ -176,7 +177,7 @@ def _template_context(template: ResearchDirectionTemplate | None) -> str:
     )
 
 
-def _latest_profile_context(db: Session, user: User | None) -> str:
+def _latest_profile_context(db: Session, user: Optional[User]) -> str:
     if user is None:
         return "No authenticated user profile."
     profile = db.scalar(
@@ -202,7 +203,7 @@ def _knowledge_context(db: Session, query: str) -> str:
     )
 
 
-def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: User | None = None) -> DirectionAnalyzeResponse:
+def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optional[User] = None) -> DirectionAnalyzeResponse:
     seed_direction_templates(db)
     template = None
     if request.template_id is not None:
@@ -444,11 +445,13 @@ def update_project(
     schedule_keys = {"daily_minutes", "study_weekends", "study_weekdays"}
     should_sync_daily_plan = bool(schedule_keys & set(data))
     if "study_weekdays" in data:
-        data["study_weekdays"] = _normalize_project_weekdays(data["study_weekdays"], data.get("study_weekends", project.study_weekends))
+        data["study_weekdays"] = _normalize_project_weekdays(data["study_weekdays"])
+        data["study_weekends"] = any(day >= 5 for day in data["study_weekdays"])
     for key, value in data.items():
         setattr(project, key, value)
     if should_sync_daily_plan:
-        project.study_weekdays = _normalize_project_weekdays(project.study_weekdays, project.study_weekends)
+        project.study_weekdays = _normalize_project_weekdays(project.study_weekdays)
+        project.study_weekends = any(day >= 5 for day in project.study_weekdays)
         _sync_active_daily_plan_settings(db, project)
     db.add(
         LearningProjectEvent(
@@ -464,7 +467,7 @@ def update_project(
     return project
 
 
-def _normalize_project_weekdays(weekdays: list[int], study_weekends: bool) -> list[int]:
+def _normalize_project_weekdays(weekdays: list[int]) -> list[int]:
     normalized: set[int] = set()
     for day in weekdays:
         try:
@@ -476,10 +479,6 @@ def _normalize_project_weekdays(weekdays: list[int], study_weekends: bool) -> li
         normalized.add(value)
     if not normalized:
         raise ValueError("study_weekdays cannot be empty")
-    if not study_weekends and any(day >= 5 for day in normalized):
-        raise ValueError("study_weekdays cannot include weekend days when study_weekends is false")
-    if study_weekends:
-        normalized.update({5, 6})
     return sorted(normalized)
 
 
@@ -501,7 +500,7 @@ def _sync_active_daily_plan_settings(db: Session, project: LearningProject) -> N
 
 
 def _reschedule_daily_plan_items(plan: DailyLearningPlan) -> None:
-    allowed_weekdays = _normalize_project_weekdays(plan.study_weekdays, plan.study_weekends)
+    allowed_weekdays = _normalize_project_weekdays(plan.study_weekdays)
     start_date = _next_project_study_date(_date_floor(plan.start_date or datetime.utcnow()), allowed_weekdays)
     plan.start_date = start_date
     current_date = start_date

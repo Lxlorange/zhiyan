@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 from json_repair import repair_json
 
@@ -13,7 +13,7 @@ class LLMJsonParseError(RuntimeError):
 
 def parse_llm_json(text: str) -> Any:
     candidates = _json_candidates(text)
-    last_error: Exception | None = None
+    last_error: Optional[Exception] = None
     for candidate in candidates:
         try:
             return json.loads(candidate)

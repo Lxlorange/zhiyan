@@ -7,7 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 class ScholarlySearchError(RuntimeError):
@@ -65,7 +65,7 @@ STOPWORDS = {
 }
 
 
-def resolve_scholarly_resource(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def resolve_scholarly_resource(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     cleaned = _clean_query(query)
     if len(cleaned) < 3:
         return None
@@ -83,7 +83,7 @@ def resolve_scholarly_resource(query: str, topic: str = "") -> ScholarlySearchHi
     return None
 
 
-def resolve_web_resource(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def resolve_web_resource(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     cleaned = _clean_query(query)
     if len(cleaned) < 3:
         return None
@@ -118,7 +118,7 @@ def verify_candidate_resource_url(
     topic: str = "",
     source: str = "",
     reason: str = "",
-) -> ScholarlySearchHit | None:
+) -> Optional[ScholarlySearchHit]:
     normalized_url = _normalize_candidate_url(url)
     if not _is_public_http_url(normalized_url):
         return None
@@ -151,7 +151,7 @@ def verify_candidate_resource_url(
     )
 
 
-def _search_openalex(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def _search_openalex(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     params = urllib.parse.urlencode(
         {
             "search": query,
@@ -178,7 +178,7 @@ def _search_openalex(query: str, topic: str = "") -> ScholarlySearchHit | None:
     return None
 
 
-def _search_semantic_scholar(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def _search_semantic_scholar(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     params = urllib.parse.urlencode(
         {
             "query": query,
@@ -212,7 +212,7 @@ def _search_semantic_scholar(query: str, topic: str = "") -> ScholarlySearchHit 
     return None
 
 
-def _search_arxiv(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def _search_arxiv(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     params = urllib.parse.urlencode({"search_query": f"all:{query}", "start": "0", "max_results": "5"})
     xml = _get_text(f"https://export.arxiv.org/api/query?{params}")
     for entry in re.findall(r"<entry>(.*?)</entry>", xml, flags=re.S):
@@ -232,7 +232,7 @@ def _search_arxiv(query: str, topic: str = "") -> ScholarlySearchHit | None:
     return None
 
 
-def _search_crossref(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def _search_crossref(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     params = urllib.parse.urlencode({"query.bibliographic": query, "rows": "5"})
     data = _get_json(f"https://api.crossref.org/works?{params}")
     for item in data.get("message", {}).get("items", []):
@@ -252,7 +252,7 @@ def _search_crossref(query: str, topic: str = "") -> ScholarlySearchHit | None:
     return None
 
 
-def _search_duckduckgo(query: str, topic: str = "") -> ScholarlySearchHit | None:
+def _search_duckduckgo(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
     for search_query in _general_search_queries(query, topic):
         params = urllib.parse.urlencode({"q": search_query, "kl": "wt-wt"})
         html = _get_text(f"https://duckduckgo.com/html/?{params}")
@@ -365,7 +365,7 @@ def _get_text(url: str) -> str:
         raise ScholarlySourceUnavailable(f"resource search connection error: {exc.reason}") from exc
 
 
-def _reachable_page_title(url: str) -> str | None:
+def _reachable_page_title(url: str) -> Optional[str]:
     try:
         request = urllib.request.Request(
             url,

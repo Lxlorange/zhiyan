@@ -103,6 +103,7 @@
         </div>
         <div class="project-head-actions">
           <el-tag :type="statusType(activeProject.status)">{{ statusLabel(activeProject.status) }}</el-tag>
+          <el-button type="primary" @click="emit('openSyllabus', activeProject.id)">学习清单</el-button>
           <el-dropdown trigger="click" @command="handleProjectCommandToken">
             <el-button>管理项目</el-button>
             <template #dropdown>
@@ -126,14 +127,6 @@
           <strong>{{ activeProject.next_step || '从学习清单继续推进下一项课堂' }}</strong>
           <p>{{ nextLearningHint }}</p>
         </div>
-        <div class="project-next-actions">
-          <el-button @click="router.push({ name: 'project-daily-plan', params: { projectId: activeProject.id } })">
-            今日计划
-          </el-button>
-          <el-button type="primary" @click="emit('openSyllabus', activeProject.id)">
-            继续学习
-          </el-button>
-        </div>
       </section>
 
       <div class="project-dashboard-grid">
@@ -148,12 +141,16 @@
             <div class="project-config-form">
               <el-input v-model="scheduleForm.recommended_period" placeholder="预计周期，例如 2周" />
               <el-input-number v-model="scheduleForm.daily_minutes" :min="10" :max="300" :step="10" />
-              <el-checkbox-group v-model="scheduleForm.study_weekdays" class="project-weekday-grid">
+              <el-checkbox-group
+                v-model="scheduleForm.study_weekdays"
+                class="project-weekday-grid"
+                @change="handleScheduleWeekdaysChange"
+              >
                 <el-checkbox-button v-for="day in weekdayOptions" :key="day.value" :label="day.value">
                   {{ day.label }}
                 </el-checkbox-button>
               </el-checkbox-group>
-              <el-checkbox v-model="scheduleForm.study_weekends">周末也学习</el-checkbox>
+              <el-checkbox v-model="scheduleForm.study_weekends" @change="handleScheduleWeekendChange">周末也学习</el-checkbox>
             </div>
             <div class="project-config-actions">
               <el-button size="small" @click="cancelScheduleEdit">取消</el-button>
@@ -161,9 +158,12 @@
             </div>
           </template>
           <template v-else>
-            <strong>{{ activeProject.recommended_period }} · {{ activeProject.daily_minutes }} 分钟/天</strong>
-            <small>{{ studyDaysLabel(activeProject) }}</small>
-            <el-button size="small" @click="startScheduleEdit(activeProject)">修改</el-button>
+            <div class="project-config-summary">
+              <strong>{{ activeProject.recommended_period }}</strong>
+              <span>{{ activeProject.daily_minutes }} 分钟/天</span>
+              <small>{{ studyDaysLabel(activeProject) }}</small>
+            </div>
+            <button class="project-config-edit" type="button" @click="startScheduleEdit(activeProject)">修改</button>
           </template>
         </div>
       </div>
@@ -234,14 +234,6 @@
         </div>
       </section>
 
-      <div class="project-card-actions">
-        <el-button size="large" @click="router.push({ name: 'project-daily-plan', params: { projectId: activeProject.id } })">
-          打开每日计划
-        </el-button>
-        <el-button type="primary" size="large" @click="emit('openSyllabus', activeProject.id)">
-          打开学习清单
-        </el-button>
-      </div>
     </article>
 
     <el-empty v-else-if="!loading" description="项目不存在或已删除">
@@ -286,7 +278,7 @@ const savingSchedule = ref(false)
 const router = useRouter()
 const selectedTag = ref('')
 const selectedIds = ref<number[]>([])
-const openGroups = ref(['active', 'paused'])
+const openGroups = ref(['active'])
 const editingSchedule = ref(false)
 const scheduleForm = ref({
   recommended_period: '',
@@ -392,27 +384,6 @@ watch(
   }
 )
 
-watch(
-  () => scheduleForm.value.study_weekends,
-  (studyWeekends) => {
-    if (syncingScheduleWeekendFields) return
-    syncingScheduleWeekendFields = true
-    scheduleForm.value.study_weekdays = normalizeWeekdaySelection(scheduleForm.value.study_weekdays, studyWeekends)
-    syncingScheduleWeekendFields = false
-  }
-)
-
-watch(
-  () => [...scheduleForm.value.study_weekdays],
-  (studyWeekdays) => {
-    if (syncingScheduleWeekendFields) return
-    syncingScheduleWeekendFields = true
-    scheduleForm.value.study_weekends = studyWeekdays.some((day) => Number(day) >= 5)
-    scheduleForm.value.study_weekdays = normalizeWeekdaySelection(studyWeekdays, scheduleForm.value.study_weekends)
-    syncingScheduleWeekendFields = false
-  }
-)
-
 async function loadProjects() {
   loading.value = true
   try {
@@ -436,17 +407,41 @@ function toggleSelected(projectId: number, checked: boolean) {
 }
 
 function startScheduleEdit(project: LearningProjectRead) {
+  const weekdays = project.study_weekdays?.length ? project.study_weekdays : [0, 1, 2, 3, 4]
   scheduleForm.value = {
     recommended_period: project.recommended_period,
     daily_minutes: project.daily_minutes,
-    study_weekends: project.study_weekends,
-    study_weekdays: normalizeWeekdaySelection(project.study_weekdays?.length ? project.study_weekdays : [0, 1, 2, 3, 4], project.study_weekends)
+    study_weekends: weekdays.some((day) => Number(day) >= 5),
+    study_weekdays: normalizeWeekdaySelection(weekdays)
   }
   editingSchedule.value = true
 }
 
 function cancelScheduleEdit() {
   editingSchedule.value = false
+}
+
+function handleScheduleWeekendChange(value: string | number | boolean) {
+  const enabled = Boolean(value)
+  syncingScheduleWeekendFields = true
+  scheduleForm.value.study_weekends = enabled
+  const weekdays = new Set(scheduleForm.value.study_weekdays.map((day) => Number(day)))
+  if (enabled) {
+    weekdays.add(5)
+    weekdays.add(6)
+  } else {
+    weekdays.delete(5)
+    weekdays.delete(6)
+  }
+  scheduleForm.value.study_weekdays = normalizeWeekdaySelection([...weekdays])
+  syncingScheduleWeekendFields = false
+}
+
+function handleScheduleWeekdaysChange(value: Array<number | string>) {
+  if (syncingScheduleWeekendFields) return
+  const normalized = normalizeWeekdaySelection(value)
+  scheduleForm.value.study_weekdays = normalized
+  scheduleForm.value.study_weekends = normalized.some((day) => day >= 5)
 }
 
 async function saveScheduleConfig() {
@@ -457,8 +452,8 @@ async function saveScheduleConfig() {
     const payload = {
       recommended_period: scheduleForm.value.recommended_period.trim(),
       daily_minutes: scheduleForm.value.daily_minutes,
-      study_weekends: scheduleForm.value.study_weekends,
-      study_weekdays: normalizeWeekdaySelection(scheduleForm.value.study_weekdays, scheduleForm.value.study_weekends)
+      study_weekends: scheduleForm.value.study_weekdays.some((day) => Number(day) >= 5),
+      study_weekdays: normalizeWeekdaySelection(scheduleForm.value.study_weekdays)
     }
     const { data } = await updateLearningProject(project.id, payload)
     projects.value = projects.value.map((item) => (item.id === project.id ? data : item))
@@ -622,19 +617,12 @@ function studyDaysLabel(project: LearningProjectRead) {
   return days.length ? days.join(' / ') : '周一 / 周二 / 周三 / 周四 / 周五'
 }
 
-function normalizeWeekdaySelection(values: Array<number | string>, studyWeekends: boolean) {
+function normalizeWeekdaySelection(values: Array<number | string>) {
   const normalized = new Set(
     values
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
   )
-  if (studyWeekends) {
-    normalized.add(5)
-    normalized.add(6)
-  } else {
-    normalized.delete(5)
-    normalized.delete(6)
-  }
   if (!normalized.size) return [0, 1, 2, 3, 4]
   return [...normalized].sort((left, right) => left - right)
 }
