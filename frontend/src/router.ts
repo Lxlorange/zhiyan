@@ -5,6 +5,7 @@ import DailyPlanPage from './pages/DailyPlanPage.vue'
 import DashboardModulePage from './pages/DashboardModulePage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
+import MethodsWorkspacePage from './pages/MethodsWorkspacePage.vue'
 import SigninRoute from './pages/SigninRoute.vue'
 import SyllabusPage from './pages/SyllabusPage.vue'
 import WorkspaceModulePage from './pages/WorkspaceModulePage.vue'
@@ -63,7 +64,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/assessment', name: 'assessment', component: WorkspaceModulePage, props: { mode: 'assessment' }, meta: { page: 'assessment' } },
   { path: '/literature', name: 'literature', component: WorkspaceModulePage, props: { mode: 'literature' }, meta: { page: 'literature' } },
   { path: '/writing', name: 'writing', component: WorkspaceModulePage, props: { mode: 'writing' }, meta: { page: 'writing' } },
-  { path: '/methods', name: 'methods', component: WorkspaceModulePage, props: { mode: 'methods' }, meta: { page: 'methods' } },
+  { path: '/methods', name: 'methods', component: MethodsWorkspacePage, meta: { page: 'methods' } },
   { path: '/agents', name: 'agents', component: DashboardModulePage, props: { mode: 'agents' }, meta: { page: 'agents' } },
   { path: '/teacher', redirect: '/agents' },
   { path: '/settings', name: 'settings', component: AccountSettings, meta: { page: 'settings' } },

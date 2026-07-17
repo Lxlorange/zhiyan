@@ -258,12 +258,32 @@
                             </div>
                           </header>
                           <template v-if="activeTool === 'mindmap'">
-                            <VueFlow
-                              v-model:nodes="mindmapNodes"
-                              v-model:edges="mindmapEdges"
-                              :fit-view-on-init="true"
-                              class="classroom-mindmap-flow"
-                            />
+                            <div class="classroom-mindmap-flow">
+                              <div class="classroom-mindmap-canvas">
+                                <article
+                                  v-for="node in mindmapNodes"
+                                  :key="node.id"
+                                  class="classroom-mindmap-node"
+                                  :class="node.kind"
+                                  :style="{ left: `${node.x}px`, top: `${node.y}px` }"
+                                >
+                                  <span v-if="node.group" class="classroom-mindmap-group">{{ node.group }}</span>
+                                  <strong>{{ node.label }}</strong>
+                                  <p v-if="node.detail">{{ node.detail }}</p>
+                                </article>
+
+                                <svg class="classroom-mindmap-links" viewBox="0 0 1200 860" preserveAspectRatio="none" aria-hidden="true">
+                                  <line
+                                    v-for="edge in mindmapEdges"
+                                    :key="edge.id"
+                                    :x1="edge.from.x"
+                                    :y1="edge.from.y"
+                                    :x2="edge.to.x"
+                                    :y2="edge.to.y"
+                                  />
+                                </svg>
+                              </div>
+                            </div>
                           </template>
                           <template v-else>
                             <el-input v-model="noteMarkdown" type="textarea" :rows="13" placeholder="用 Markdown 写下当前页笔记" />
@@ -393,9 +413,6 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { VueFlow, type Edge, type Node } from '@vue-flow/core'
-import '@vue-flow/core/dist/style.css'
-import '@vue-flow/core/dist/theme-default.css'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
@@ -597,8 +614,24 @@ const currentVisualizationPlaceholder = computed(() => {
   const points = currentSlideKnowledgePoints.value.join('、') || '当前知识点'
   return `围绕「${title}」生成动态演示。可补充希望展示的机制，例如：${points} 的流程、信号传播、状态变化、数据流、交互动画或必要时的 3D 类比。`
 })
-const mindmapNodes = ref<Node[]>([])
-const mindmapEdges = ref<Edge[]>([])
+type MindmapNode = {
+  id: string
+  label: string
+  detail?: string
+  group?: string
+  kind?: string
+  x: number
+  y: number
+}
+
+type MindmapEdge = {
+  id: string
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+}
+
+const mindmapNodes = ref<MindmapNode[]>([])
+const mindmapEdges = ref<MindmapEdge[]>([])
 const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
@@ -1043,33 +1076,47 @@ function hydrateNote() {
 }
 
 function hydrateMindmap() {
-  const center = currentItem.value?.title || pptPackage.value?.title || '本课'
-  const nodes: Node[] = [
-    { id: 'center', type: 'default', label: center, position: { x: 360, y: 220 } }
-  ]
-  const edges: Edge[] = []
+  const center = currentItem.value?.title || pptPackage.value?.title || '当前页'
+  const nodes: MindmapNode[] = [{ id: 'center', label: center, kind: 'center', x: 510, y: 320 }]
+  const edges: MindmapEdge[] = []
   const groups = [
     { id: 'points', label: '知识点', items: currentItem.value?.knowledge_points || [] },
     { id: 'concepts', label: '概念', items: conceptCards.value.map((card) => String(card.name || '')).filter(Boolean) },
     { id: 'practice', label: '实践', items: practiceSpec.value?.title ? [practiceSpec.value.title] : [] },
     { id: 'reflection', label: '复盘', items: reflectionPrompts.value.slice(0, 3) }
   ]
+  const anchors = [
+    { x: 220, y: 150 },
+    { x: 770, y: 150 },
+    { x: 220, y: 530 },
+    { x: 770, y: 530 }
+  ]
   groups.forEach((group, groupIndex) => {
-    const groupNodeId = `group-${group.id}`
+    const anchor = anchors[groupIndex] || { x: 220 + groupIndex * 180, y: 150 }
     nodes.push({
-      id: groupNodeId,
+      id: `group-${group.id}`,
       label: group.label,
-      position: { x: 80 + groupIndex * 210, y: 60 }
+      kind: 'group',
+      group: group.label,
+      x: anchor.x,
+      y: anchor.y
     })
-    edges.push({ id: `edge-center-${group.id}`, source: 'center', target: groupNodeId })
+    edges.push({ id: `edge-center-${group.id}`, from: { x: 555, y: 355 }, to: { x: anchor.x + 84, y: anchor.y + 30 } })
     group.items.slice(0, 5).forEach((item, itemIndex) => {
-      const nodeId = `${group.id}-${itemIndex}`
+      const column = itemIndex % 2
+      const row = Math.floor(itemIndex / 2)
+      const nodeX = anchor.x + column * 180
+      const nodeY = anchor.y + 88 + row * 92
       nodes.push({
-        id: nodeId,
+        id: `${group.id}-${itemIndex}`,
         label: String(item),
-        position: { x: 40 + groupIndex * 210, y: 340 + itemIndex * 74 }
+        detail: group.label,
+        kind: 'leaf',
+        group: group.label,
+        x: nodeX,
+        y: nodeY
       })
-      edges.push({ id: `edge-${group.id}-${itemIndex}`, source: groupNodeId, target: nodeId })
+      edges.push({ id: `edge-${group.id}-${itemIndex}`, from: { x: anchor.x + 84, y: anchor.y + 30 }, to: { x: nodeX + 80, y: nodeY + 22 } })
     })
   })
   mindmapNodes.value = nodes
