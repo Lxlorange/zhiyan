@@ -517,6 +517,11 @@ class DailyPlanShiftItemRequest(BaseModel):
     direction: str = Field(default="next", pattern="^(next|previous)$")
 
 
+class DailyPlanCoachRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=3000)
+    active_item_id: Optional[int] = None
+
+
 class SyllabusOperationRead(BaseModel):
     id: int
     operation_type: str
@@ -739,6 +744,14 @@ class DailyPlanRead(BaseModel):
     items: List[DailyPlanItemRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class DailyPlanCoachResponse(BaseModel):
+    answer: str
+    extracted_profile_signals: Dict[str, object] = Field(default_factory=dict)
+    suggested_plan_actions: List[str] = Field(default_factory=list)
+    profile_revision: Optional[int] = None
+    plan: DailyPlanRead
 
 
 class ProfileVersionRead(BaseModel):

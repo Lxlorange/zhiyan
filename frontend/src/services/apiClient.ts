@@ -292,6 +292,14 @@ export interface DailyPlanRead {
   items: DailyPlanItemRead[]
 }
 
+export interface DailyPlanCoachResponse {
+  answer: string
+  extracted_profile_signals: Record<string, any>
+  suggested_plan_actions: string[]
+  profile_revision?: number | null
+  plan: DailyPlanRead
+}
+
 export interface ProfileVersionRead {
   id: number
   revision: number
@@ -655,6 +663,15 @@ export function moveDailyPlanItem(itemId: number, plannedDate: string) {
 
 export function shiftDailyPlanItem(itemId: number, direction: 'next' | 'previous' = 'next') {
   return api.patch<DailyPlanRead>(`/daily-plan-items/${itemId}/shift`, { direction })
+}
+
+export function sendDailyPlanCoachMessage(planId: number, payload: {
+  message: string
+  active_item_id?: number | null
+}) {
+  return api.post<DailyPlanCoachResponse>(`/daily-plans/${planId}/coach`, payload, {
+    timeout: GENERATION_TIMEOUT_MS
+  })
 }
 
 export function updateSyllabusItemStatus(itemId: number, status: string, reason = '') {

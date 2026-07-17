@@ -6,6 +6,8 @@ from app.core.database import SessionLocal, get_db
 from app.models.learning import LearningProject, LearningProjectEvent
 from app.models.user import User
 from app.schemas import (
+    DailyPlanCoachRequest,
+    DailyPlanCoachResponse,
     DailyPlanGenerateRequest,
     DailyPlanMoveItemRequest,
     DailyPlanShiftItemRequest,
@@ -30,6 +32,7 @@ from app.services.syllabus_service import (
     activate_syllabus_version,
     adapt_syllabus,
     add_syllabus_item,
+    coach_daily_plan,
     compare_syllabus_versions,
     copy_syllabus_version,
     delete_syllabus_item,
@@ -396,4 +399,17 @@ def daily_plan_item_shift(
     try:
         return DailyPlanRead.model_validate(shift_daily_plan_item(db, user, item_id, request))
     except (KeyError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/daily-plans/{plan_id}/coach", response_model=DailyPlanCoachResponse)
+def daily_plan_coach(
+    plan_id: int,
+    request: DailyPlanCoachRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyPlanCoachResponse:
+    try:
+        return coach_daily_plan(db, user, plan_id, request)
+    except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_error(exc) from exc

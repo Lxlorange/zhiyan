@@ -21,6 +21,8 @@ from app.models.learning import (
 )
 from app.models.user import User
 from app.schemas import (
+    DailyPlanCoachRequest,
+    DailyPlanCoachResponse,
     DailyPlanGenerateRequest,
     DailyPlanMoveItemRequest,
     DailyPlanShiftItemRequest,
@@ -35,9 +37,11 @@ from app.schemas import (
     SyllabusRegenerateStageRequest,
     SyllabusReorderRequest,
 )
+from app.services.ai_workflow import build_profile_with_summary
 from app.services.knowledge_ingestion_service import search_knowledge_enhanced
 from app.services.knowledge_service import COURSE_CODE
 from app.services.llm_client import qwen_chat_json
+from app.services.persistence_service import upsert_profile_from_dialogue
 
 
 class _GeneratedSyllabusItem(BaseModel):
@@ -1123,6 +1127,138 @@ def shift_daily_plan_item(
             return get_daily_plan(db, user, plan.id)
         target = _date_floor(target + timedelta(days=step))
     raise ValueError("cannot find an available study date")
+
+
+def coach_daily_plan(
+    db: Session,
+    user: User,
+    plan_id: int,
+    request: DailyPlanCoachRequest,
+) -> DailyPlanCoachResponse:
+    plan = get_daily_plan(db, user, plan_id)
+    project = _project_or_404(db, user, plan.project_id)
+    active_item = None
+    if request.active_item_id is not None:
+        active_item = next((item for item in plan.items if item.id == request.active_item_id), None)
+        if active_item is None:
+            raise KeyError("daily plan item not found")
+
+    pending_items = [
+        item for item in sorted(plan.items, key=lambda value: (value.planned_date, value.user_order))
+        if item.status not in {"completed", "mastered", "removed"}
+    ][:8]
+    completed_count = len([item for item in plan.items if item.status in {"completed", "mastered"}])
+    actionable_count = len([item for item in plan.items if item.status != "removed"])
+    current_profile = _latest_profile(db, user)
+    current_profile_data = current_profile.profile_data if current_profile else {}
+    profile_message = "\n".join(
+        [
+            "请根据学生在每日学习计划中的自然语言反馈，更新动态学习画像。",
+            "不要编造学生没有表达的信息；如果学生没有提到某一维度，请基于旧画像保持稳定。",
+            f"学生原话：{request.message}",
+            f"项目：{project.title}",
+            f"学习目标：{project.learning_goal}",
+            f"计划进度：{completed_count}/{actionable_count}",
+            f"当前任务：{active_item.title if active_item else '未指定'}",
+            f"当前任务学习重点：{active_item.learning_focus if active_item else ''}",
+            f"近期待办：{[item.title for item in pending_items]}",
+            f"旧画像：{current_profile_data}",
+        ]
+    )
+    profile_result = build_profile_with_summary(profile_message)
+    coach_result = _daily_plan_coach_result(
+        project=project,
+        plan=plan,
+        active_item=active_item,
+        student_message=request.message,
+        profile_summary=profile_result.summary,
+        pending_items=pending_items,
+    )
+    profile_record = upsert_profile_from_dialogue(
+        db=db,
+        user=user,
+        profile=profile_result.profile,
+        update_reason=f"每日计划教练根据学习复盘更新画像：{profile_result.summary}",
+        extracted_features={
+            "source_message": request.message,
+            "active_item_id": request.active_item_id,
+            "weak_points": profile_result.profile.weak_points,
+            "learning_pace": profile_result.profile.learning_pace,
+            "resource_preference": profile_result.profile.resource_preference,
+            "mastery": profile_result.profile.mastery,
+        },
+        source="daily_plan_coach",
+    )
+    suggested_actions = coach_result.suggested_plan_actions[:4]
+    _write_project_event(
+        db,
+        project=project,
+        user=user,
+        event_type="daily_plan_coach",
+        summary=profile_result.summary,
+        payload={
+            "plan_id": plan.id,
+            "active_item_id": request.active_item_id,
+            "message": request.message,
+            "profile_revision": profile_record.current_revision,
+            "suggested_plan_actions": suggested_actions,
+        },
+    )
+    db.commit()
+    return DailyPlanCoachResponse(
+        answer=coach_result.answer,
+        extracted_profile_signals={
+            "weak_points": profile_result.profile.weak_points,
+            "learning_pace": profile_result.profile.learning_pace,
+            "resource_preference": profile_result.profile.resource_preference,
+            "interest_direction": profile_result.profile.interest_direction,
+            "mastery": profile_result.profile.mastery,
+        },
+        suggested_plan_actions=suggested_actions,
+        profile_revision=profile_record.current_revision,
+        plan=get_daily_plan(db, user, plan.id),
+    )
+
+
+def _daily_plan_coach_result(
+    *,
+    project: LearningProject,
+    plan: DailyLearningPlan,
+    active_item: Optional[DailyLearningPlanItem],
+    student_message: str,
+    profile_summary: str,
+    pending_items: list[DailyLearningPlanItem],
+) -> "_DailyPlanCoachLLMResult":
+    prompt = f"""
+你是每日学习计划教练，负责把学生的自然语言复盘转成可执行的下一步建议。
+
+项目：{project.title}
+学习目标：{project.learning_goal}
+计划：{plan.title}，每日 {plan.daily_minutes} 分钟
+当前任务：{active_item.title if active_item else "未指定"}
+当前任务重点：{active_item.learning_focus if active_item else ""}
+近期待办：{[{"title": item.title, "date": item.planned_date.isoformat(), "minutes": item.estimated_minutes, "status": item.status} for item in pending_items]}
+学生原话：{student_message}
+画像抽取摘要：{profile_summary}
+
+请输出 JSON：
+{{
+  "answer": "用 3-5 句话回应学生，明确今天先做什么、如何降低阻力、何时进入课堂或调整计划。",
+  "suggested_plan_actions": ["可执行建议1", "可执行建议2", "可执行建议3"]
+}}
+要求：不要说空话；不要声称已移动计划日期，除非用户另外点击调整按钮；不要生成不存在的课程内容。
+"""
+    result = qwen_chat_json(
+        "你是严谨的 AI 学习计划教练，只输出符合要求的 JSON。",
+        prompt,
+        _DailyPlanCoachLLMResult,
+    )
+    return result
+
+
+class _DailyPlanCoachLLMResult(BaseModel):
+    answer: str = Field(min_length=1)
+    suggested_plan_actions: list[str] = Field(min_length=1, max_length=4)
 
 
 def _normalize_daily_plan_order(plan: DailyLearningPlan) -> None:
