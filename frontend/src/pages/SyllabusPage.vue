@@ -2,7 +2,6 @@
   <div class="page syllabus-page">
     <section class="page-hero syllabus-hero">
       <div>
-        <p class="eyebrow">Project Syllabus</p>
         <h2>{{ selectedProject?.title || '项目学习清单' }}</h2>
       </div>
       <div class="syllabus-hero-actions">
@@ -79,7 +78,7 @@
         </section>
 
         <template v-else>
-          <section class="panel-like syllabus-summary">
+          <section class="panel-like syllabus-summary compact-context">
             <div>
               <span>SyllabusAgent</span>
               <h3>清单生成说明</h3>

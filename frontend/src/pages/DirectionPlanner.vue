@@ -151,6 +151,7 @@
 
           <el-button
             v-if="plan"
+            class="agent-build-button"
             size="large"
             :loading="building"
             :disabled="plan.status === 'built' || planning || adjusting"

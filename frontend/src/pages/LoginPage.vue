@@ -1,17 +1,8 @@
 <template>
   <main class="auth-page">
     <section class="auth-hero">
-      <p class="eyebrow">AI Learning Workspace</p>
       <h1>智研星链</h1>
-      <p>
-        面向科研学习的新领域教学平台。登录后可以探索方向、生成项目计划，并进入后续学习项目工作台。
-      </p>
-      <div class="auth-feature-grid" aria-label="核心能力">
-        <span>方向探索</span>
-        <span>学习项目</span>
-        <span>多 Agent 资源</span>
-        <span>科研工具</span>
-      </div>
+      <p>从一个学习或科研方向开始，生成可执行的课程、计划和资料。</p>
     </section>
 
     <section class="auth-panel">

@@ -2,7 +2,6 @@
   <div class="page dashboard-module-page">
     <section class="workspace-hero">
       <div>
-        <p class="eyebrow">{{ mode === 'agents' ? 'Agent Center' : 'Teacher Console' }}</p>
         <h2>{{ mode === 'agents' ? '多智能体任务中心' : '教师驾驶舱' }}</h2>
       </div>
       <el-button :loading="loading" @click="loadData">刷新</el-button>
@@ -34,10 +33,13 @@
 
         <article class="panel-like workspace-panel">
           <header><strong>流程覆盖</strong><span>Orchestration</span></header>
-          <div class="workspace-list">
-            <p>方向学习：DirectionAgent → ProfileAgent → SyllabusAgent → PlannerAgent → SafetyAgent</p>
-            <p>AI 课堂：ClassroomAgent → ExplanationAgent → VisualizationAgent → ExerciseAgent → DemoAgent → MemoryAgent</p>
-            <p>科研工具：PaperAgent / WritingAgent / CitationAgent → SafetyAgent → KnowledgeBaseAgent</p>
+          <div class="agent-route-list">
+            <span>方向学习</span>
+            <strong>DirectionAgent → ProfileAgent → SyllabusAgent → PlannerAgent → SafetyAgent</strong>
+            <span>AI 课堂</span>
+            <strong>ClassroomAgent → VisualizationAgent → ExerciseAgent → MemoryAgent</strong>
+            <span>科研工具</span>
+            <strong>PaperAgent / WritingAgent / CitationAgent → SafetyAgent</strong>
           </div>
         </article>
       </section>

@@ -6,8 +6,8 @@
     </div>
 
     <div class="topbar-actions">
-      <el-button class="ghost-button" @click="notifyComingSoon('语言切换')">中文</el-button>
-      <el-button class="ghost-button" @click="notifyComingSoon('Light / Dark')">Light</el-button>
+      <el-button class="ghost-button topbar-chip" @click="notifyComingSoon('语言切换')">中文</el-button>
+      <el-button class="ghost-button topbar-chip" @click="notifyComingSoon('Light / Dark')">Light</el-button>
 
       <el-dropdown trigger="click" @command="handleCommand">
         <button class="user-card" type="button">
@@ -58,6 +58,6 @@ function handleCommand(command: string) {
 }
 
 function notifyComingSoon(feature: string) {
-  ElMessage.info(`${feature} 已预留入口，当前版本先保持中文浅色界面。`)
+  ElMessage.info(`${feature}入口已保留，当前版本先保持默认界面。`)
 }
 </script>

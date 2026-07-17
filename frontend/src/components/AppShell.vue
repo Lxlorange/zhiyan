@@ -1,6 +1,11 @@
 <template>
-  <el-container class="app-shell">
-    <AppSidebar :active-page="activePage" @navigate="emit('navigate', $event)" />
+  <el-container class="app-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+    <AppSidebar
+      :active-page="activePage"
+      :collapsed="sidebarCollapsed"
+      @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+      @navigate="emit('navigate', $event)"
+    />
 
     <el-container class="content-shell">
       <AppTopbar
@@ -18,6 +23,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
 import type { User } from '../services/apiClient'
@@ -33,4 +39,6 @@ const emit = defineEmits<{
   navigate: [page: string]
   logout: []
 }>()
+
+const sidebarCollapsed = ref(false)
 </script>

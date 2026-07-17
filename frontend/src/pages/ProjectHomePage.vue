@@ -2,7 +2,6 @@
   <div class="page project-home-page">
     <section class="page-hero">
       <div>
-        <p class="eyebrow">Projects</p>
         <h2>项目主页</h2>
       </div>
       <el-button type="primary" :loading="loading" @click="loadProjects">刷新项目</el-button>

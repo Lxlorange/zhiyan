@@ -6396,3 +6396,2873 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* 2026 education platform redesign layer: visual-only overrides, no workflow fallback. */
+:root {
+  --edu-bg: #f7f4ee;
+  --edu-bg-2: #eef6f1;
+  --edu-surface: rgba(255, 255, 255, 0.92);
+  --edu-surface-solid: #fffdf8;
+  --edu-ink: #17211d;
+  --edu-muted: #64736a;
+  --edu-line: #dde6dc;
+  --edu-accent: #116a62;
+  --edu-accent-strong: #0c4f49;
+  --edu-accent-soft: #dff3ee;
+  --edu-indigo: #4f46e5;
+  --edu-amber: #c76f17;
+  --edu-danger: #b42318;
+  --edu-shadow: 0 22px 54px rgba(42, 61, 50, 0.12);
+  --edu-shadow-soft: 0 12px 30px rgba(42, 61, 50, 0.08);
+  --edu-radius-lg: 22px;
+  --edu-radius-md: 16px;
+  --edu-radius-sm: 11px;
+  color: var(--edu-ink);
+  font-family: Outfit, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--edu-ink);
+  background:
+    radial-gradient(circle at 8% 6%, rgba(17, 106, 98, 0.13), transparent 28%),
+    radial-gradient(circle at 92% 12%, rgba(199, 111, 23, 0.1), transparent 24%),
+    linear-gradient(135deg, var(--edu-bg) 0%, #fbfaf6 48%, var(--edu-bg-2) 100%);
+  font-family: Outfit, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(17, 106, 98, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 106, 98, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  content: "";
+  pointer-events: none;
+}
+
+button,
+.el-button,
+.el-menu-item,
+.el-sub-menu__title,
+.project-list-item,
+.todo-work-card,
+.todo-issue-list button,
+.todo-focus-metrics button,
+.agent-resource-link,
+.user-card {
+  transition: background-color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, color 0.22s ease, transform 0.22s ease;
+}
+
+button:focus-visible,
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select .el-input.is-focus .el-input__wrapper {
+  outline: 3px solid rgba(17, 106, 98, 0.18);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  min-height: 100dvh;
+}
+
+.content-shell {
+  min-width: 0;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex: 0 0 292px;
+  width: 292px;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 18px 14px;
+  border-right: 1px solid rgba(221, 230, 220, 0.9);
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: 12px 0 36px rgba(42, 61, 50, 0.09);
+  backdrop-filter: blur(20px);
+}
+
+.app-sidebar.is-collapsed {
+  flex-basis: 86px;
+  width: 86px;
+  padding-inline: 12px;
+}
+
+.brand {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 34px;
+  gap: 11px;
+  align-items: center;
+  padding: 10px 6px 18px;
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(17, 106, 98, 0.2);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.95), transparent 34%),
+    linear-gradient(145deg, #e6f6f1, #fff7e8);
+  box-shadow: 0 10px 20px rgba(17, 106, 98, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: var(--edu-accent-strong);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.brand-copy h1,
+.brand h1 {
+  color: var(--edu-ink);
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.brand-copy p,
+.brand p {
+  color: var(--edu-muted);
+}
+
+.app-sidebar.is-collapsed .brand {
+  grid-template-columns: 48px;
+  justify-content: center;
+}
+
+.app-sidebar.is-collapsed .brand-copy {
+  display: none;
+}
+
+.sidebar-collapse-btn {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--edu-line);
+  border-radius: 11px;
+  background: #ffffff;
+  color: var(--edu-accent);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.sidebar-collapse-btn:hover {
+  border-color: rgba(17, 106, 98, 0.35);
+  background: var(--edu-accent-soft);
+}
+
+.app-sidebar.is-collapsed .sidebar-collapse-btn {
+  position: absolute;
+  right: -4px;
+  bottom: 2px;
+  width: 28px;
+  height: 28px;
+}
+
+.tree-menu,
+.tree-menu.el-menu--collapse {
+  border-right: 0;
+  background: transparent;
+}
+
+.tree-menu .el-sub-menu__title,
+.tree-menu .el-menu-item {
+  height: 44px;
+  margin: 5px 0;
+  border-radius: 13px;
+  color: #33423b;
+  font-weight: 700;
+}
+
+.tree-menu .el-sub-menu__title {
+  padding-left: 12px !important;
+}
+
+.tree-menu .el-menu-item {
+  padding-left: 42px !important;
+}
+
+.tree-menu .el-sub-menu__title:hover,
+.tree-menu .el-menu-item:hover {
+  background: rgba(17, 106, 98, 0.08);
+  color: var(--edu-accent-strong);
+}
+
+.tree-menu .el-menu-item.is-active {
+  background: var(--edu-accent);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(17, 106, 98, 0.18);
+}
+
+.nav-glyph {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-right: 10px;
+  place-items: center;
+  border: 1px solid rgba(17, 106, 98, 0.25);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.nav-glyph::before {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--edu-accent);
+  content: "";
+}
+
+.nav-glyph-classroom::before {
+  border-radius: 999px;
+  background: var(--edu-indigo);
+}
+
+.nav-glyph-research::before {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--edu-amber);
+}
+
+.nav-glyph-system::before {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--edu-accent);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.app-sidebar.is-collapsed .nav-label,
+.app-sidebar.is-collapsed .el-sub-menu__icon-arrow {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .tree-menu .el-sub-menu__title,
+.app-sidebar.is-collapsed .tree-menu .el-menu-item {
+  justify-content: center;
+  padding-inline: 0 !important;
+}
+
+.app-sidebar.is-collapsed .nav-glyph {
+  margin-right: 0;
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  height: 76px;
+  padding: 0 30px;
+  border-bottom: 1px solid rgba(221, 230, 220, 0.85);
+  background: rgba(255, 253, 248, 0.78);
+  backdrop-filter: blur(18px);
+}
+
+.topbar-title strong {
+  color: var(--edu-ink);
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.topbar-title span {
+  color: var(--edu-muted);
+}
+
+.topbar-chip.el-button,
+.ghost-button.el-button {
+  border-color: rgba(221, 230, 220, 0.95);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #42544b;
+  font-weight: 750;
+}
+
+.topbar-chip.el-button:hover,
+.ghost-button.el-button:hover {
+  border-color: rgba(17, 106, 98, 0.34);
+  background: var(--edu-accent-soft);
+  color: var(--edu-accent-strong);
+}
+
+.user-card {
+  min-width: 198px;
+  border-color: rgba(221, 230, 220, 0.95);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--edu-shadow-soft);
+}
+
+.user-card:hover {
+  border-color: rgba(17, 106, 98, 0.36);
+  transform: translateY(-1px);
+}
+
+.user-copy strong {
+  color: var(--edu-ink);
+}
+
+.user-copy small {
+  color: var(--edu-muted);
+}
+
+.app-main {
+  padding: 26px 32px 40px;
+}
+
+.page {
+  max-width: 1440px;
+}
+
+.panel-like,
+.page-hero,
+.panel.el-card,
+.agent-output-panel,
+.agent-composer-panel,
+.project-list-panel,
+.project-detail-panel,
+.syllabus-overview,
+.syllabus-summary,
+.syllabus-directory,
+.syllabus-stage > header,
+.syllabus-item-card,
+.todo-workspace-topbar,
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel {
+  border: 1px solid rgba(221, 230, 220, 0.95);
+  border-radius: var(--edu-radius-lg);
+  background: var(--edu-surface);
+  box-shadow: var(--edu-shadow-soft);
+}
+
+.page-hero {
+  align-items: center;
+  padding: 22px 24px;
+  background:
+    radial-gradient(circle at 98% 12%, rgba(17, 106, 98, 0.09), transparent 26%),
+    var(--edu-surface);
+}
+
+.page-hero h2 {
+  color: var(--edu-ink);
+  font-size: clamp(26px, 2.4vw, 38px);
+  letter-spacing: 0;
+}
+
+.page-hero p {
+  color: var(--edu-muted);
+  max-width: 68ch;
+}
+
+.eyebrow,
+.project-list-head span,
+.project-detail-head span,
+.section-title span,
+.directory-head span,
+.syllabus-project-card span,
+.syllabus-progress span,
+.syllabus-meta-list span,
+.agent-output-head span,
+.agent-section-head span,
+.todo-workspace-title span,
+.todo-issueboard-head span,
+.todo-focus-head span,
+.todo-current-main > span,
+.todo-coach-panel header span,
+.todo-profile-signals > span,
+.todo-plan-settings span {
+  color: var(--edu-accent);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--edu-accent);
+  --el-button-border-color: var(--edu-accent);
+  --el-button-hover-bg-color: var(--edu-accent-strong);
+  --el-button-hover-border-color: var(--edu-accent-strong);
+  --el-button-active-bg-color: #083d38;
+  --el-button-active-border-color: #083d38;
+}
+
+.el-button {
+  border-radius: 12px;
+  font-weight: 750;
+}
+
+.el-button:active {
+  transform: translateY(1px);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select .el-input__wrapper,
+.el-date-editor.el-input__wrapper,
+.el-input-number .el-input__wrapper {
+  border-radius: 13px;
+  box-shadow: 0 0 0 1px rgba(221, 230, 220, 0.95) inset;
+}
+
+.direction-planner-page {
+  max-width: min(1520px, 100%);
+}
+
+.direction-planner-page--agent {
+  min-height: calc(100dvh - 128px);
+  padding-bottom: 190px;
+}
+
+.planner-agent-shell {
+  width: min(1120px, 100%);
+  min-height: calc(100dvh - 156px);
+  align-content: center;
+  gap: 18px;
+}
+
+.planner-agent-shell.has-output {
+  width: min(1340px, 100%);
+  align-content: start;
+}
+
+.agent-composer-panel {
+  position: relative;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(17, 106, 98, 0.07), transparent 28%),
+    rgba(255, 253, 248, 0.96);
+  box-shadow: var(--edu-shadow);
+}
+
+.planner-agent-shell.has-output .agent-composer-panel {
+  position: sticky;
+  bottom: 18px;
+  z-index: 12;
+  border-color: rgba(17, 106, 98, 0.22);
+  background: rgba(255, 253, 248, 0.96);
+}
+
+.agent-composer-head {
+  display: none;
+}
+
+.agent-composer-textarea .el-textarea__inner {
+  min-height: 166px !important;
+  border: 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(221, 230, 220, 0.95);
+  color: var(--edu-ink);
+  font-size: 16px;
+  line-height: 1.72;
+}
+
+.planner-agent-shell.has-output .agent-composer-textarea .el-textarea__inner {
+  min-height: 104px !important;
+}
+
+.agent-composer-meta {
+  gap: 10px;
+}
+
+.agent-learning-type {
+  width: 162px;
+}
+
+.agent-upload .el-button {
+  background: #ffffff;
+}
+
+.agent-composer-spacer {
+  min-width: 16px;
+}
+
+.agent-build-button.el-button {
+  border-color: rgba(199, 111, 23, 0.32);
+  background: #fff7ed;
+  color: #9a4d0b;
+}
+
+.agent-build-button.el-button:hover {
+  border-color: var(--edu-amber);
+  background: #ffedd5;
+  color: #7c3a05;
+}
+
+.agent-reference-strip,
+.agent-message-attachments {
+  gap: 8px;
+}
+
+.agent-file-chip {
+  max-width: 310px;
+  border-color: rgba(17, 106, 98, 0.24);
+  border-radius: 12px;
+  background: #f1faf7;
+  color: #36564c;
+}
+
+.agent-file-chip i {
+  border-color: var(--edu-accent);
+}
+
+.agent-file-chip i::after {
+  border-color: var(--edu-accent);
+  background: #e6f6f1;
+}
+
+.agent-output-panel {
+  padding: 22px;
+  border-radius: 26px;
+  background: rgba(255, 253, 248, 0.94);
+}
+
+.agent-output-head {
+  border-bottom-color: var(--edu-line);
+}
+
+.agent-output-head strong {
+  color: var(--edu-ink);
+  font-size: clamp(22px, 2vw, 30px);
+}
+
+.agent-dialogue-list {
+  max-height: 300px;
+  padding: 2px 4px 4px;
+}
+
+.agent-bubble {
+  border-color: var(--edu-line);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(42, 61, 50, 0.05);
+}
+
+.agent-bubble.user {
+  border-color: rgba(17, 106, 98, 0.18);
+  background: #eaf6f2;
+}
+
+.agent-bubble.is-streaming {
+  border-color: rgba(17, 106, 98, 0.28);
+  background: linear-gradient(135deg, #effaf6, #ffffff);
+}
+
+.agent-bubble span {
+  color: var(--edu-accent);
+}
+
+.agent-bubble p,
+.agent-plan-section p,
+.agent-plan-section ol {
+  color: #33423b;
+}
+
+.agent-plan-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.86fr);
+  gap: 14px;
+}
+
+.agent-plan-section {
+  border-color: var(--edu-line);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(42, 61, 50, 0.04);
+}
+
+.agent-card-list article {
+  border: 1px solid rgba(221, 230, 220, 0.85);
+  background: #fbfaf6;
+}
+
+.agent-resource-section {
+  background: #f8fbf9;
+}
+
+.agent-resource-list {
+  gap: 7px;
+}
+
+.agent-resource-list li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.agent-resource-list li::before {
+  position: absolute;
+  top: 0.72em;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--edu-accent);
+  content: "";
+}
+
+.agent-resource-link {
+  color: #0f5f8f;
+}
+
+.agent-resource-link:hover {
+  color: #09466b;
+}
+
+.agent-resource-link strong {
+  white-space: normal;
+}
+
+.project-home-page,
+.syllabus-page,
+.todo-workspace-page {
+  max-width: min(1680px, 100%);
+}
+
+.project-home-layout {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.project-list-panel {
+  position: sticky;
+  top: 102px;
+  max-height: calc(100dvh - 124px);
+  overflow-y: auto;
+}
+
+.project-list-item {
+  border-color: var(--edu-line);
+  border-radius: 16px;
+}
+
+.project-list-item:hover,
+.project-list-item.active {
+  border-color: rgba(17, 106, 98, 0.34);
+  background: #f1faf7;
+  box-shadow: 0 12px 28px rgba(17, 106, 98, 0.1);
+  transform: translateY(-1px);
+}
+
+.project-detail-panel {
+  padding: 24px;
+}
+
+.project-next-learning {
+  border-color: rgba(17, 106, 98, 0.22);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 96% 10%, rgba(17, 106, 98, 0.12), transparent 28%),
+    #ffffff;
+}
+
+.project-dashboard-grid > div,
+.project-insight-grid > div,
+.syllabus-info-grid > div,
+.syllabus-resource-block,
+.daily-plan-empty-state,
+.todo-plan-settings,
+.todo-current-card,
+.todo-profile-signals {
+  border-color: var(--edu-line);
+  border-radius: var(--edu-radius-md);
+  background: #ffffff;
+}
+
+.syllabus-layout {
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.syllabus-overview {
+  position: sticky;
+  top: 102px;
+  max-height: calc(100dvh - 124px);
+  overflow-y: auto;
+}
+
+.syllabus-stage > header {
+  padding: 16px 18px;
+  border-radius: 20px 20px 0 0;
+  box-shadow: none;
+}
+
+.syllabus-item-card {
+  border-radius: 0 0 20px 20px;
+  background: #fffdf8;
+}
+
+.syllabus-link-grid a,
+.syllabus-doc-links a,
+.directory-row a {
+  border-color: rgba(17, 106, 98, 0.18);
+  background: #f1faf7;
+  color: var(--edu-accent-strong);
+}
+
+.syllabus-link-grid a:hover,
+.syllabus-doc-links a:hover,
+.directory-row a:hover {
+  border-color: rgba(17, 106, 98, 0.42);
+  background: #e4f4ef;
+}
+
+.todo-workspace-page {
+  max-width: min(1860px, 100%);
+}
+
+.todo-workspace-topbar {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+}
+
+.todo-workspace-title strong,
+.todo-issueboard-head strong,
+.todo-focus-head h2,
+.todo-current-main h3,
+.todo-coach-panel header strong {
+  color: var(--edu-ink);
+}
+
+.todo-workspace-shell {
+  grid-template-columns: minmax(280px, 0.68fr) minmax(600px, 1.5fr) minmax(340px, 0.88fr);
+  gap: 18px;
+}
+
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel {
+  border-color: rgba(221, 230, 220, 0.95);
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.todo-issue-progress,
+.todo-focus-metrics button,
+.todo-issue-list button,
+.todo-work-card,
+.todo-coach-messages article.assistant {
+  border-color: var(--edu-line);
+}
+
+.todo-issue-progress span {
+  background: linear-gradient(90deg, var(--edu-accent), #78c2a4);
+}
+
+.todo-focus-metrics button:hover,
+.todo-focus-metrics button.active,
+.todo-issue-list button:hover,
+.todo-issue-list button.active {
+  border-color: rgba(17, 106, 98, 0.36);
+  background: #f1faf7;
+}
+
+.todo-current-card {
+  border-color: rgba(17, 106, 98, 0.22);
+  background:
+    radial-gradient(circle at 92% 18%, rgba(17, 106, 98, 0.12), transparent 32%),
+    linear-gradient(135deg, #ffffff, #eef8f4);
+}
+
+.todo-task-gate {
+  padding: 11px 12px;
+  border: 1px solid var(--edu-line);
+  border-radius: 14px;
+  background: #fbfaf6;
+}
+
+.todo-task-gate.ready {
+  border-color: rgba(17, 106, 98, 0.26);
+  background: #f1faf7;
+}
+
+.todo-task-gate.locked {
+  border-color: #ead8c6;
+  background: #fff7ed;
+}
+
+.todo-work-card {
+  border-radius: 18px;
+}
+
+.todo-work-card:hover,
+.todo-work-card.active {
+  border-color: rgba(17, 106, 98, 0.36);
+  background: #f8fbf9;
+  box-shadow: 0 14px 30px rgba(17, 106, 98, 0.09);
+}
+
+.todo-work-card.done {
+  border-color: rgba(17, 106, 98, 0.24);
+  background: #f1faf7;
+}
+
+.todo-coach-messages article.user {
+  background: var(--edu-accent);
+}
+
+.todo-coach-prompts button:hover {
+  border-color: rgba(17, 106, 98, 0.34);
+  background: #f1faf7;
+}
+
+.todo-work-actions .el-button,
+.todo-current-actions .el-button,
+.project-card-actions .el-button,
+.syllabus-status-actions .el-button {
+  min-height: 38px;
+}
+
+.todo-work-actions .el-button:not(.el-button--primary),
+.todo-current-actions .el-button:not(.el-button--primary) {
+  border-color: rgba(221, 230, 220, 0.95);
+  background: #fffdf8;
+}
+
+.todo-work-actions .el-button:not(.el-button--primary):hover,
+.todo-current-actions .el-button:not(.el-button--primary):hover {
+  border-color: rgba(17, 106, 98, 0.34);
+  background: #f1faf7;
+  color: var(--edu-accent-strong);
+}
+
+.todo-task-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.todo-task-line > span {
+  color: var(--edu-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.todo-work-card.done .todo-work-body h4,
+.todo-work-card.done .todo-work-body p {
+  color: #4d6b5d;
+}
+
+.todo-plan-create,
+.syllabus-empty,
+.daily-plan-loading,
+.syllabus-loading,
+.auth-loading {
+  border-radius: var(--edu-radius-lg);
+}
+
+.el-empty {
+  padding: 54px 24px;
+  border: 1px dashed rgba(17, 106, 98, 0.24);
+  border-radius: var(--edu-radius-lg);
+  background: rgba(255, 253, 248, 0.7);
+}
+
+.el-empty__description p {
+  color: var(--edu-muted);
+}
+
+.el-tag {
+  border-radius: 999px;
+  font-weight: 750;
+}
+
+.el-progress-bar__outer {
+  background: rgba(17, 106, 98, 0.1);
+}
+
+.el-progress-bar__inner {
+  background: linear-gradient(90deg, var(--edu-accent), #78c2a4);
+}
+
+.el-checkbox-button__inner {
+  font-weight: 750;
+}
+
+.el-checkbox-button.is-checked .el-checkbox-button__inner {
+  border-color: var(--edu-accent);
+  background: var(--edu-accent);
+  box-shadow: -1px 0 0 0 var(--edu-accent);
+}
+
+.om-player-page,
+.classroom-unified-page {
+  max-width: min(1880px, 100%);
+}
+
+.om-player-shell,
+.om-slide-stage,
+.om-workspace-panel,
+.om-tool-panel {
+  border-color: rgba(221, 230, 220, 0.95);
+}
+
+.om-slide-stage {
+  box-shadow: var(--edu-shadow-soft);
+}
+
+.om-player-actions button,
+.om-assistant-tabs button,
+.om-slide-strip button {
+  cursor: pointer;
+}
+
+.om-slide-strip button:hover,
+.om-slide-strip button.active {
+  transform: translateY(-1px);
+}
+
+.workspace-module-page,
+.dashboard-module-page,
+.settings-page {
+  max-width: min(1480px, 100%);
+}
+
+.placeholder-item,
+.resource-card,
+.metric,
+.result-block,
+.settings-note,
+.profile-grid > div {
+  border-color: var(--edu-line);
+  border-radius: var(--edu-radius-md);
+  background: var(--edu-surface-solid);
+}
+
+@media (max-width: 1280px) {
+  .app-sidebar {
+    flex-basis: 86px;
+    width: 86px;
+    padding-inline: 12px;
+  }
+
+  .app-sidebar .brand {
+    grid-template-columns: 48px;
+    justify-content: center;
+  }
+
+  .app-sidebar .brand-copy,
+  .app-sidebar .nav-label,
+  .app-sidebar .el-sub-menu__icon-arrow {
+    display: none;
+  }
+
+  .app-sidebar .tree-menu .el-sub-menu__title,
+  .app-sidebar .tree-menu .el-menu-item {
+    justify-content: center;
+    padding-inline: 0 !important;
+  }
+
+  .app-sidebar .nav-glyph {
+    margin-right: 0;
+  }
+
+  .sidebar-collapse-btn {
+    display: none;
+  }
+
+  .todo-workspace-shell {
+    grid-template-columns: minmax(280px, 0.74fr) minmax(0, 1.26fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    display: block;
+  }
+
+  .app-sidebar {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+
+  .app-topbar {
+    position: relative;
+    height: auto;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 14px 16px;
+  }
+
+  .topbar-title {
+    max-width: 100%;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .app-main {
+    padding: 18px 14px 28px;
+  }
+
+  .planner-agent-shell,
+  .planner-agent-shell.has-output,
+  .project-home-layout,
+  .syllabus-layout,
+  .todo-workspace-shell,
+  .agent-plan-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .planner-agent-shell.has-output .agent-composer-panel,
+  .project-list-panel,
+  .syllabus-overview {
+    position: static;
+    max-height: none;
+  }
+
+  .agent-composer-meta,
+  .project-next-learning,
+  .todo-current-card,
+  .todo-work-card {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-learning-type {
+    width: 100%;
+  }
+
+  .agent-composer-spacer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Minimal product pass: reduce boxy layouts and keep the workspace quiet. */
+:root {
+  --minimal-bg: #fbfaf7;
+  --minimal-ink: #17211d;
+  --minimal-muted: #6b756f;
+  --minimal-rule: rgba(23, 33, 29, 0.11);
+  --minimal-rule-strong: rgba(17, 106, 98, 0.28);
+}
+
+body {
+  background: var(--minimal-bg);
+}
+
+body::before {
+  opacity: 0.24;
+}
+
+.app-sidebar {
+  border-right: 1px solid var(--minimal-rule);
+  background: rgba(251, 250, 247, 0.92);
+  box-shadow: none;
+}
+
+.brand {
+  padding-bottom: 14px;
+}
+
+.brand-mark {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.brand-copy p,
+.topbar-title span,
+.eyebrow {
+  display: none;
+}
+
+.app-topbar {
+  height: 66px;
+  border-bottom: 1px solid var(--minimal-rule);
+  background: rgba(251, 250, 247, 0.86);
+  box-shadow: none;
+}
+
+.app-main {
+  padding-top: 20px;
+}
+
+.page {
+  max-width: 1500px;
+}
+
+.panel-like,
+.page-hero,
+.panel.el-card,
+.agent-output-panel,
+.agent-composer-panel,
+.project-list-panel,
+.project-detail-panel,
+.syllabus-overview,
+.syllabus-summary,
+.syllabus-directory,
+.syllabus-stage > header,
+.syllabus-item-card,
+.todo-workspace-topbar,
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel,
+.workspace-panel,
+.metric-card,
+.agent-pipeline,
+.agent-pipeline article,
+.auth-panel {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-hero,
+.workspace-hero,
+.todo-workspace-topbar {
+  min-height: auto;
+  margin-bottom: 14px;
+  padding: 0 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-hero h2,
+.workspace-hero h2 {
+  margin: 0;
+  color: var(--minimal-ink);
+  font-size: clamp(25px, 2.2vw, 34px);
+  line-height: 1.12;
+}
+
+.page-hero p,
+.workspace-hero p,
+.auth-hero p {
+  max-width: 52ch;
+  color: var(--minimal-muted);
+}
+
+.auth-page {
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 440px);
+  min-height: 100dvh;
+  background: var(--minimal-bg);
+}
+
+.auth-hero h1 {
+  color: var(--minimal-ink);
+  font-size: clamp(44px, 7vw, 86px);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.auth-feature-grid {
+  display: none;
+}
+
+.auth-panel {
+  border-left: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  padding: 26px 0 26px 34px;
+}
+
+.auth-panel-head {
+  margin-bottom: 18px;
+}
+
+.tree-menu .el-sub-menu__title,
+.tree-menu .el-menu-item {
+  border-radius: 9px;
+}
+
+.tree-menu .el-menu-item.is-active {
+  box-shadow: none;
+}
+
+.agent-composer-panel {
+  border: 1px solid var(--minimal-rule);
+  border-radius: 22px;
+  background: #ffffff;
+}
+
+.agent-output-panel {
+  border-radius: 0;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--minimal-rule);
+}
+
+.agent-dialogue-list {
+  max-height: 240px;
+}
+
+.agent-bubble,
+.agent-plan-section,
+.agent-card-list article {
+  box-shadow: none;
+}
+
+.agent-plan-section {
+  padding: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.agent-plan-section--wide:first-child {
+  border-top: 0;
+}
+
+.agent-card-list article {
+  padding: 6px 0 6px 14px;
+  border: 0;
+  border-left: 2px solid var(--minimal-rule-strong);
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-home-layout,
+.syllabus-layout {
+  gap: 28px;
+}
+
+.project-list-panel,
+.syllabus-overview {
+  padding: 0;
+  border-right: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.project-list-item {
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-list-item:hover,
+.project-list-item.active {
+  background: rgba(17, 106, 98, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+.project-detail-panel {
+  padding: 0;
+}
+
+.project-next-learning,
+.todo-current-card {
+  border: 1px solid var(--minimal-rule);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.project-dashboard-grid,
+.project-insight-grid,
+.syllabus-info-grid,
+.workspace-metrics {
+  gap: 0;
+  border-top: 1px solid var(--minimal-rule);
+  border-left: 1px solid var(--minimal-rule);
+}
+
+.project-dashboard-grid > div,
+.project-insight-grid > div,
+.syllabus-info-grid > div,
+.metric-card {
+  min-height: auto;
+  padding: 14px;
+  border: 0;
+  border-right: 1px solid var(--minimal-rule);
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-section,
+.syllabus-stage,
+.workspace-panel {
+  padding-block: 18px;
+  border-top: 1px solid var(--minimal-rule);
+}
+
+.syllabus-summary.compact-context {
+  padding: 10px 0;
+  border-top: 1px solid var(--minimal-rule);
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.syllabus-summary.compact-context h3 {
+  display: none;
+}
+
+.syllabus-summary.compact-context p {
+  margin: 0;
+  color: var(--minimal-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.syllabus-directory,
+.syllabus-item-card,
+.syllabus-stage > header {
+  border-radius: 0;
+}
+
+.syllabus-stage > header {
+  padding: 16px 0 10px;
+  border-bottom: 1px solid var(--minimal-rule);
+}
+
+.syllabus-item-card {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--minimal-rule);
+}
+
+.syllabus-resource-block,
+.todo-plan-settings,
+.todo-task-gate,
+.todo-profile-signals {
+  border: 1px solid var(--minimal-rule);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.todo-workspace-shell {
+  grid-template-columns: minmax(260px, 0.58fr) minmax(560px, 1.5fr) minmax(320px, 0.82fr);
+}
+
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel {
+  padding: 0;
+}
+
+.todo-issueboard,
+.todo-coach-panel {
+  border-right: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.todo-focus-panel {
+  border-radius: 0;
+}
+
+.todo-issueboard-head,
+.todo-focus-head,
+.todo-coach-panel > header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--minimal-rule);
+}
+
+.todo-focus-metrics {
+  gap: 0;
+  border: 1px solid var(--minimal-rule);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.todo-focus-metrics button {
+  border: 0;
+  border-right: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.todo-focus-metrics button:last-child {
+  border-right: 0;
+}
+
+.todo-work-card {
+  grid-template-columns: 22px minmax(0, 1fr) 250px;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.todo-work-card:hover,
+.todo-work-card.active,
+.todo-work-card.done,
+.todo-work-card.overdue:not(.done) {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.workspace-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workspace-grid.two,
+.research-workflow-grid {
+  gap: 28px;
+}
+
+.workspace-panel {
+  padding-inline: 0;
+}
+
+.workspace-panel header {
+  border-bottom: 0;
+  padding-bottom: 10px;
+}
+
+.workspace-list p,
+.agent-trace-list > div,
+.resource-card,
+.knowledge-hit-list > div,
+.literature-list > div,
+.submission-list > div,
+.tool-run-list > div,
+.profile-entry-grid > div {
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.knowledge-point-scroll button,
+.research-tool-catalog button {
+  border: 0;
+  border-bottom: 1px solid var(--minimal-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.knowledge-point-scroll button:hover,
+.research-tool-catalog button:hover,
+.research-tool-catalog button.active {
+  background: rgba(17, 106, 98, 0.06);
+}
+
+.agent-pipeline {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--minimal-rule);
+}
+
+.agent-pipeline article {
+  flex: 0 0 210px;
+  padding: 0 18px 0 0;
+  border-right: 1px solid var(--minimal-rule);
+  border-radius: 0;
+}
+
+.agent-pipeline article + article {
+  padding-left: 18px;
+}
+
+.agent-route-list {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding-top: 6px;
+}
+
+.agent-route-list span {
+  color: var(--minimal-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-route-list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--minimal-ink);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.classroom-hero {
+  display: none;
+}
+
+.om-player-page {
+  padding-top: 0;
+}
+
+.om-slide-stage {
+  border-radius: 18px;
+}
+
+@media (max-width: 1100px) {
+  .auth-page {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-panel {
+    border-left: 0;
+    border-top: 1px solid var(--minimal-rule);
+    padding: 24px 0 0;
+  }
+
+  .todo-workspace-shell,
+  .project-home-layout,
+  .syllabus-layout,
+  .workspace-grid.two,
+  .research-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-list-panel,
+  .syllabus-overview,
+  .todo-issueboard,
+  .todo-coach-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--minimal-rule);
+    padding-bottom: 16px;
+  }
+
+  .todo-work-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .todo-work-actions {
+    grid-column: 2;
+  }
+}
+
+/* Research folio direction: one vertical reading spine with high-contrast controls. */
+:root {
+  --folio-paper: #fbfaf6;
+  --folio-paper-strong: #ffffff;
+  --folio-ink: #111814;
+  --folio-muted: #43524a;
+  --folio-faint: #6f7a73;
+  --folio-rule: rgba(17, 24, 20, 0.14);
+  --folio-rule-strong: rgba(17, 24, 20, 0.32);
+  --folio-green: #075f56;
+  --folio-green-hover: #064a43;
+  --folio-red: #9f2d20;
+  --folio-gold: #a66b00;
+  --folio-wash: rgba(7, 95, 86, 0.075);
+  --folio-highlight: #fff1d6;
+  --font-display: Fraunces, "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+  --font-body: Aptos, "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  color: var(--folio-ink);
+  background:
+    linear-gradient(90deg, rgba(7, 95, 86, 0.045) 1px, transparent 1px) 0 0 / 42px 42px,
+    radial-gradient(circle at 12% 8%, rgba(166, 107, 0, 0.08), transparent 28rem),
+    var(--folio-paper);
+  font-family: var(--font-body);
+}
+
+body::before {
+  display: none;
+}
+
+button,
+.el-button,
+.el-input__inner,
+.el-textarea__inner,
+.el-select,
+.el-checkbox-button__inner,
+.el-tag {
+  font-family: var(--font-body);
+}
+
+p,
+li,
+small,
+.el-form-item__label,
+.el-input__inner,
+.el-textarea__inner {
+  color: var(--folio-muted);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.content-shell.el-container {
+  min-width: 0;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  width: auto;
+  height: 100dvh;
+  min-height: 100dvh;
+  border-right: 1px solid var(--folio-rule);
+  background: color-mix(in srgb, var(--folio-paper) 94%, white);
+}
+
+.app-sidebar.is-collapsed {
+  width: auto;
+}
+
+.app-topbar {
+  height: 64px;
+  border-bottom: 1px solid var(--folio-rule);
+  background: color-mix(in srgb, var(--folio-paper) 88%, white);
+}
+
+.topbar-title strong,
+.brand-copy h1,
+.brand h1 {
+  color: var(--folio-ink);
+  font-family: var(--font-display);
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+.topbar-title span {
+  display: block;
+  color: var(--folio-muted);
+  font-size: 13px;
+}
+
+.app-main {
+  min-width: 0;
+  padding: clamp(18px, 2.2vw, 34px);
+}
+
+.page,
+.direction-planner-page,
+.project-home-page,
+.syllabus-page,
+.todo-workspace-page,
+.workspace-module-page,
+.dashboard-module-page,
+.settings-page {
+  width: min(100%, 1120px);
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+.page-hero,
+.workspace-hero,
+.todo-workspace-topbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: clamp(20px, 3vw, 36px);
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--folio-rule-strong);
+}
+
+.page-hero h2,
+.workspace-hero h2,
+.todo-workspace-title strong,
+.auth-hero h1 {
+  color: var(--folio-ink);
+  font-family: var(--font-display);
+  font-weight: 680;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.page-hero h2,
+.workspace-hero h2,
+.todo-workspace-title strong {
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: 1.02;
+}
+
+.auth-hero h1 {
+  font-size: clamp(56px, 10vw, 126px);
+}
+
+.el-button,
+.el-button.is-plain,
+.ghost-button.el-button,
+.topbar-chip.el-button {
+  min-height: 42px;
+  border-color: var(--folio-rule-strong);
+  border-radius: 999px;
+  background: var(--folio-paper-strong);
+  color: var(--folio-ink);
+  font-weight: 760;
+}
+
+.el-button:hover,
+.el-button.is-plain:hover,
+.ghost-button.el-button:hover,
+.topbar-chip.el-button:hover {
+  border-color: var(--folio-green);
+  background: var(--folio-wash);
+  color: var(--folio-green-hover);
+}
+
+.el-button--primary,
+.el-button--primary.is-plain {
+  --el-button-bg-color: var(--folio-green);
+  --el-button-border-color: var(--folio-green);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--folio-green-hover);
+  --el-button-hover-border-color: var(--folio-green-hover);
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #033d38;
+  --el-button-active-border-color: #033d38;
+  --el-button-active-text-color: #ffffff;
+  color: #ffffff !important;
+}
+
+.el-button--danger,
+.el-button--danger.is-plain {
+  --el-button-bg-color: var(--folio-red);
+  --el-button-border-color: var(--folio-red);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #7e2219;
+  --el-button-hover-border-color: #7e2219;
+  --el-button-hover-text-color: #ffffff;
+  color: #ffffff !important;
+}
+
+.el-tag {
+  border-color: var(--folio-rule);
+  background: #ffffff;
+  color: var(--folio-ink);
+}
+
+.el-tag--success {
+  --el-tag-text-color: var(--folio-green);
+  color: var(--folio-green);
+}
+
+.el-tag--warning {
+  --el-tag-text-color: #7b4b00;
+  color: #7b4b00;
+}
+
+.el-tag--danger {
+  --el-tag-text-color: var(--folio-red);
+  color: var(--folio-red);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select .el-input__wrapper,
+.el-date-editor.el-input__wrapper,
+.el-input-number .el-input__wrapper {
+  min-height: 42px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--folio-rule) inset;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--folio-rule-strong) inset;
+}
+
+button:focus-visible,
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select .el-input.is-focus .el-input__wrapper {
+  outline: 3px solid rgba(7, 95, 86, 0.24);
+  outline-offset: 2px;
+}
+
+.project-home-layout,
+.syllabus-layout,
+.todo-workspace-shell,
+.workspace-grid.two,
+.research-workflow-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(22px, 3vw, 36px);
+}
+
+.project-list-panel,
+.syllabus-overview,
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel,
+.workspace-panel,
+.project-detail-panel {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  border-right: 0;
+  border-bottom: 1px solid var(--folio-rule);
+  padding: 0 0 clamp(22px, 3vw, 34px);
+}
+
+.project-list-panel,
+.syllabus-overview,
+.todo-issueboard {
+  order: -1;
+}
+
+.project-list-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.project-list-head,
+.syllabus-project-card,
+.syllabus-progress,
+.syllabus-meta-list {
+  grid-column: 1 / -1;
+}
+
+.project-list-item,
+.syllabus-stage-nav a,
+.todo-issue-list button,
+.knowledge-point-scroll button,
+.research-tool-catalog button {
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-list-item:hover,
+.project-list-item.active,
+.syllabus-stage-nav a:hover,
+.todo-issue-list button:hover,
+.todo-issue-list button.active,
+.knowledge-point-scroll button:hover,
+.research-tool-catalog button:hover,
+.research-tool-catalog button.active {
+  background: var(--folio-highlight);
+  color: var(--folio-ink);
+}
+
+.project-dashboard-grid,
+.project-insight-grid,
+.syllabus-info-grid,
+.workspace-metrics,
+.todo-focus-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-top: 1px solid var(--folio-rule);
+  border-left: 0;
+}
+
+.project-dashboard-grid > div,
+.project-insight-grid > div,
+.syllabus-info-grid > div,
+.metric-card,
+.todo-focus-metrics button {
+  border-right: 0;
+  border-bottom: 1px solid var(--folio-rule);
+}
+
+.project-next-learning,
+.todo-current-card,
+.agent-composer-panel,
+.syllabus-resource-block,
+.todo-plan-settings,
+.todo-task-gate,
+.todo-profile-signals,
+.auth-panel {
+  border: 1px solid var(--folio-rule);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.project-next-learning,
+.todo-current-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.project-next-actions,
+.project-card-actions,
+.syllabus-status-actions,
+.todo-current-actions,
+.todo-work-actions,
+.todo-workspace-actions,
+.module-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.todo-work-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.todo-work-actions {
+  grid-column: 2;
+}
+
+.todo-coach-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.todo-coach-messages {
+  max-height: none;
+  overflow: visible;
+}
+
+.todo-coach-input {
+  border-top: 1px solid var(--folio-rule);
+}
+
+.agent-plan-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.agent-output-panel,
+.agent-composer-panel {
+  width: min(100%, 920px);
+  margin-inline: auto;
+}
+
+.planner-agent-shell,
+.planner-agent-shell.has-output {
+  width: min(100%, 980px);
+  min-height: calc(100dvh - 150px);
+}
+
+.workspace-metrics {
+  margin-bottom: 22px;
+}
+
+.workspace-list p,
+.agent-trace-list > div,
+.resource-card,
+.knowledge-hit-list > div,
+.literature-list > div,
+.submission-list > div,
+.tool-run-list > div,
+.profile-entry-grid > div {
+  color: var(--folio-muted);
+}
+
+.agent-pipeline {
+  scrollbar-width: thin;
+  scrollbar-color: var(--folio-green) transparent;
+}
+
+.agent-route-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.agent-route-list strong {
+  white-space: normal;
+  line-height: 1.6;
+}
+
+.auth-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(22px, 4vw, 42px);
+  align-content: center;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  padding: clamp(24px, 6vw, 72px);
+}
+
+.auth-panel {
+  border-left: 0;
+  padding: clamp(20px, 4vw, 36px);
+}
+
+.auth-panel-head {
+  gap: 12px;
+}
+
+.auth-panel-head h2 {
+  color: var(--folio-ink);
+  font-family: var(--font-display);
+}
+
+.classroom-hero {
+  display: none;
+}
+
+.om-player-page {
+  width: min(100%, 1680px);
+  max-width: 1680px;
+}
+
+.om-player-shell {
+  min-width: 0;
+}
+
+.om-slide-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.om-insight-panel {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+@media (min-width: 900px) {
+  .auth-page {
+    grid-template-columns: minmax(0, 0.9fr) minmax(380px, 460px);
+  }
+
+  .project-dashboard-grid,
+  .project-insight-grid,
+  .syllabus-info-grid,
+  .workspace-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .todo-focus-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1180px) {
+  .page,
+  .project-home-page,
+  .syllabus-page,
+  .workspace-module-page,
+  .dashboard-module-page,
+  .settings-page {
+    width: min(100%, 1180px);
+    max-width: 1180px;
+  }
+
+  .todo-workspace-page {
+    width: min(100%, 1060px);
+    max-width: 1060px;
+  }
+
+  .project-dashboard-grid,
+  .workspace-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .project-insight-grid,
+  .syllabus-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    display: block;
+  }
+
+  .app-sidebar,
+  .app-sidebar.is-collapsed {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--folio-rule);
+  }
+
+  .brand {
+    display: none;
+  }
+
+  .tree-menu,
+  .tree-menu.el-menu--collapse {
+    display: flex;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .tree-menu .el-sub-menu,
+  .tree-menu .el-menu-item {
+    flex: 0 0 auto;
+  }
+
+  .tree-menu .el-sub-menu__title,
+  .tree-menu .el-menu-item {
+    padding-inline: 12px !important;
+  }
+
+  .app-sidebar .nav-label,
+  .app-sidebar .el-sub-menu__icon-arrow {
+    display: inline;
+  }
+
+  .app-sidebar .nav-glyph {
+    margin-right: 8px;
+  }
+
+  .app-topbar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    min-height: 58px;
+    padding: 10px 14px;
+  }
+
+  .topbar-title span {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topbar-chip.el-button {
+    display: none;
+  }
+
+  .user-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .app-main {
+    padding: 18px 14px 28px;
+  }
+
+  .page-hero,
+  .workspace-hero,
+  .todo-workspace-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .todo-workspace-actions,
+  .syllabus-hero-actions,
+  .classroom-hero-actions {
+    width: 100%;
+  }
+
+  .project-select,
+  .todo-workspace-actions .el-select,
+  .syllabus-hero-actions .el-select {
+    width: 100%;
+  }
+
+  .el-button {
+    min-height: 44px;
+  }
+
+  .project-next-actions .el-button,
+  .project-card-actions .el-button,
+  .syllabus-status-actions .el-button,
+  .todo-current-actions .el-button,
+  .todo-work-actions .el-button,
+  .module-action-strip .el-button {
+    flex: 1 1 150px;
+  }
+
+  .agent-composer-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .agent-learning-type {
+    width: 100%;
+  }
+
+  .agent-upload .el-button,
+  .agent-build-button.el-button,
+  .agent-composer-meta > .el-button {
+    width: 100%;
+  }
+
+  .om-insight-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  p,
+  li,
+  small,
+  .el-form-item__label,
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 14px;
+  }
+
+  .app-main {
+    padding-inline: 10px;
+  }
+
+  .page-hero h2,
+  .workspace-hero h2,
+  .todo-workspace-title strong {
+    font-size: 28px;
+  }
+
+  .auth-page {
+    padding: 20px 14px;
+  }
+
+  .auth-hero h1 {
+    font-size: 50px;
+  }
+
+  .todo-work-card {
+    grid-template-columns: 1fr;
+  }
+
+  .todo-work-status {
+    display: none;
+  }
+
+  .todo-work-actions {
+    grid-column: 1;
+  }
+
+  .todo-focus-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Final responsive folio pass: a single reading direction, high contrast, no crowded grids. */
+:root {
+  --study-paper: #fbfaf6;
+  --study-surface: #ffffff;
+  --study-ink: #101713;
+  --study-muted: #46544d;
+  --study-subtle: #6e7a73;
+  --study-rule: rgba(16, 23, 19, 0.14);
+  --study-rule-strong: rgba(16, 23, 19, 0.3);
+  --study-green: #075f56;
+  --study-green-2: #064a43;
+  --study-red: #9f2d20;
+  --study-gold: #9a6500;
+  --study-wash: rgba(7, 95, 86, 0.08);
+  --study-note: #fff3d9;
+  --study-shadow: 0 18px 44px rgba(16, 23, 19, 0.08);
+  --study-serif: Fraunces, "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+  --study-sans: Aptos, "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --study-mono: "JetBrains Mono", Consolas, monospace;
+}
+
+html,
+body,
+#app {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body {
+  color: var(--study-ink);
+  background:
+    linear-gradient(90deg, rgba(7, 95, 86, 0.05) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(circle at 10% 8%, rgba(154, 101, 0, 0.09), transparent 420px),
+    var(--study-paper);
+  font-family: var(--study-sans);
+}
+
+.app-shell,
+.app-shell.sidebar-collapsed {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.content-shell.el-container,
+.app-main,
+.page,
+.direction-planner-page,
+.project-home-page,
+.syllabus-page,
+.todo-workspace-page,
+.workspace-module-page,
+.dashboard-module-page,
+.settings-page {
+  min-width: 0;
+}
+
+.app-sidebar,
+.app-sidebar.is-collapsed {
+  width: auto;
+  background: color-mix(in srgb, var(--study-paper) 94%, #ffffff);
+  border-right: 1px solid var(--study-rule);
+  box-shadow: none;
+}
+
+.app-topbar {
+  height: 64px;
+  background: color-mix(in srgb, var(--study-paper) 90%, #ffffff);
+  border-bottom: 1px solid var(--study-rule);
+  box-shadow: none;
+}
+
+.app-main {
+  padding: clamp(18px, 2.4vw, 38px);
+}
+
+.page,
+.direction-planner-page,
+.project-home-page,
+.syllabus-page,
+.todo-workspace-page,
+.workspace-module-page,
+.dashboard-module-page,
+.settings-page {
+  width: min(100%, 1120px);
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+.classroom-unified-page,
+.om-player-page {
+  width: min(100%, 1680px);
+  max-width: 1680px;
+}
+
+.topbar-title strong,
+.brand-copy h1,
+.brand h1,
+.page-hero h2,
+.workspace-hero h2,
+.todo-workspace-title strong,
+.auth-hero h1 {
+  color: var(--study-ink);
+  font-family: var(--study-serif);
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+.topbar-title span {
+  display: block;
+  color: var(--study-muted);
+  font-size: 13px;
+}
+
+p,
+li,
+small,
+.el-form-item__label,
+.el-input__inner,
+.el-textarea__inner {
+  color: var(--study-muted);
+  line-height: 1.72;
+}
+
+.page-hero,
+.workspace-hero,
+.todo-workspace-topbar {
+  align-items: flex-end;
+  margin-bottom: clamp(20px, 3vw, 36px);
+  padding: 0 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--study-rule-strong);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-hero h2,
+.workspace-hero h2,
+.todo-workspace-title strong {
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: 1.02;
+  text-wrap: balance;
+}
+
+.panel-like,
+.page-hero,
+.panel.el-card,
+.agent-output-panel,
+.project-list-panel,
+.project-detail-panel,
+.syllabus-overview,
+.syllabus-summary,
+.syllabus-directory,
+.syllabus-stage > header,
+.syllabus-item-card,
+.todo-workspace-topbar,
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel,
+.workspace-panel,
+.metric-card,
+.agent-pipeline,
+.agent-pipeline article {
+  box-shadow: none;
+}
+
+.el-button,
+.el-button.is-plain,
+.ghost-button.el-button,
+.topbar-chip.el-button {
+  min-height: 42px;
+  border-color: var(--study-rule-strong);
+  border-radius: 999px;
+  background: var(--study-surface);
+  color: var(--study-ink) !important;
+  font-weight: 760;
+}
+
+.el-button:hover,
+.el-button.is-plain:hover,
+.ghost-button.el-button:hover,
+.topbar-chip.el-button:hover {
+  border-color: var(--study-green);
+  background: var(--study-wash);
+  color: var(--study-green-2) !important;
+}
+
+.el-button--primary,
+.el-button--primary.is-plain,
+.el-button--success,
+.el-button--success.is-plain {
+  --el-button-bg-color: var(--study-green);
+  --el-button-border-color: var(--study-green);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--study-green-2);
+  --el-button-hover-border-color: var(--study-green-2);
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #033d38;
+  --el-button-active-border-color: #033d38;
+  --el-button-active-text-color: #ffffff;
+  background: var(--study-green);
+  border-color: var(--study-green);
+  color: #ffffff !important;
+}
+
+.el-button--danger,
+.el-button--danger.is-plain {
+  --el-button-bg-color: var(--study-red);
+  --el-button-border-color: var(--study-red);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #7e2219;
+  --el-button-hover-border-color: #7e2219;
+  --el-button-hover-text-color: #ffffff;
+  background: var(--study-red);
+  border-color: var(--study-red);
+  color: #ffffff !important;
+}
+
+.el-button--warning,
+.el-button--warning.is-plain {
+  --el-button-bg-color: var(--study-gold);
+  --el-button-border-color: var(--study-gold);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #7b4f00;
+  --el-button-hover-border-color: #7b4f00;
+  --el-button-hover-text-color: #ffffff;
+  background: var(--study-gold);
+  border-color: var(--study-gold);
+  color: #ffffff !important;
+}
+
+.el-button--info,
+.el-button--info.is-plain {
+  background: #33423b;
+  border-color: #33423b;
+  color: #ffffff !important;
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:focus {
+  background: #eeeae1 !important;
+  border-color: var(--study-rule) !important;
+  color: #66716b !important;
+  opacity: 1;
+}
+
+.el-checkbox-button__inner {
+  border-color: var(--study-rule);
+  color: var(--study-ink);
+  font-weight: 760;
+}
+
+.el-checkbox-button.is-checked .el-checkbox-button__inner,
+.el-segmented__item-selected {
+  background: var(--study-green) !important;
+  border-color: var(--study-green) !important;
+  color: #ffffff !important;
+}
+
+.el-tag {
+  border-color: var(--study-rule);
+  background: #ffffff;
+  color: var(--study-ink);
+  font-weight: 760;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select .el-input__wrapper,
+.el-date-editor.el-input__wrapper,
+.el-input-number .el-input__wrapper {
+  min-height: 42px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--study-rule) inset;
+}
+
+button:focus-visible,
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select .el-input.is-focus .el-input__wrapper {
+  outline: 3px solid rgba(7, 95, 86, 0.24);
+  outline-offset: 2px;
+}
+
+.tree-menu .el-sub-menu__title,
+.tree-menu .el-menu-item {
+  color: #33423b;
+}
+
+.tree-menu .el-menu-item.is-active {
+  background: var(--study-green);
+  color: #ffffff;
+}
+
+.project-home-layout,
+.syllabus-layout,
+.todo-workspace-shell,
+.workspace-grid.two,
+.research-workflow-grid,
+.agent-plan-grid,
+.project-dashboard-grid,
+.project-insight-grid,
+.syllabus-info-grid,
+.workspace-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: clamp(20px, 3vw, 34px);
+}
+
+.project-list-panel,
+.syllabus-overview,
+.todo-issueboard,
+.todo-focus-panel,
+.todo-coach-panel,
+.workspace-panel,
+.project-detail-panel {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  padding: 0 0 clamp(22px, 3vw, 34px);
+  border-right: 0;
+  border-bottom: 1px solid var(--study-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-list-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 6px;
+}
+
+.project-list-item,
+.syllabus-stage-nav a,
+.todo-issue-list button,
+.knowledge-point-scroll button,
+.research-tool-catalog button,
+.agent-card-list article {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-list-item:hover,
+.project-list-item.active,
+.syllabus-stage-nav a:hover,
+.todo-issue-list button:hover,
+.todo-issue-list button.active,
+.knowledge-point-scroll button:hover,
+.research-tool-catalog button:hover,
+.research-tool-catalog button.active {
+  background: var(--study-note);
+  color: var(--study-ink);
+  transform: none;
+}
+
+.project-dashboard-grid,
+.project-insight-grid,
+.syllabus-info-grid,
+.workspace-metrics,
+.todo-focus-metrics {
+  gap: 0;
+  border-top: 1px solid var(--study-rule);
+}
+
+.project-dashboard-grid > div,
+.project-insight-grid > div,
+.syllabus-info-grid > div,
+.metric-card,
+.todo-focus-metrics button {
+  min-height: auto;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--study-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.project-next-learning,
+.todo-current-card,
+.agent-composer-panel,
+.syllabus-resource-block,
+.todo-plan-settings,
+.todo-task-gate,
+.todo-profile-signals,
+.auth-panel {
+  border: 1px solid var(--study-rule);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.todo-work-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--study-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.todo-work-actions {
+  grid-column: 2;
+}
+
+.todo-coach-messages,
+.agent-dialogue-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.agent-output-panel,
+.agent-composer-panel {
+  width: min(100%, 920px);
+  margin-inline: auto;
+}
+
+.planner-agent-shell,
+.planner-agent-shell.has-output {
+  width: min(100%, 980px);
+  min-height: calc(100dvh - 150px);
+}
+
+.om-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.om-classroom-player.panel-open .om-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+}
+
+.om-slide-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.om-insight-panel {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.om-slide-strip {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 1180px) {
+  .project-next-learning,
+  .todo-current-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .todo-focus-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .app-sidebar .brand-copy,
+  .app-sidebar .nav-label,
+  .app-sidebar .el-sub-menu__icon-arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    display: block;
+  }
+
+  .app-sidebar,
+  .app-sidebar.is-collapsed {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--study-rule);
+  }
+
+  .brand {
+    display: none;
+  }
+
+  .tree-menu,
+  .tree-menu.el-menu--collapse {
+    display: flex;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .tree-menu .el-sub-menu,
+  .tree-menu .el-menu-item {
+    flex: 0 0 auto;
+  }
+
+  .app-sidebar .nav-label,
+  .app-sidebar .el-sub-menu__icon-arrow {
+    display: inline;
+  }
+
+  .app-topbar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    min-height: 58px;
+    padding: 10px 14px;
+  }
+
+  .topbar-title span,
+  .topbar-chip.el-button {
+    display: none;
+  }
+
+  .app-main {
+    padding: 18px 14px 28px;
+  }
+
+  .page-hero,
+  .workspace-hero,
+  .todo-workspace-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .om-classroom-player.panel-open .om-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .app-main {
+    padding-inline: 10px;
+  }
+
+  .page-hero h2,
+  .workspace-hero h2,
+  .todo-workspace-title strong {
+    font-size: 30px;
+  }
+
+  .topbar-actions,
+  .user-card,
+  .todo-workspace-actions,
+  .project-next-actions,
+  .project-card-actions,
+  .syllabus-status-actions,
+  .todo-current-actions,
+  .todo-work-actions,
+  .module-action-strip {
+    width: 100%;
+  }
+
+  .user-card {
+    min-width: 0;
+  }
+
+  .el-button {
+    min-height: 44px;
+  }
+
+  .todo-focus-metrics {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -2,7 +2,7 @@
   <div class="page daily-plan-page todo-plan-page todo-workspace-page">
     <section class="todo-workspace-topbar panel-like">
       <div class="todo-workspace-title">
-        <span>Daily Learning Workspace</span>
+        <span>学习计划工作台</span>
         <strong>{{ selectedProject?.title || '每日学习工作台' }}</strong>
       </div>
       <div class="todo-workspace-actions">
@@ -27,7 +27,7 @@
       <aside class="todo-issueboard panel-like">
         <header class="todo-issueboard-head">
           <div>
-            <span>Plan Roadmap</span>
+            <span>计划路线</span>
             <strong>{{ completedCount }}/{{ actionableCount }}</strong>
           </div>
           <div class="todo-issue-progress"><span :style="{ width: `${planProgress}%` }" /></div>
@@ -79,7 +79,7 @@
       <main class="todo-focus-panel panel-like">
         <header class="todo-focus-head">
           <div>
-            <span>{{ activeDate ? 'Selected Day' : 'Today Focus' }}</span>
+            <span>{{ activeDate ? '选中日期' : '今日重点' }}</span>
             <h2>{{ activeDate ? formatDayTitle(activeDate) : todayFocusTitle }}</h2>
           </div>
           <el-tag v-if="activePlan" effect="plain">{{ activePlan.daily_minutes }} 分钟/天</el-tag>
@@ -102,7 +102,7 @@
 
         <section v-if="activeTask" class="todo-current-card">
           <div class="todo-current-main">
-            <span>Current Microtask</span>
+            <span>当前任务</span>
             <h3>{{ activeTask.title }}</h3>
             <p>{{ activeTask.learning_focus }}</p>
             <div class="todo-task-gate" :class="{ locked: !activeTask.can_start && !isDone(activeTask), ready: activeTask.can_start && !isDone(activeTask) }">
@@ -155,7 +155,7 @@
       <aside class="todo-coach-panel panel-like">
         <header>
           <div>
-            <span>Plan Coach</span>
+            <span>计划教练</span>
             <strong>复盘与画像提取</strong>
           </div>
           <el-tag v-if="latestProfileRevision" effect="plain">画像 v{{ latestProfileRevision }}</el-tag>

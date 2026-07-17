@@ -2,9 +2,7 @@
   <div class="page workspace-module-page">
     <section class="workspace-hero">
       <div>
-        <p class="eyebrow">{{ currentMeta.eyebrow }}</p>
         <h2>{{ currentMeta.title }}</h2>
-        <p>{{ currentMeta.description }}</p>
       </div>
       <el-button :loading="loading" @click="loadOverview">刷新数据</el-button>
     </section>
@@ -156,10 +154,9 @@
       <section v-else-if="mode === 'tutor'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
           <header><strong>智能辅导入口</strong><span>Tutor Flow</span></header>
-          <div class="workspace-list">
-            <p>从项目学习清单进入任意课堂，在课堂左侧追问中持续对话。</p>
-            <p>课堂上下文会自动携带课件、例题、实操、复盘和画像建议。</p>
-            <p>辅导回答会进入课堂提交记录，后续用于评估和画像更新。</p>
+          <div class="module-action-strip">
+            <el-button type="primary" @click="router.push({ name: 'projects' })">进入项目</el-button>
+            <el-button @click="router.push({ name: 'daily-plan' })">查看计划</el-button>
           </div>
         </article>
         <article class="panel-like workspace-panel">

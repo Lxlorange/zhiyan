@@ -1,22 +1,33 @@
 <template>
-  <aside class="app-sidebar">
+  <aside class="app-sidebar" :class="{ 'is-collapsed': collapsed }">
     <div class="brand">
       <div class="brand-mark">AI</div>
       <div class="brand-copy">
         <h1>智研星链</h1>
         <p>A3 多智能体学习平台</p>
       </div>
+      <button
+        class="sidebar-collapse-btn"
+        type="button"
+        :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'"
+        @click="emit('toggle-collapse')"
+      >
+        <span aria-hidden="true">{{ collapsed ? '>' : '<' }}</span>
+      </button>
     </div>
 
     <el-menu
       class="tree-menu"
+      :collapse="collapsed"
+      :collapse-transition="false"
       :default-active="activePage"
       :default-openeds="['learning', 'classroom', 'research', 'system']"
       @select="(key: string) => emit('navigate', key)"
     >
       <el-sub-menu index="learning">
         <template #title>
-          <span>学习项目</span>
+          <span class="nav-glyph nav-glyph-learning" aria-hidden="true"></span>
+          <span class="nav-label">学习项目</span>
         </template>
         <el-menu-item index="directions">探索方向</el-menu-item>
         <el-menu-item index="projects">项目主页</el-menu-item>
@@ -25,7 +36,8 @@
 
       <el-sub-menu index="classroom">
         <template #title>
-          <span>学习过程</span>
+          <span class="nav-glyph nav-glyph-classroom" aria-hidden="true"></span>
+          <span class="nav-label">学习过程</span>
         </template>
         <el-menu-item index="profile">学习画像</el-menu-item>
         <el-menu-item index="resources">资源中心</el-menu-item>
@@ -35,7 +47,8 @@
 
       <el-sub-menu index="research">
         <template #title>
-          <span>科研工具</span>
+          <span class="nav-glyph nav-glyph-research" aria-hidden="true"></span>
+          <span class="nav-label">科研工具</span>
         </template>
         <el-menu-item index="literature">文献知识库</el-menu-item>
         <el-menu-item index="writing">论文写作</el-menu-item>
@@ -44,7 +57,8 @@
 
       <el-sub-menu index="system">
         <template #title>
-          <span>系统</span>
+          <span class="nav-glyph nav-glyph-system" aria-hidden="true"></span>
+          <span class="nav-label">系统</span>
         </template>
         <el-menu-item index="agents">任务中心</el-menu-item>
         <el-menu-item index="teacher">教师驾驶舱</el-menu-item>
@@ -57,9 +71,11 @@
 <script setup lang="ts">
 defineProps<{
   activePage: string
+  collapsed: boolean
 }>()
 
 const emit = defineEmits<{
   navigate: [page: string]
+  'toggle-collapse': []
 }>()
 </script>
