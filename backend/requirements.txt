@@ -17,3 +17,4 @@ Pillow==11.1.0
 pytesseract==0.3.13
 opencv-python==4.10.0.84
 json-repair==0.35.0
+langchain-text-splitters==0.3.11

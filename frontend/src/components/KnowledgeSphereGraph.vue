@@ -996,14 +996,14 @@ function hashString(value: string) {
   return hash
 }
 
-function formatAge(value: unknown) {
+function formatAge(value: unknown): string {
   if (!Array.isArray(value)) return ''
   const [start, end] = value
   if (!start && !end) return ''
   return `${start || '?'}-${end || '?'} 岁`
 }
 
-function formatMeta(value: unknown) {
+function formatMeta(value: unknown): string {
   if (Array.isArray(value)) return value.map((item) => String(item)).slice(0, 4).join(' / ')
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
   if (typeof value === 'object' && value) {

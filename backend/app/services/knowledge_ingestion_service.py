@@ -11,7 +11,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
@@ -39,6 +39,7 @@ SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 SUPPORTED_ARCHIVES = {".zip"}
 SUPPORTED_EXTENSIONS = SUPPORTED_TEXT_EXTENSIONS | SUPPORTED_OFFICE_EXTENSIONS | SUPPORTED_IMAGE_EXTENSIONS
 MAX_SINGLE_EXTRACTED_CHARS = 1_000_000
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 class KnowledgeIngestionError(RuntimeError):
@@ -244,6 +245,8 @@ async def import_knowledge_upload(
     upload_root.mkdir(parents=True, exist_ok=True)
 
     source_name = _safe_filename(file.filename)
+    course_code = _clean_text(course_code)[:64] or "IMPORTED-COURSEWARE"
+    course_title = _clean_text(course_title)[:255] or "导入课程课件知识库"
     job = KnowledgeImportJob(
         user_id=user.id,
         course_code=course_code,
@@ -266,22 +269,38 @@ async def import_knowledge_upload(
         if not parsed_files:
             raise KnowledgeIngestionError("上传资料中没有可解析的课件或文档", 422)
 
-        job.total_files = len(parsed_files)
-        if rebuild_course:
-            _clear_course_imports(db, course_code)
-        course = _ensure_course(db, course_code, course_title)
-        chapter = _ensure_import_chapter(db, course)
-        point_cache = _load_point_cache(db)
-
         total_chunks = 0
+        job.total_files = len(parsed_files)
+        db.commit()
+        db.refresh(job)
         for parsed in parsed_files:
             try:
+                if rebuild_course and total_chunks == 0 and job.parsed_files == 0 and job.failed_files == 0:
+                    _clear_course_imports(db, course_code)
+                course = _ensure_course(db, course_code, course_title)
+                chapter = _ensure_import_chapter(db, course)
+                point_cache = _load_point_cache(db)
                 chunks = _persist_parsed_file(db, course, chapter, point_cache, parsed)
                 total_chunks += chunks
                 job.parsed_files += 1
+                db.flush()
+                db.commit()
+                db.refresh(job)
             except Exception as exc:
+                db.rollback()
+                job = db.get(KnowledgeImportJob, job.id)
+                if job is None:
+                    raise KnowledgeIngestionError("知识库导入任务状态丢失，请重新上传", 500) from exc
                 job.failed_files += 1
-                job.error_message += f"{parsed.path.name}: {exc}\n"
+                job.error_message += f"{_clean_text(parsed.path.name)}: {_clean_text(str(exc))}\n"
+                db.commit()
+                db.refresh(job)
+        if job.parsed_files == 0:
+            job.total_chunks = 0
+            job.status = "failed"
+            job.updated_at = datetime.utcnow()
+            db.commit()
+            raise KnowledgeIngestionError("上传资料已解析，但全部文件入库失败：\n" + (job.error_message or "请检查文件内容和模型 Embedding 配置。"), 422)
         job.total_chunks = total_chunks
         job.status = "completed" if job.failed_files == 0 else "partial_failed"
         job.updated_at = datetime.utcnow()
@@ -289,8 +308,12 @@ async def import_knowledge_upload(
         db.refresh(job)
         return KnowledgeImportJobRead.model_validate(job)
     except Exception as exc:
+        db.rollback()
+        job = db.get(KnowledgeImportJob, job.id)
+        if job is None:
+            raise KnowledgeIngestionError(f"知识库导入失败：{_clean_text(str(exc))}", 500) from exc
         job.status = "failed"
-        job.error_message = str(exc)
+        job.error_message = _clean_text(str(exc))
         job.updated_at = datetime.utcnow()
         db.commit()
         if isinstance(exc, KnowledgeIngestionError):
@@ -340,7 +363,7 @@ def _extract_zip(source_path: Path, extract_dir: Path) -> None:
     try:
         with zipfile.ZipFile(source_path) as archive:
             for member in archive.infolist():
-                member_path = Path(member.filename)
+                member_path = Path(_clean_zip_member_name(member.filename))
                 if member.is_dir():
                     continue
                 if member_path.is_absolute() or ".." in member_path.parts:
@@ -351,6 +374,13 @@ def _extract_zip(source_path: Path, extract_dir: Path) -> None:
                     shutil.copyfileobj(source, output)
     except zipfile.BadZipFile as exc:
         raise KnowledgeIngestionError(f"ZIP 文件损坏或格式不正确：{source_path.name}", 422) from exc
+
+
+def _clean_zip_member_name(filename: str) -> str:
+    parts = [_safe_filename(part) for part in Path(filename).parts if part not in {"", ".", ".."}]
+    if not parts:
+        return "upload.bin"
+    return str(Path(*parts))
 
 
 def _parse_single_file(path: Path, *, use_ocr: bool) -> ParsedKnowledgeFile:
@@ -382,9 +412,9 @@ def _parse_single_file(path: Path, *, use_ocr: bool) -> ParsedKnowledgeFile:
         raise KnowledgeIngestionError(f"单个文件正文过长：{path.name}，请拆分后导入", 413)
     return ParsedKnowledgeFile(
         path=path,
-        title=path.stem,
+        title=_clean_text(path.stem)[:255] or "导入资料",
         doc_type=extension.removeprefix("."),
-        source_uri=str(path),
+        source_uri=_clean_text(str(path)),
         file_hash=_sha256_file(path),
         sections=sections,
         metadata={"extension": extension, "text_chars": text_len},
@@ -394,7 +424,7 @@ def _parse_pdf(path: Path, *, use_ocr: bool) -> list[ParsedSection]:
     sections: list[ParsedSection] = []
     reader = PdfReader(str(path))
     for page_index, page in enumerate(reader.pages, start=1):
-        text_value = (page.extract_text() or "").strip()
+        text_value = _normalize_text(page.extract_text() or "")
         if text_value:
             sections.append(ParsedSection(text=text_value, page_no=page_index, section_title=f"第 {page_index} 页"))
     if not sections and use_ocr:
@@ -413,18 +443,18 @@ def _parse_pptx(path: Path) -> list[ParsedSection]:
         parts: list[str] = []
         for shape in slide.shapes:
             if getattr(shape, "has_text_frame", False) and shape.text:
-                parts.append(shape.text)
+                parts.append(_clean_text(shape.text))
             if getattr(shape, "has_table", False):
                 for row in shape.table.rows:
-                    parts.append(" | ".join(cell.text for cell in row.cells if cell.text))
+                    parts.append(" | ".join(_clean_text(cell.text) for cell in row.cells if cell.text))
         notes = ""
         try:
             notes = slide.notes_slide.notes_text_frame.text
         except Exception:
             notes = ""
         if notes:
-            parts.append("备注：" + notes)
-        text_value = "\n".join(part.strip() for part in parts if part and part.strip()).strip()
+            parts.append("备注：" + _clean_text(notes))
+        text_value = _normalize_text("\n".join(part.strip() for part in parts if part and part.strip()))
         if text_value:
             sections.append(ParsedSection(text=text_value, slide_no=slide_index, section_title=f"第 {slide_index} 页幻灯片"))
     if not sections:
@@ -440,7 +470,7 @@ def _parse_docx(path: Path) -> list[ParsedSection]:
     current_title = ""
     buffer: list[str] = []
     for paragraph in document.paragraphs:
-        value = paragraph.text.strip()
+        value = _normalize_text(paragraph.text)
         if not value:
             continue
         style_name = paragraph.style.name if paragraph.style else ""
@@ -453,7 +483,7 @@ def _parse_docx(path: Path) -> list[ParsedSection]:
     table_text = []
     for table in document.tables:
         for row in table.rows:
-            row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+            row_text = " | ".join(_clean_text(cell.text).strip() for cell in row.cells if _clean_text(cell.text).strip())
             if row_text:
                 table_text.append(row_text)
     buffer.extend(table_text)
@@ -468,7 +498,7 @@ def _parse_text(path: Path) -> list[ParsedSection]:
     raw = path.read_bytes()
     for encoding in ("utf-8-sig", "utf-8", "gb18030"):
         try:
-            text_value = raw.decode(encoding).strip()
+            text_value = _normalize_text(raw.decode(encoding))
             break
         except UnicodeDecodeError:
             continue
@@ -498,7 +528,7 @@ def _ocr_pdf_or_image(path: Path) -> list[ParsedSection]:
         pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
     if path.suffix.lower() == ".pdf":
         raise KnowledgeIngestionError("扫描版 PDF OCR 需要先用本地工具转图片，或安装带 PDF 渲染能力的解析器后再导入", 501)
-    text_value = pytesseract.image_to_string(Image.open(path), lang="chi_sim+eng").strip()
+    text_value = _normalize_text(pytesseract.image_to_string(Image.open(path), lang="chi_sim+eng"))
     if not text_value:
         raise KnowledgeIngestionError(f"OCR 未识别到文字：{path.name}", 422)
     return [ParsedSection(text=text_value, section_title=path.name, metadata={"ocr": True})]
@@ -565,54 +595,61 @@ def _persist_parsed_file(
     parsed: ParsedKnowledgeFile,
 ) -> int:
     existing = db.scalar(select(KnowledgeDocument).where(KnowledgeDocument.file_hash == parsed.file_hash))
+    title = _clean_text(parsed.title)[:255] or "导入资料"
+    source_uri = _clean_text(parsed.source_uri)
+    file_path = _clean_text(str(parsed.path))
+    file_name = _safe_filename(parsed.path.name)
+    summary = _summarize_sections(parsed.sections)
+    parse_meta = _clean_metadata(parsed.metadata)
     if existing is not None:
         db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == existing.id))
         document = existing
         document.course_id = course.id
-        document.title = parsed.title
+        document.title = title
         document.doc_type = parsed.doc_type
-        document.source_uri = parsed.source_uri
-        document.summary = _summarize_sections(parsed.sections)
-        document.file_path = str(parsed.path)
-        document.file_name = parsed.path.name
+        document.source_uri = source_uri
+        document.summary = summary
+        document.file_path = file_path
+        document.file_name = file_name
         document.course_code = course.code
         document.parse_status = "ready"
-        document.parse_meta = parsed.metadata
+        document.parse_meta = parse_meta
     else:
         document = KnowledgeDocument(
             course_id=course.id,
-            title=parsed.title,
+            title=title,
             doc_type=parsed.doc_type,
-            source_uri=parsed.source_uri,
-            summary=_summarize_sections(parsed.sections),
-            file_path=str(parsed.path),
-            file_name=parsed.path.name,
+            source_uri=source_uri,
+            summary=summary,
+            file_path=file_path,
+            file_name=file_name,
             file_hash=parsed.file_hash,
             course_code=course.code,
             parse_status="ready",
-            parse_meta=parsed.metadata,
+            parse_meta=parse_meta,
         )
         db.add(document)
         db.flush()
 
     chunks = list(_chunk_sections(parsed.sections))
     for index, section in enumerate(chunks, start=1):
-        point_name = _infer_point_name(parsed.title, section.text)
+        point_name = _infer_point_name(title, section.text)
         point = _ensure_point(db, chapter, point_cache, point_name, section.text)
+        safe_content = _clean_text(section.text)
         db.add(
             DocumentChunk(
                 document_id=document.id,
                 knowledge_point_id=point.id,
                 chunk_index=index,
-                content=section.text,
-                keywords=_extract_keywords(parsed.title, section.text),
+                content=safe_content,
+                keywords=_extract_keywords(title, section.text),
                 page_no=section.page_no,
                 slide_no=section.slide_no,
-                section_title=section.section_title[:255],
-                token_count=len(section.text),
-                embedding=embed_text(section.text),
+                section_title=_clean_text(section.section_title)[:255],
+                token_count=len(safe_content),
+                embedding=embed_text(safe_content),
                 retrieval_weight=1.0,
-                extra_meta=section.metadata or {},
+                extra_meta=_clean_metadata(section.metadata or {}),
             )
         )
     db.flush()
@@ -626,48 +663,56 @@ def _ensure_point(
     name: str,
     text_value: str,
 ) -> KnowledgePoint:
-    point = point_cache.get(name)
+    safe_name = _clean_text(name)[:128] or "导入知识点"
+    point = point_cache.get(safe_name)
     if point is None:
+        safe_description = _clean_text(text_value)[:300]
         point = KnowledgePoint(
             chapter_id=chapter.id,
-            name=name,
-            description=text_value[:300],
+            name=safe_name,
+            description=safe_description,
             prerequisites=[],
             tags=["imported", "courseware"],
             difficulty="medium",
         )
         db.add(point)
         db.flush()
-        point_cache[name] = point
+        point_cache[safe_name] = point
     return point
 
 
-def _chunk_sections(sections: list[ParsedSection]) -> Iterable[ParsedSection]:
+def _chunk_sections(sections: list[ParsedSection]) -> list[ParsedSection]:
     settings = get_settings()
     size = max(400, settings.knowledge_chunk_chars)
     overlap = max(0, min(settings.knowledge_chunk_overlap, size // 2))
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+    except ImportError as exc:
+        raise KnowledgeIngestionError("缺少 RAG 文档切分依赖 langchain-text-splitters，请安装 backend/requirements.txt。", 500) from exc
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", "。", "！", "？", ";", "；", " ", ""],
+    )
+    chunks: list[ParsedSection] = []
     for section in sections:
         text_value = _normalize_text(section.text)
-        if len(text_value) <= size:
-            yield ParsedSection(text=text_value, section_title=section.section_title, page_no=section.page_no, slide_no=section.slide_no, metadata=section.metadata)
-            continue
-        start = 0
-        part_index = 1
-        while start < len(text_value):
-            end = min(len(text_value), start + size)
-            part = text_value[start:end].strip()
-            if part:
-                yield ParsedSection(
+        for part_index, part in enumerate(splitter.split_text(text_value), start=1):
+            part = _normalize_text(part)
+            if not part:
+                continue
+            section_title = section.section_title if len(text_value) <= size else f"{section.section_title} #{part_index}".strip()
+            chunks.append(
+                ParsedSection(
                     text=part,
-                    section_title=f"{section.section_title} #{part_index}".strip(),
+                    section_title=section_title,
                     page_no=section.page_no,
                     slide_no=section.slide_no,
                     metadata=section.metadata,
                 )
-            if end >= len(text_value):
-                break
-            start = max(0, end - overlap)
-            part_index += 1
+            )
+    return chunks
 
 
 def search_knowledge_enhanced(db: Session, query: str, limit: int = 8) -> list[dict]:
@@ -800,11 +845,31 @@ def _summarize_sections(sections: list[ParsedSection]) -> str:
 
 
 def _normalize_text(text_value: str) -> str:
-    return "\n".join(line.strip() for line in text_value.replace("\x00", "").splitlines() if line.strip())
+    cleaned = _clean_text(text_value)
+    return "\n".join(line.strip() for line in cleaned.splitlines() if line.strip())
+
+
+def _clean_text(value: object) -> str:
+    text_value = "" if value is None else str(value)
+    text_value = text_value.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+    text_value = CONTROL_CHARS_RE.sub("", text_value)
+    return text_value.strip()
+
+
+def _clean_metadata(value: object) -> object:
+    if isinstance(value, dict):
+        return {_clean_text(key): _clean_metadata(item) for key, item in value.items() if _clean_text(key)}
+    if isinstance(value, list):
+        return [_clean_metadata(item) for item in value]
+    if isinstance(value, tuple):
+        return [_clean_metadata(item) for item in value]
+    if isinstance(value, str):
+        return _clean_text(value)
+    return value
 
 
 def _safe_filename(filename: str) -> str:
-    value = Path(filename).name.replace("\x00", "")
+    value = _clean_text(Path(filename).name)
     return value or "upload.bin"
 
 

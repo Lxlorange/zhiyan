@@ -527,7 +527,7 @@ function asList(value: unknown): string[] {
   }).filter(Boolean) : []
 }
 
-function readableRecord(record: Record<string, unknown>) {
+function readableRecord(record: Record<string, unknown>): string {
   return Object.entries(record)
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
     .map(([key, value]) => `${key.replace(/_/g, ' ')}：${Array.isArray(value) ? value.join('、') : String(value)}`)

@@ -55,7 +55,7 @@ def ask_database(db: Session, user: User, request: DatabaseAskRequest) -> Databa
             used_llm=False,
         )
 
-    result = _generate_llm_answer(request.question, citations)
+    result = _generate_llm_answer(user, request.question, citations)
     return DatabaseAskResponse(
         answer=result.answer,
         citations=citations,
@@ -277,7 +277,7 @@ def _citation_from_hit(hit: dict[str, Any]) -> DatabaseCitation:
     )
 
 
-def _generate_llm_answer(question: str, citations: list[DatabaseCitation]) -> _RagAnswerLLM:
+def _generate_llm_answer(user: User, question: str, citations: list[DatabaseCitation]) -> _RagAnswerLLM:
     context = "\n\n".join(
         f"[{index}] {item.title} / {item.knowledge_point} / {item.section_title}\nsource={item.source_uri}\n{item.content}"
         for index, item in enumerate(citations, start=1)
