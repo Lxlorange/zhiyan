@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -68,6 +69,18 @@ class KnowledgeImportJobRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class KnowledgeStorageUsageRead(BaseModel):
+    quota_bytes: int
+    used_bytes: int
+    remaining_bytes: int
+    quota_mb: int
+    used_mb: float
+    remaining_mb: float
+    used_percent: float
+    document_count: int
+    job_count: int
+
+
 @dataclass
 class ParsedSection:
     text: str
@@ -109,8 +122,31 @@ def delete_import_job(db: Session, user: User, job_id: int) -> None:
     job = db.get(KnowledgeImportJob, job_id)
     if job is None or job.user_id != user.id:
         raise KnowledgeIngestionError("知识库导入任务不存在", 404)
+    for document in _documents_for_job(db, job_id):
+        db.delete(document)
+    _delete_job_storage_dir(job.id)
     db.delete(job)
     db.commit()
+
+
+def get_knowledge_storage_usage(db: Session, user: User) -> KnowledgeStorageUsageRead:
+    settings = get_settings()
+    quota_bytes = settings.knowledge_storage_quota_mb * 1024 * 1024
+    job_ids = db.scalars(select(KnowledgeImportJob.id).where(KnowledgeImportJob.user_id == user.id)).all()
+    used_bytes = sum(_job_storage_bytes(job_id) for job_id in job_ids)
+    document_count = sum(len(_documents_for_job(db, job_id)) for job_id in job_ids)
+    remaining_bytes = max(0, quota_bytes - used_bytes)
+    return KnowledgeStorageUsageRead(
+        quota_bytes=quota_bytes,
+        used_bytes=used_bytes,
+        remaining_bytes=remaining_bytes,
+        quota_mb=settings.knowledge_storage_quota_mb,
+        used_mb=round(used_bytes / 1024 / 1024, 2),
+        remaining_mb=round(remaining_bytes / 1024 / 1024, 2),
+        used_percent=round(min(100, used_bytes / quota_bytes * 100), 1) if quota_bytes else 0,
+        document_count=document_count,
+        job_count=len(job_ids),
+    )
 
 
 def list_knowledge_documents(
@@ -240,6 +276,14 @@ async def import_knowledge_upload(
     max_bytes = settings.knowledge_max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise KnowledgeIngestionError(f"上传文件过大，当前上限 {settings.knowledge_max_upload_mb} MB", 413)
+    usage = get_knowledge_storage_usage(db, user)
+    if usage.used_bytes + len(content) > usage.quota_bytes:
+        remaining_mb = max(0, usage.remaining_bytes / 1024 / 1024)
+        raise KnowledgeIngestionError(
+            f"知识库空间不足。每位用户可用 {settings.knowledge_storage_quota_mb} MB，"
+            f"当前已用 {usage.used_mb} MB，剩余 {remaining_mb:.2f} MB。请删除无用上传记录后再上传。",
+            413,
+        )
 
     upload_root = Path(settings.knowledge_upload_dir)
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -253,7 +297,7 @@ async def import_knowledge_upload(
         course_title=course_title,
         source_name=source_name,
         status="running",
-        options={"use_ocr": use_ocr, "rebuild_course": rebuild_course},
+        options={"use_ocr": use_ocr, "rebuild_course": rebuild_course, "uploaded_bytes": len(content)},
     )
     db.add(job)
     db.commit()
@@ -519,19 +563,63 @@ def _ocr_pdf_or_image(path: Path) -> list[ParsedSection]:
     settings = get_settings()
     if settings.local_ocr_engine.lower() != "tesseract":
         raise KnowledgeIngestionError(f"未支持的本地 OCR 引擎：{settings.local_ocr_engine}", 501)
+    pytesseract, Image = _load_ocr_dependencies()
+    if settings.tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
+    if path.suffix.lower() == ".pdf":
+        return _ocr_pdf(path, pytesseract)
+    text_value = _normalize_text(pytesseract.image_to_string(Image.open(path), lang="chi_sim+eng"))
+    if not text_value:
+        raise KnowledgeIngestionError(f"OCR 未识别到文字：{path.name}", 422)
+    return [ParsedSection(text=text_value, section_title=path.name, metadata={"ocr": True})]
+
+
+def _load_ocr_dependencies():
     try:
         import pytesseract
         from PIL import Image
     except ImportError as exc:
         raise KnowledgeIngestionError("缺少 OCR 依赖，请安装 pytesseract 和 Pillow", 500) from exc
-    if settings.tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
-    if path.suffix.lower() == ".pdf":
-        raise KnowledgeIngestionError("扫描版 PDF OCR 需要先用本地工具转图片，或安装带 PDF 渲染能力的解析器后再导入", 501)
-    text_value = _normalize_text(pytesseract.image_to_string(Image.open(path), lang="chi_sim+eng"))
-    if not text_value:
+    return pytesseract, Image
+
+
+def _ocr_pdf(path: Path, pytesseract) -> list[ParsedSection]:
+    try:
+        import fitz
+    except ImportError as exc:
+        raise KnowledgeIngestionError("扫描版 PDF OCR 缺少 PyMuPDF，请安装 backend/requirements.txt 后重试。", 500) from exc
+
+    sections: list[ParsedSection] = []
+    try:
+        with fitz.open(str(path)) as document:
+            for page_index, page in enumerate(document, start=1):
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                image_bytes = pixmap.tobytes("png")
+                text_value = _normalize_text(
+                    pytesseract.image_to_string(_image_from_bytes(image_bytes), lang="chi_sim+eng")
+                )
+                if text_value:
+                    sections.append(
+                        ParsedSection(
+                            text=text_value,
+                            page_no=page_index,
+                            section_title=f"第 {page_index} 页 OCR",
+                            metadata={"ocr": True},
+                        )
+                    )
+    except KnowledgeIngestionError:
+        raise
+    except Exception as exc:
+        raise KnowledgeIngestionError(f"PDF OCR 失败：{path.name}，{_clean_text(str(exc))}", 422) from exc
+    if not sections:
         raise KnowledgeIngestionError(f"OCR 未识别到文字：{path.name}", 422)
-    return [ParsedSection(text=text_value, section_title=path.name, metadata={"ocr": True})]
+    return sections
+
+
+def _image_from_bytes(image_bytes: bytes):
+    from PIL import Image
+
+    return Image.open(io.BytesIO(image_bytes))
 
 
 def _convert_legacy_office(path: Path, target_suffix: str) -> Path:
@@ -871,6 +959,28 @@ def _clean_metadata(value: object) -> object:
 def _safe_filename(filename: str) -> str:
     value = _clean_text(Path(filename).name)
     return value or "upload.bin"
+
+
+def _job_storage_dir(job_id: int) -> Path:
+    return Path(get_settings().knowledge_upload_dir) / f"job-{job_id}"
+
+
+def _job_storage_bytes(job_id: int) -> int:
+    job_dir = _job_storage_dir(job_id)
+    if not job_dir.exists():
+        return 0
+    return sum(path.stat().st_size for path in job_dir.rglob("*") if path.is_file())
+
+
+def _documents_for_job(db: Session, job_id: int) -> list[KnowledgeDocument]:
+    documents = db.scalars(select(KnowledgeDocument).where(KnowledgeDocument.file_path.ilike("%job-%"))).all()
+    return [document for document in documents if _job_id_from_document_path(document.file_path) == job_id]
+
+
+def _delete_job_storage_dir(job_id: int) -> None:
+    job_dir = _job_storage_dir(job_id)
+    if job_dir.exists():
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 def _sha256_file(path: Path) -> str:

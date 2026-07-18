@@ -9304,6 +9304,47 @@ body::after {
   gap: 16px;
 }
 
+.knowledge-storage-meter {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(96, 73, 57, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 239, 214, 0.52);
+}
+
+.knowledge-storage-meter > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.knowledge-storage-meter strong {
+  color: var(--study-ink);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.knowledge-storage-meter span,
+.knowledge-storage-meter small {
+  color: var(--study-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.knowledge-storage-meter .el-progress {
+  width: 100%;
+}
+
+.knowledge-storage-meter .el-progress-bar__outer {
+  background-color: rgba(202, 218, 178, 0.52);
+}
+
+.knowledge-storage-meter .el-progress-bar__inner {
+  background-color: var(--study-coral);
+}
+
 .knowledge-upload-drop .el-upload-dragger {
   display: grid;
   place-items: center;

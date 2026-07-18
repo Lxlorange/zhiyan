@@ -16,6 +16,17 @@
           <span>支持 zip / pptx / ppt / pdf / docx / doc / md / txt</span>
         </header>
 
+        <div class="knowledge-storage-meter">
+          <div>
+            <strong>{{ formatMb(storageUsage?.used_mb || 0) }} / {{ storageUsage?.quota_mb || 1024 }} MB</strong>
+            <span>知识库空间 · 单次上传不超过 {{ MAX_UPLOAD_MB }} MB</span>
+          </div>
+          <el-progress :percentage="storageUsage?.used_percent || 0" :stroke-width="10" :show-text="false" />
+          <small>
+            剩余 {{ formatMb(storageUsage?.remaining_mb ?? 1024) }} MB。空间满后请删除无用上传记录再继续导入。
+          </small>
+        </div>
+
         <el-form label-position="top" class="knowledge-upload-form">
           <div class="knowledge-upload-grid">
             <el-form-item label="课程代码">
@@ -38,6 +49,7 @@
           :show-file-list="false"
           :disabled="uploading"
           :on-change="handleUpload"
+          :before-upload="validateUploadFile"
         >
           <div class="knowledge-upload-drop-inner">
             <strong>{{ uploading ? '正在解析资料...' : '拖拽或点击上传资料包' }}</strong>
@@ -205,6 +217,7 @@ import {
   askDatabase,
   deleteKnowledgeDocument,
   deleteKnowledgeImportJob,
+  getKnowledgeStorageUsage,
   importKnowledgePackage,
   listKnowledgePoints,
   listKnowledgeDocumentChunks,
@@ -217,8 +230,12 @@ import {
   type KnowledgeDocumentRead,
   type KnowledgeImportJobRead,
   type KnowledgePointRead,
+  type KnowledgeStorageUsageRead,
   type LearningProjectRead
 } from '../services/apiClient'
+
+const MAX_UPLOAD_MB = 100
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 const uploadForm = reactive({
   course_code: 'USER-COURSEWARE',
@@ -229,6 +246,7 @@ const uploadForm = reactive({
 const jobs = ref<KnowledgeImportJobRead[]>([])
 const documents = ref<KnowledgeDocumentRead[]>([])
 const chunks = ref<KnowledgeChunkRead[]>([])
+const storageUsage = ref<KnowledgeStorageUsageRead | null>(null)
 const projects = ref<LearningProjectRead[]>([])
 const knowledgePoints = ref<KnowledgePointRead[]>([])
 const selectedDocument = ref<KnowledgeDocumentRead | null>(null)
@@ -250,10 +268,15 @@ onMounted(loadAll)
 async function loadAll() {
   loading.value = true
   try {
-    await Promise.all([loadJobs(), loadDocuments(), loadProjects(), loadKnowledgePoints()])
+    await Promise.all([loadStorageUsage(), loadJobs(), loadDocuments(), loadProjects(), loadKnowledgePoints()])
   } finally {
     loading.value = false
   }
+}
+
+async function loadStorageUsage() {
+  const { data } = await getKnowledgeStorageUsage()
+  storageUsage.value = data
 }
 
 async function loadJobs() {
@@ -296,6 +319,7 @@ async function loadKnowledgePoints() {
 async function handleUpload(uploadFile: any) {
   const raw = uploadFile?.raw as File | undefined
   if (!raw) return
+  if (!validateUploadFile(raw)) return
   uploading.value = true
   try {
     await importKnowledgePackage(raw, {
@@ -308,7 +332,21 @@ async function handleUpload(uploadFile: any) {
     await loadAll()
   } finally {
     uploading.value = false
+    void loadStorageUsage()
   }
+}
+
+function validateUploadFile(file: File) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    ElMessage.error(`单次上传文件不能超过 ${MAX_UPLOAD_MB} MB，请压缩或拆分后再上传。`)
+    return false
+  }
+  const remainingBytes = storageUsage.value?.remaining_bytes
+  if (remainingBytes !== undefined && file.size > remainingBytes) {
+    ElMessage.error('知识库空间不足，请先删除无用上传记录释放空间。')
+    return false
+  }
+  return true
 }
 
 async function handleSelectDocument(row: KnowledgeDocumentRead | null) {
@@ -344,8 +382,8 @@ async function handleDeleteDocument(row: KnowledgeDocumentRead) {
 
 async function handleDeleteJob(row: KnowledgeImportJobRead) {
   try {
-    await ElMessageBox.confirm(`确认删除上传记录“${row.source_name}”？这不会删除已入库文档。`, '删除上传记录', {
-      confirmButtonText: '删除记录',
+    await ElMessageBox.confirm(`确认删除上传记录“${row.source_name}”？该记录导入的文档片段和占用空间会一起清理。`, '清理知识库空间', {
+      confirmButtonText: '删除并清理',
       cancelButtonText: '取消',
       type: 'warning'
     })
@@ -354,7 +392,7 @@ async function handleDeleteJob(row: KnowledgeImportJobRead) {
   }
   await deleteKnowledgeImportJob(row.id)
   ElMessage.success('上传记录已删除')
-  await loadJobs()
+  await Promise.all([loadJobs(), loadStorageUsage()])
 }
 
 async function handleRagAsk() {
@@ -424,6 +462,10 @@ function jobStatusType(status: string): 'success' | 'warning' | 'danger' | 'info
 
 function formatDate(value: string) {
   return value ? new Date(value).toLocaleString() : '-'
+}
+
+function formatMb(value: number) {
+  return Number(value || 0).toFixed(value >= 10 ? 0 : 2)
 }
 
 function locationLabel(chunk: KnowledgeChunkRead) {

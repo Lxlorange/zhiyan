@@ -9,10 +9,12 @@ from app.schemas import CourseMapResponse, KnowledgeChunkRead, KnowledgeDocument
 from app.models.user import User
 from app.services.knowledge_ingestion_service import (
     KnowledgeImportJobRead,
+    KnowledgeStorageUsageRead,
     KnowledgeIngestionError,
     delete_import_job,
     delete_knowledge_document,
     get_import_job,
+    get_knowledge_storage_usage,
     import_knowledge_upload,
     list_document_chunks,
     list_import_jobs,
@@ -50,8 +52,8 @@ async def knowledge_import(
     file: UploadFile = File(...),
     course_code: str = Form(default="IMPORTED-COURSEWARE"),
     course_title: str = Form(default="导入课程课件知识库"),
-    use_ocr: bool = Form(default=False),
-    rebuild_course: bool = Form(default=False),
+    use_ocr: str = Form(default="false"),
+    rebuild_course: str = Form(default="false"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> KnowledgeImportJobRead:
@@ -62,11 +64,17 @@ async def knowledge_import(
             file,
             course_code=course_code,
             course_title=course_title,
-            use_ocr=use_ocr,
-            rebuild_course=rebuild_course,
+            use_ocr=_parse_form_bool(use_ocr),
+            rebuild_course=_parse_form_bool(rebuild_course),
         )
     except KnowledgeIngestionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _parse_form_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
 @router.get("/knowledge/import-jobs", response_model=list[KnowledgeImportJobRead])
@@ -76,6 +84,14 @@ def knowledge_import_jobs(
     user: User = Depends(get_current_user),
 ) -> list[KnowledgeImportJobRead]:
     return list_import_jobs(db, user, limit)
+
+
+@router.get("/knowledge/storage", response_model=KnowledgeStorageUsageRead)
+def knowledge_storage_usage(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> KnowledgeStorageUsageRead:
+    return get_knowledge_storage_usage(db, user)
 
 
 @router.get("/knowledge/import-jobs/{job_id}", response_model=KnowledgeImportJobRead)

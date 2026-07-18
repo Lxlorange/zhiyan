@@ -44,7 +44,9 @@ function userFacingErrorMessage(url: string, status: number | string, detail: st
   if (status === 401) return '登录状态已失效，请重新登录。'
   if (status === 403) return '当前账号没有权限执行这个操作。'
   if (status === 404) return '没有找到对应的数据，请刷新后重试。'
+  if (url.includes('/course/knowledge/import')) return `知识库导入失败：${detail}`
   if (status === 422) return '填写内容不完整或格式不正确，请检查后再提交。'
+  if (status === 413) return detail
   if (status === 'NETWORK') return '网络连接失败，请检查后端服务是否正在运行。'
   if (normalized.includes('api key')) return '模型 API Key 未配置或不可用，请到系统设置检查。'
   if (normalized.includes('timeout') || normalized.includes('timed out')) return '请求超时，请稍后重试。'
@@ -597,6 +599,18 @@ export interface KnowledgeImportJobRead {
   options: Record<string, any>
   created_at: string
   updated_at: string
+}
+
+export interface KnowledgeStorageUsageRead {
+  quota_bytes: number
+  used_bytes: number
+  remaining_bytes: number
+  quota_mb: number
+  used_mb: number
+  remaining_mb: number
+  used_percent: number
+  document_count: number
+  job_count: number
 }
 
 export interface KnowledgeDocumentRead {
@@ -1298,6 +1312,10 @@ export function importKnowledgePackage(file: File, payload: {
   return api.post<KnowledgeImportJobRead>('/course/knowledge/import', formData, {
     timeout: 30 * 60 * 1000
   })
+}
+
+export function getKnowledgeStorageUsage() {
+  return api.get<KnowledgeStorageUsageRead>('/course/knowledge/storage')
 }
 
 export function listKnowledgeImportJobs(limit = 20) {

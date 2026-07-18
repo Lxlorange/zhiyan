@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     knowledge_embedding_dim: int = 1024
     knowledge_chunk_chars: int = 1200
     knowledge_chunk_overlap: int = 180
-    knowledge_max_upload_mb: int = 300
+    knowledge_max_upload_mb: int = 100
+    knowledge_storage_quota_mb: int = 1024
     local_ocr_engine: str = "tesseract"
     tesseract_cmd: str = ""
     libreoffice_path: str = ""
