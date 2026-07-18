@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+import html
+import re
+import socket
+import urllib.error
+import urllib.request
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -22,6 +27,8 @@ from app.schemas import (
     AgentTrace,
     LiteraturePaperCreateRequest,
     LiteraturePaperRead,
+    LiteraturePaperSuggestRequest,
+    LiteraturePaperSuggestResponse,
     LiteraturePaperUpdateRequest,
     ProfileCenterResponse,
     ProfileEntryRead,
@@ -32,6 +39,7 @@ from app.schemas import (
     WorkspaceOverviewResponse,
 )
 from app.services.llm_client import qwen_chat_json
+from app.services.scholarly_search_service import resolve_scholarly_resource
 from app.services.knowledge_service import search_knowledge
 from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
@@ -347,6 +355,84 @@ def create_literature(db: Session, user: User, request: LiteraturePaperCreateReq
     db.commit()
     db.refresh(paper)
     return LiteraturePaperRead.model_validate(paper)
+
+
+def suggest_literature_metadata(request: LiteraturePaperSuggestRequest) -> LiteraturePaperSuggestResponse:
+    hit = resolve_scholarly_resource(request.title, request.title)
+    if hit is None:
+        return LiteraturePaperSuggestResponse(
+            title=request.title,
+            authors=[],
+            venue='',
+            year='',
+            source_uri='',
+            abstract='',
+            keywords=[request.title] if request.title else [],
+            source_name='manual',
+            reason='未检索到可用论文来源，请手动补充作者、来源和摘要',
+        )
+
+    source_name = hit.source or 'Scholar'
+    abstract = getattr(hit, 'abstract', '') or ''
+    if not abstract:
+        abstract = _fetch_page_abstract(hit.url)
+
+    return LiteraturePaperSuggestResponse(
+        title=hit.title or request.title,
+        authors=[],
+        venue='',
+        year='',
+        source_uri=hit.url,
+        abstract=abstract,
+        keywords=[request.title],
+        source_name=source_name,
+        reason=hit.reason,
+    )
+
+
+def _fetch_page_abstract(url: str) -> str:
+    if not url:
+        return ''
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (compatible; zhiyan-xinglian-learning-platform/0.1)",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            content_type = response.headers.get("Content-Type", "")
+            if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+                return ""
+            html_text = response.read().decode("utf-8", errors="ignore")[:200000]
+    except (TimeoutError, socket.timeout, urllib.error.URLError, urllib.error.HTTPError):
+        return ""
+
+    for pattern in (
+        r'<meta\s+name=["\']citation_abstract["\']\s+content=["\']([^"\']+)["\']',
+        r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']',
+        r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']+)["\']',
+    ):
+        match = re.search(pattern, html_text, flags=re.I | re.S)
+        if match:
+            text = html.unescape(match.group(1))
+            text = re.sub(r"\s+", " ", text).strip()
+            if text:
+                return text
+
+    abstract_block = re.search(
+        r'(?is)<(?:div|section|p)[^>]*(?:class|id)=["\'][^"\']*abstract[^"\']*["\'][^>]*>(.*?)</(?:div|section|p)>',
+        html_text,
+    )
+    if abstract_block:
+        text = re.sub(r"<[^>]+>", " ", abstract_block.group(1))
+        text = html.unescape(re.sub(r"\s+", " ", text)).strip()
+        if text:
+            return text
+
+    return ""
 
 
 def update_literature(db: Session, user: User, paper_id: int, request: LiteraturePaperUpdateRequest) -> LiteraturePaperRead:

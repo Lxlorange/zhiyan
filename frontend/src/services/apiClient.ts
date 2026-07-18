@@ -428,6 +428,22 @@ export interface LiteraturePaperRead {
   updated_at: string
 }
 
+export interface LiteraturePaperSuggestRequest {
+  title: string
+}
+
+export interface LiteraturePaperSuggestResponse {
+  title: string
+  authors: string[]
+  venue: string
+  year: string
+  source_uri: string
+  abstract: string
+  keywords: string[]
+  source_name: string
+  reason: string
+}
+
 export interface ResearchToolRunRead {
   id: number
   project_id?: number | null
@@ -956,6 +972,10 @@ export function updateLearningProject(projectId: number, payload: Partial<{
 
 export function copyLearningProject(projectId: number) {
   return api.post<LearningProjectRead>(`/learning-projects/${projectId}/copy`)
+}
+
+export function suggestLiteratureMetadata(payload: LiteraturePaperSuggestRequest) {
+  return api.post<LiteraturePaperSuggestResponse>('/workspace/literature/suggest', payload)
 }
 
 export function deleteLearningProject(projectId: number) {

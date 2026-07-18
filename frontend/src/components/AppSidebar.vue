@@ -51,7 +51,6 @@
           <span class="nav-label">科研工具</span>
         </template>
         <el-menu-item index="literature">文献知识库</el-menu-item>
-        <el-menu-item index="writing">论文写作</el-menu-item>
         <el-menu-item index="methods">科研方法</el-menu-item>
       </el-sub-menu>
 
