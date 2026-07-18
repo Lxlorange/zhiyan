@@ -9488,10 +9488,6 @@ body::after {
   background: #fffaf0;
 }
 
-.knowledge-link-node.taxonomy {
-  background: #eef4fb;
-}
-
 .knowledge-link-node strong {
   overflow: hidden;
   text-overflow: ellipsis;

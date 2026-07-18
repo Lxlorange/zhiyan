@@ -41,138 +41,6 @@
         </article>
       </section>
 
-      <section v-else-if="mode === 'resources'" class="workspace-grid two">
-        <article class="panel-like workspace-panel">
-          <header><strong>数据库沉淀</strong><span>Knowledge Deposit</span></header>
-          <div class="deposit-summary">
-            <div>
-              <strong>{{ overview?.resources.length || 0 }}</strong>
-              <span>生成资源</span>
-            </div>
-            <div>
-              <strong>{{ overview?.literature.length || 0 }}</strong>
-              <span>文献笔记</span>
-            </div>
-            <div>
-              <strong>{{ knowledgePoints.length }}</strong>
-              <span>知识点</span>
-            </div>
-          </div>
-          <div class="deposit-upload-redirect">
-            <strong>资料上传已移到独立页面</strong>
-            <small>上传、解析记录和文档删除管理统一在知识库上传页面完成。</small>
-            <el-button type="primary" @click="router.push({ name: 'knowledge-upload' })">打开知识库上传</el-button>
-          </div>
-          <div class="knowledge-search-row">
-            <el-input v-model="knowledgeQuery" placeholder="搜索知识点、实验、资料来源" @keyup.enter="handleSearchKnowledge" />
-            <el-button type="primary" :loading="searchingKnowledge" :disabled="!knowledgeQuery.trim()" @click="handleSearchKnowledge">
-              检索
-            </el-button>
-          </div>
-          <div class="knowledge-hit-list">
-            <div v-for="hit in knowledgeHits" :key="`${hit.document_title}-${hit.content.slice(0, 16)}`">
-              <strong>{{ hit.knowledge_point }} · {{ hit.document_title }}</strong>
-              <p>{{ hit.content }}</p>
-              <small>{{ hit.document_type }} · {{ hit.source_uri }}</small>
-            </div>
-            <el-empty v-if="knowledgeQuery && !knowledgeHits.length && !searchingKnowledge" description="没有检索到资料片段，请换一个知识点或关键词。" />
-          </div>
-        </article>
-
-        <KnowledgeSphereGraph
-          v-model:query="knowledgeQuery"
-          v-model:project-id="ragProjectId"
-          :graph="knowledgeLinkGraph"
-          :loading="loadingKnowledgeLinks"
-          :project-options="overview?.projects || []"
-          :selected-node-id="selectedKnowledgeNode?.id || null"
-          @search="handleSearchKnowledge"
-          @select-node="selectKnowledgeNode"
-        />
-
-        <article class="panel-like workspace-panel">
-          <header><strong>数据库 RAG 问答</strong><span>Retrieval QA</span></header>
-          <div class="rag-scope-row">
-            <el-select v-model="ragProjectId" clearable placeholder="全部项目资料">
-              <el-option
-                v-for="project in overview?.projects || []"
-                :key="project.id"
-                :label="project.title"
-                :value="project.id"
-              />
-            </el-select>
-            <el-select v-model="ragKnowledgePoints" multiple collapse-tags collapse-tags-tooltip clearable placeholder="限定知识点">
-              <el-option v-for="point in knowledgePoints" :key="point.id" :label="point.name" :value="point.name" />
-            </el-select>
-          </div>
-          <el-input
-            v-model="ragQuestion"
-            type="textarea"
-            :rows="4"
-            placeholder="围绕已上传资料、课堂 PPT、笔记或知识点提问"
-          />
-          <div class="classroom-action-row">
-            <el-button type="primary" :loading="generatingRag" :disabled="!ragQuestion.trim()" @click="handleRagAsk">
-              基于数据库回答
-            </el-button>
-          </div>
-          <div v-if="ragAnswer" class="rag-answer">
-            <strong>回答</strong>
-            <p>{{ ragAnswer }}</p>
-            <div v-if="ragResponse?.related_points.length" class="rag-tags">
-              <el-tag v-for="point in ragResponse.related_points" :key="point" size="small" @click="searchByPoint(point)">
-                {{ point }}
-              </el-tag>
-            </div>
-            <small>
-              {{ ragResponse?.used_llm ? '由后端 RAG 结合大模型生成' : '由后端 RAG 检索结果生成' }}
-              · 置信度 {{ ragResponse?.confidence || 'medium' }}
-            </small>
-            <div v-if="ragResponse?.citations.length" class="citation-list">
-              <div v-for="(citation, index) in ragResponse.citations" :key="citation.id" class="citation-card">
-                <span>来源 {{ index + 1 }} · {{ citation.source_type }}</span>
-                <strong>{{ citation.title }}</strong>
-                <p>{{ citation.content }}</p>
-                <small>{{ renderCitationMeta(citation) }}</small>
-                <div class="citation-actions">
-                  <el-button size="small" @click="locateCitation(citation)">定位片段</el-button>
-                  <el-button v-if="citation.review_url" size="small" @click="openCitationReview(citation)">回看材料</el-button>
-                </div>
-              </div>
-            </div>
-            <div v-if="ragResponse?.follow_up_questions.length" class="follow-up-list">
-              <button v-for="question in ragResponse.follow_up_questions" :key="question" type="button" @click="ragQuestion = question">
-                {{ question }}
-              </button>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel-like workspace-panel">
-          <header><strong>沉淀内容</strong><span>{{ overview?.resources.length || 0 }} items</span></header>
-          <div class="resource-list">
-            <div v-for="resource in overview?.resources || []" :key="resource.id" class="resource-card">
-              <span>{{ resource.resource_type }}</span>
-              <strong>{{ resource.title }}</strong>
-              <p>{{ resource.source }}</p>
-              <small>{{ formatDate(resource.created_at) }}</small>
-            </div>
-          </div>
-          <el-empty v-if="!overview?.resources.length" description="还没有沉淀内容。可以先上传资料，或从学习清单进入课堂生成 PPT、图解、演示和笔记。" />
-        </article>
-
-        <article class="panel-like workspace-panel">
-          <header><strong>知识点索引</strong><span>{{ knowledgePoints.length }} points</span></header>
-          <div class="knowledge-point-scroll compact">
-            <button v-for="point in knowledgePoints" :key="point.id" type="button" @click="searchByPoint(point.name)">
-              <strong>{{ point.name }}</strong>
-              <span>{{ point.chapter }} · {{ point.difficulty }}</span>
-              <small>{{ point.description }}</small>
-            </button>
-          </div>
-        </article>
-      </section>
-
       <section v-else-if="mode === 'literature'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
           <header>
@@ -312,29 +180,20 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  askDatabase,
   createLiterature,
   deleteProfileEntry,
-  getKnowledgeLinkGraph,
   getWorkspaceOverview,
   listKnowledgePoints,
-  searchKnowledge,
   runResearchTool,
   updateLiterature,
   updateProfileEntry,
-  type DatabaseAskResponse,
-  type DatabaseCitation,
   type KnowledgePointRead,
-  type KnowledgeLinkGraphResponse,
-  type KnowledgeLinkNode,
-  type KnowledgeSearchHit,
   type ProfileEntryRead,
   type LiteraturePaperRead,
   type WorkspaceOverviewResponse
 } from '../services/apiClient'
-import KnowledgeSphereGraph from '../components/KnowledgeSphereGraph.vue'
 
-type Mode = 'profile' | 'resources' | 'literature' | 'writing' | 'methods'
+type Mode = 'profile' | 'literature' | 'writing' | 'methods'
 type ToolType = 'polish' | 'format' | 'citation' | 'review' | 'method' | 'experiment' | 'reproduce' | 'topic' | 'defense' | 'paper_reading'
 
 const props = defineProps<{ mode: Mode }>()
@@ -342,21 +201,9 @@ const router = useRouter()
 const loading = ref(false)
 const savingLiterature = ref(false)
 const runningTool = ref(false)
-const searchingKnowledge = ref(false)
-const generatingRag = ref(false)
 const savingProfileEntry = ref(false)
 const overview = ref<WorkspaceOverviewResponse | null>(null)
-const knowledgeQuery = ref('')
-const ragQuestion = ref('')
-const ragAnswer = ref('')
-const ragResponse = ref<DatabaseAskResponse | null>(null)
-const ragProjectId = ref<number | null>(null)
-const ragKnowledgePoints = ref<string[]>([])
-const knowledgeHits = ref<KnowledgeSearchHit[]>([])
 const knowledgePoints = ref<KnowledgePointRead[]>([])
-const knowledgeLinkGraph = ref<KnowledgeLinkGraphResponse | null>(null)
-const selectedKnowledgeNode = ref<KnowledgeLinkNode | null>(null)
-const loadingKnowledgeLinks = ref(false)
 const profileDrawerVisible = ref(false)
 const literatureForm = reactive({ title: '', authors: '', venue: '', year: '', abstract: '' })
 const toolForm = reactive({
@@ -375,7 +222,6 @@ const profileEntryForm = reactive({
 
 const metaMap: Record<Mode, { eyebrow: string; title: string; description: string }> = {
   profile: { eyebrow: 'Profile', title: '学习画像', description: '沉淀学生近期学习行为、薄弱点、资源偏好和画像版本，用于后续个性化推荐。' },
-  resources: { eyebrow: 'Knowledge Database', title: '数据库', description: '集中管理上传资料、学习笔记、课堂生成 PPT 和知识点关系，并提供基于资料库的 RAG 问答。' },
   literature: { eyebrow: 'Literature', title: '文献知识库', description: '保存论文、资料、摘要、引用文本和阅读状态。' },
   writing: { eyebrow: 'Writing', title: '论文写作', description: '提供选题凝练、综述写作、论文润色、引用规范和模拟答辩。' },
   methods: { eyebrow: 'Methods', title: '科研方法', description: '围绕实验设计、论文复现、评价指标和学术规范生成学习建议。' }
@@ -391,14 +237,6 @@ const metrics = computed<WorkspaceMetric[]>(() => {
       { label: '画像条目', value: profileEntries.value.length, hint: '可人工修正' },
       { label: '平均置信度', value: `${profileConfidenceAverage.value}%`, hint: '低置信条目需复盘' },
       { label: '当前版本', value: `v${overview.value?.profile.current_revision || 0}`, hint: '学习记录驱动更新' }
-    ]
-  }
-  if (props.mode === 'resources') {
-    return [
-      { label: '项目知识', value: data.projects || 0, hint: '图谱合并来源' },
-      { label: '沉淀资源', value: data.resources || 0, hint: '课堂与笔记材料' },
-      { label: '知识点', value: knowledgePoints.value.length, hint: '检索与出题索引' },
-      { label: '命中片段', value: knowledgeHits.value.length, hint: '当前检索结果' }
     ]
   }
   if (props.mode === 'literature') {
@@ -481,11 +319,9 @@ const profileEntryOptions = [
 
 onMounted(async () => {
   await Promise.all([loadOverview(), loadKnowledgePoints()])
-  if (props.mode === 'resources') await loadKnowledgeLinks()
 })
 watch(() => props.mode, () => {
   toolForm.tool_type = props.mode === 'methods' ? 'experiment' : 'topic'
-  if (props.mode === 'resources') void loadKnowledgeLinks()
 })
 
 async function loadOverview() {
@@ -502,63 +338,6 @@ async function loadOverview() {
 async function loadKnowledgePoints() {
   const { data } = await listKnowledgePoints()
   knowledgePoints.value = data
-  if (!knowledgeQuery.value && data.length) {
-    knowledgeQuery.value = data[0].name
-    await handleSearchKnowledge()
-  }
-}
-
-async function loadKnowledgeLinks() {
-  if (props.mode !== 'resources') return
-  loadingKnowledgeLinks.value = true
-  try {
-    const { data } = await getKnowledgeLinkGraph({
-      project_id: ragProjectId.value,
-      query: knowledgeQuery.value.trim(),
-      limit: 160
-    })
-    knowledgeLinkGraph.value = data
-    if (selectedKnowledgeNode.value && !data.nodes.some((node) => node.id === selectedKnowledgeNode.value?.id)) {
-      selectedKnowledgeNode.value = null
-    }
-  } finally {
-    loadingKnowledgeLinks.value = false
-  }
-}
-
-async function handleRagAsk() {
-  generatingRag.value = true
-  try {
-    const { data } = await askDatabase({
-      question: ragQuestion.value,
-      project_id: ragProjectId.value,
-      knowledge_points: ragKnowledgePoints.value,
-      limit: 8
-    })
-    ragResponse.value = data
-    ragAnswer.value = data.answer
-    knowledgeHits.value = data.citations.map(citationToKnowledgeHit)
-    await loadKnowledgeLinks()
-  } finally {
-    generatingRag.value = false
-  }
-}
-
-function citationToKnowledgeHit(citation: DatabaseCitation): KnowledgeSearchHit {
-  return {
-    chunk_id: citation.id.startsWith('chunk:') ? Number(citation.id.replace('chunk:', '')) : null,
-    document_title: citation.title,
-    document_type: citation.document_type,
-    knowledge_point: citation.knowledge_point,
-    content: citation.content,
-    source_uri: citation.source_uri,
-    keywords: citation.knowledge_point ? [citation.knowledge_point] : [],
-    page_no: citation.page_no,
-    slide_no: citation.slide_no,
-    section_title: citation.section_title,
-    distance: citation.score,
-    keyword_hit: null
-  }
 }
 
 async function handleCreateLiterature() {
@@ -644,57 +423,6 @@ async function handleDeleteProfileEntry(entry: ProfileEntryRead) {
   const { data } = await deleteProfileEntry(entry.key)
   if (overview.value) overview.value.profile = data
   ElMessage.success('画像条目已删除')
-}
-
-async function handleSearchKnowledge() {
-  searchingKnowledge.value = true
-  try {
-    const { data } = await searchKnowledge(knowledgeQuery.value, 8)
-    knowledgeHits.value = data
-    await loadKnowledgeLinks()
-  } finally {
-    searchingKnowledge.value = false
-  }
-}
-
-function searchByPoint(point: string) {
-  knowledgeQuery.value = point
-  void handleSearchKnowledge()
-}
-
-function selectKnowledgeNode(node: KnowledgeLinkNode | null) {
-  selectedKnowledgeNode.value = node
-  if (node?.layer === 'knowledge_base') {
-    knowledgeQuery.value = node.label
-  }
-}
-
-function locateCitation(citation: DatabaseCitation) {
-  knowledgeQuery.value = citation.knowledge_point || citation.title
-  const focused = citationToKnowledgeHit(citation)
-  knowledgeHits.value = [
-    focused,
-    ...knowledgeHits.value.filter((hit) => hit.content !== focused.content)
-  ].slice(0, 8)
-  ElMessage.success('已定位到答案来源片段，可以在资料检索区继续复习。')
-}
-
-function renderCitationMeta(citation: DatabaseCitation) {
-  return [
-    citation.knowledge_point || citation.document_type,
-    citation.section_title,
-    citation.page_no ? `第 ${citation.page_no} 页` : '',
-    citation.slide_no ? `第 ${citation.slide_no} 页` : ''
-  ].filter(Boolean).join(' · ')
-}
-
-function openCitationReview(citation: DatabaseCitation) {
-  locateCitation(citation)
-  if (citation.review_url.startsWith('/api/classroom-resources/')) {
-    window.open(citation.review_url, '_blank')
-    return
-  }
-  ElMessage.info('知识库片段已在当前页面定位。')
 }
 
 async function handleRunTool() {

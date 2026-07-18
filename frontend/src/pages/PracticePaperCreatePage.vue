@@ -123,8 +123,9 @@ const canCreate = computed(() => form.title.trim() && selectedNodes.value.length
 const nodeGroups = computed(() => {
   const groups = [
     { layer: 'project', title: '学习项目知识', nodes: nodes.value.filter((node) => node.layer === 'project') },
+    { layer: 'document', title: '上传资料', nodes: nodes.value.filter((node) => node.layer === 'document') },
     { layer: 'knowledge_base', title: '知识库知识', nodes: nodes.value.filter((node) => node.layer === 'knowledge_base') },
-    { layer: 'taxonomy', title: '先修知识', nodes: nodes.value.filter((node) => node.layer === 'taxonomy') }
+    { layer: 'other', title: '关联知识', nodes: nodes.value.filter((node) => !['project', 'document', 'knowledge_base'].includes(node.layer)) }
   ]
   return groups.filter((group) => group.nodes.length)
 })

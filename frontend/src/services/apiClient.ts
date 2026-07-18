@@ -666,7 +666,7 @@ export interface DatabaseGraphResponse {
 export interface KnowledgeLinkNode {
   id: string
   label: string
-  layer: 'project' | 'knowledge_base' | 'taxonomy' | string
+  layer: 'project' | 'document' | 'knowledge_base' | string
   category: string
   description: string
   meta: Record<string, any>
@@ -684,7 +684,7 @@ export interface KnowledgeLinkEdge {
 export interface KnowledgePathSuggestionStep {
   id: string
   label: string
-  layer: 'project' | 'knowledge_base' | 'taxonomy' | string
+  layer: 'project' | 'document' | 'knowledge_base' | string
   reason: string
   order?: number
   phase?: string

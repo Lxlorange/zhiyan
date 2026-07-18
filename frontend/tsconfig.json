@@ -29,6 +29,8 @@
     "src/pages/ClassroomUnifiedPlayerPage.vue",
     "src/pages/DailyPlanPage.vue",
     "src/pages/DirectionPlanner.vue",
+    "src/pages/KnowledgeStarMapPage.vue",
+    "src/pages/KnowledgeUploadPage.vue",
     "src/pages/LoginPage.vue",
     "src/pages/ModulePlaceholder.vue",
     "src/pages/ProjectHomePage.vue",

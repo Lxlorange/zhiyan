@@ -49,14 +49,14 @@
 
         <div class="knowledge-sphere-overlay">
           <div class="knowledge-sphere-badge">
-            <strong>os-taxonomy v1</strong>
-            <span>按年龄高度、学科颜色、依赖关系构建 3D 可旋转知识图谱</span>
+            <strong>知识库动态星图</strong>
+            <span>按资料来源、知识点证据量、先修关系和学习路径构建 3D 可旋转知识图谱</span>
           </div>
 
           <div class="knowledge-sphere-rulers" aria-hidden="true">
-            <span>高阶迁移</span>
+            <span>迁移应用</span>
             <span>概念连接</span>
-            <span>基础建构</span>
+            <span>资料证据</span>
           </div>
 
           <div v-if="hoveredNode" class="knowledge-sphere-tooltip" :style="tooltipStyle">
@@ -67,8 +67,8 @@
 
           <div class="knowledge-sphere-legend">
             <span><i class="project" />项目知识</span>
-            <span><i class="knowledge_base" />资料库</span>
-            <span><i class="taxonomy" />os-taxonomy</span>
+            <span><i class="document" />上传资料</span>
+            <span><i class="knowledge_base" />知识点</span>
             <span><i class="path" />个性化路径</span>
           </div>
 
@@ -143,19 +143,19 @@
           <div class="knowledge-sphere-stat-grid">
             <span><b>{{ graph?.nodes.length || 0 }}</b>节点</span>
             <span><b>{{ graph?.edges.length || 0 }}</b>关系</span>
-            <span><b>{{ graph?.meta?.taxonomy_selected_topics || 0 }}</b>taxonomy</span>
+            <span><b>{{ graph?.meta?.document_count || 0 }}</b>资料</span>
             <span><b>{{ activeSuggestion?.steps.length || 0 }}</b>路径步</span>
           </div>
           <div class="knowledge-sphere-subjects">
             <span
-              v-for="item in subjectStats"
+              v-for="item in chapterStats"
               :key="item.subject"
               :style="{ '--subject-color': item.color }"
             >
               {{ item.subject }} {{ item.count }}
             </span>
           </div>
-          <p>{{ graph?.attribution || '图谱由项目知识、资料库知识点和 os-taxonomy 结构合并生成。' }}</p>
+          <p>{{ graph?.attribution || '图谱由当前用户上传知识库、项目知识点与学习画像动态聚合生成。' }}</p>
         </div>
       </aside>
     </div>
@@ -174,7 +174,7 @@ import type {
   KnowledgePathSuggestion
 } from '../services/apiClient'
 
-type ViewMode = 'all' | 'path' | 'taxonomy'
+type ViewMode = 'all' | 'path' | 'documents'
 type GraphEntry = {
   mesh: any
   halo?: any
@@ -210,7 +210,7 @@ const autoRotate = ref(true)
 const viewOptions: Array<{ label: string; value: ViewMode }> = [
   { label: '全域', value: 'all' },
   { label: '路径', value: 'path' },
-  { label: 'taxonomy', value: 'taxonomy' }
+  { label: '资料', value: 'documents' }
 ]
 
 let renderer: any = null
@@ -243,12 +243,13 @@ const pathNodeIds = computed(() => new Set((activeSuggestion.value?.steps || [])
 const graphStats = computed(() => {
   const nodes = props.graph?.nodes.length || 0
   const edges = props.graph?.edges.length || 0
-  const total = props.graph?.meta?.taxonomy_total_topics || 1590
-  return `${nodes} nodes · ${edges} links · ${total} taxonomy topics`
+  const documents = props.graph?.meta?.document_count || 0
+  const points = props.graph?.meta?.knowledge_point_count || 0
+  return `${nodes} nodes · ${edges} links · ${documents} docs · ${points} points`
 })
 
-const subjectStats = computed(() => {
-  const subjects = props.graph?.meta?.taxonomy_subjects || {}
+const chapterStats = computed(() => {
+  const subjects = props.graph?.meta?.chapter_subjects || props.graph?.meta?.document_types || {}
   return Object.entries(subjects)
     .map(([subject, count]) => ({ subject, count: Number(count), color: cssSubjectColor(subject) }))
     .sort((left, right) => right.count - left.count)
@@ -276,8 +277,8 @@ const selectedMeta = computed<Record<string, string>>(() => {
   if (!selectedNode.value) return {}
   const meta = selectedNode.value.meta || {}
   const entries: Array<[string, unknown]> = []
-  if (selectedNode.value.layer === 'taxonomy') {
-    entries.push(['subject', meta.subject], ['domain', meta.domain], ['type', meta.type], ['age', formatAge(meta.age_range)], ['centrality', meta.centrality])
+  if (selectedNode.value.layer === 'document') {
+    entries.push(['type', selectedNode.value.category], ['chunks', meta.chunk_count], ['points', meta.point_count], ['course', meta.course_code])
   } else if (selectedNode.value.layer === 'knowledge_base') {
     entries.push(['chapter', meta.chapter], ['chunks', meta.chunk_count], ['documents', meta.document_count], ['difficulty', meta.difficulty])
   } else {
@@ -543,7 +544,7 @@ function rebuildPathLayer() {
       new THREE.MeshBasicMaterial({
         color: 0xdc8b5e,
         transparent: true,
-        opacity: viewMode.value === 'taxonomy' ? 0.12 : 0.58
+        opacity: viewMode.value === 'documents' ? 0.2 : 0.58
       })
     )
     pathLayer.add(tube)
@@ -582,8 +583,9 @@ function disposeGroup(group: any) {
 
 function positionForNode(node: KnowledgeLinkNode, index: number) {
   if (node.layer === 'project') return projectPosition(node, index)
+  if (node.layer === 'document') return documentPosition(node, index)
   if (node.layer === 'knowledge_base') return knowledgeBasePosition(node, index)
-  return taxonomyPosition(node, index)
+  return knowledgeBasePosition(node, index)
 }
 
 function projectPosition(node: KnowledgeLinkNode, index: number) {
@@ -591,6 +593,15 @@ function projectPosition(node: KnowledgeLinkNode, index: number) {
   const angle = (index / count) * Math.PI * 2
   const radius = 74 + (hashString(node.id) % 20)
   return new THREE.Vector3(Math.cos(angle) * radius, 6 + index * 8, Math.sin(angle) * radius)
+}
+
+function documentPosition(node: KnowledgeLinkNode, index: number) {
+  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'document').length || 1)
+  const angle = (index / count) * Math.PI * 2
+  const hash = hashString(node.id)
+  const radius = 270 + (hash % 42)
+  const y = -150 + ((hash % 70) - 35)
+  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
 }
 
 function knowledgeBasePosition(node: KnowledgeLinkNode, index: number) {
@@ -603,32 +614,17 @@ function knowledgeBasePosition(node: KnowledgeLinkNode, index: number) {
   return new THREE.Vector3(Math.cos(angle) * radius, y + ((hash % 60) - 30), Math.sin(angle) * radius)
 }
 
-function taxonomyPosition(node: KnowledgeLinkNode, index: number) {
-  const subject = String(node.meta?.subject || node.category || 'taxonomy')
-  const subjectIndex = subjectOrder(subject)
-  const subjectCount = Math.max(6, Object.keys(props.graph?.meta?.taxonomy_subjects || {}).length || 8)
-  const subjectAngle = (subjectIndex / subjectCount) * Math.PI * 2
-  const hash = hashString(`${node.meta?.domain || ''}:${node.id}`)
-  const angle = subjectAngle + (((hash % 120) - 60) / 100)
-  const ageStart = Array.isArray(node.meta?.age_range) ? Number(node.meta.age_range[0]) : 8
-  const ageY = Number.isFinite(ageStart) ? ((ageStart - 7.5) / 3.5) * 220 : 0
-  const centrality = Number(node.meta?.centrality || 0)
-  const radius = 275 + Math.min(76, centrality * 260) + (hash % 38)
-  const path = node.meta?.path
-  const pathLift = path ? 28 * Math.sin(Number(path.order || 1) * 0.7) : 0
-  return new THREE.Vector3(Math.cos(angle) * radius, ageY + pathLift, Math.sin(angle) * radius)
-}
-
 function nodeRadius(node: KnowledgeLinkNode) {
   const weight = Math.max(1, Number(node.weight || 1))
   const pathBoost = isPathNode(node.id) ? 4 : 0
   if (node.layer === 'project') return 18 + pathBoost
+  if (node.layer === 'document') return 12 + Math.min(10, Math.log(weight + 1) * 2.6) + pathBoost
   if (node.layer === 'knowledge_base') return 9 + Math.min(11, Math.log(weight + 1) * 3) + pathBoost
   return 6 + Math.min(9, Math.log(weight + 1) * 3.2) + pathBoost
 }
 
 function createHalo(node: KnowledgeLinkNode, color: number) {
-  if (!isPathNode(node.id) && node.layer !== 'project') return null
+  if (!isPathNode(node.id) && node.layer !== 'project' && node.layer !== 'document') return null
   const radius = nodeRadius(node) + (node.layer === 'project' ? 8 : 6)
   const halo = new THREE.Mesh(
     new THREE.TorusGeometry(radius, 1.2, 8, 48),
@@ -643,18 +639,19 @@ function createHalo(node: KnowledgeLinkNode, color: number) {
 }
 
 function createNodeLabel(node: KnowledgeLinkNode) {
-  const isImportant = node.layer === 'project' || isPathNode(node.id)
+  const isImportant = node.layer === 'project' || node.layer === 'document' || isPathNode(node.id)
   if (!isImportant) return null
   const label = document.createElement('span')
-  label.className = `knowledge-sphere-label ${node.layer === 'project' ? 'is-project' : 'is-path'}`
+  label.className = `knowledge-sphere-label ${node.layer === 'project' ? 'is-project' : node.layer === 'document' ? 'is-document' : 'is-path'}`
   label.textContent = node.meta?.path?.order ? `${node.meta.path.order}. ${node.label}` : node.label
   return new CSS2DObject(label)
 }
 
 function nodeColor(node: KnowledgeLinkNode) {
   if (node.layer === 'project') return 0xdc8b5e
+  if (node.layer === 'document') return 0xfadfa7
   if (node.layer === 'knowledge_base') return 0xc4daeb
-  return subjectColor(String(node.meta?.subject || node.category || 'taxonomy'))
+  return subjectColor(String(node.category || 'knowledge'))
 }
 
 function subjectColor(subject: string) {
@@ -685,7 +682,7 @@ function edgeColor(edge: KnowledgeLinkEdge) {
 function nodeOpacity(node: KnowledgeLinkNode) {
   if (viewMode.value === 'all') return 0.96
   if (viewMode.value === 'path') return isPathNode(node.id) || node.layer === 'project' ? 1 : 0.18
-  return node.layer === 'taxonomy' || isPathNode(node.id) ? 0.96 : 0.22
+  return node.layer === 'document' || node.layer === 'knowledge_base' || isPathNode(node.id) ? 0.96 : 0.22
 }
 
 function applyViewMode() {
@@ -693,9 +690,9 @@ function applyViewMode() {
     const material = mesh.material as any
     material.opacity = nodeOpacity(node)
     material.emissiveIntensity = isPathNode(node.id) ? 0.82 : viewMode.value === 'path' ? 0.18 : 0.34
-    mesh.visible = viewMode.value !== 'taxonomy' || node.layer !== 'project' || isPathNode(node.id)
-    if (halo) halo.visible = viewMode.value !== 'taxonomy' || isPathNode(node.id)
-    if (label) label.visible = viewMode.value !== 'taxonomy' || isPathNode(node.id)
+    mesh.visible = viewMode.value !== 'documents' || node.layer !== 'project' || isPathNode(node.id)
+    if (halo) halo.visible = viewMode.value !== 'documents' || node.layer === 'document' || isPathNode(node.id)
+    if (label) label.visible = viewMode.value !== 'documents' || node.layer === 'document' || isPathNode(node.id)
   })
 }
 
@@ -855,22 +852,18 @@ function curvedPoints(source: any, target: any, lift: number) {
 
 function layerOrder(layer: string) {
   if (layer === 'project') return 0
-  if (layer === 'knowledge_base') return 1
+  if (layer === 'document') return 1
+  if (layer === 'knowledge_base') return 2
   return 2
-}
-
-function subjectOrder(subject: string) {
-  const known = ['Computing', 'Mathematics', 'Science', 'English', 'History', 'Life Skills', 'Learning to Learn', 'Personal & Social Development']
-  const found = known.indexOf(subject)
-  return found >= 0 ? found : hashString(subject) % known.length
 }
 
 function nodeSubtitle(node: KnowledgeLinkNode) {
   if (node.layer === 'project') return `项目 · ${node.category || '学习目标'}`
-  if (node.layer === 'knowledge_base') return `资料库 · ${node.category || '知识点'}`
+  if (node.layer === 'document') return `上传资料 · ${node.category || 'document'}`
+  if (node.layer === 'knowledge_base') return `知识点 · ${node.category || '知识库'}`
   const meta = node.meta || {}
   const age = formatAge(meta.age_range)
-  return `${meta.subject || 'taxonomy'} · ${meta.domain || node.category || 'domain'}${age ? ` · ${age}` : ''}`
+  return `${meta.subject || '知识'} · ${meta.domain || node.category || 'domain'}${age ? ` · ${age}` : ''}`
 }
 
 function hashString(value: string) {
@@ -1029,6 +1022,10 @@ function formatMeta(value: unknown) {
   background: rgba(15, 118, 110, 0.86);
 }
 
+:deep(.knowledge-sphere-label.is-document) {
+  background: rgba(138, 87, 0, 0.84);
+}
+
 :deep(.knowledge-sphere-label.is-path) {
   border-color: rgba(245, 158, 11, 0.65);
 }
@@ -1137,8 +1134,8 @@ function formatMeta(value: unknown) {
   background: #c4daeb;
 }
 
-.knowledge-sphere-legend i.taxonomy {
-  background: #cadab2;
+.knowledge-sphere-legend i.document {
+  background: #fadfa7;
 }
 
 .knowledge-sphere-legend i.path {

@@ -5,6 +5,7 @@ import DailyPlanPage from './pages/DailyPlanPage.vue'
 import DashboardModulePage from './pages/DashboardModulePage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
 import KnowledgeUploadPage from './pages/KnowledgeUploadPage.vue'
+import KnowledgeStarMapPage from './pages/KnowledgeStarMapPage.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
 import MethodsWorkspacePage from './pages/MethodsWorkspacePage.vue'
 import PracticePaperCreatePage from './pages/PracticePaperCreatePage.vue'
@@ -65,16 +66,16 @@ export const pageMeta: Record<string, PageMeta> = {
     highlights: ['画像条目', '知识短板', '版本追踪']
   },
   resources: {
-    title: '数据库',
-    subtitle: '资料、笔记、PPT 与知识图谱统一沉淀',
-    description: '这里集中管理用户上传资料、课堂生成资源、学习笔记和知识点关系，并提供基于资料库的 RAG 问答。',
-    highlights: ['资料沉淀', '3D知识图谱', 'RAG问答']
+    title: '知识星图',
+    subtitle: '基于用户知识库动态生成可旋转知识星图',
+    description: '这里只展示知识星图。节点来自用户上传知识库、项目知识点和学习画像的动态聚合，用于规划科学、动态的个性化学习路径。',
+    highlights: ['3D知识星图', '动态路径', '节点交互']
   },
   'knowledge-upload': {
-    title: '知识库上传',
-    subtitle: '上传、解析和管理课程资料',
-    description: '这里只负责知识库资料上传、解析记录、文档内容列表和删除管理，不触发学习内容生成。',
-    highlights: ['资料上传', '导入记录', '内容管理']
+    title: '知识库',
+    subtitle: '上传、解析、管理资料，并基于知识库完成 RAG 问答',
+    description: '这里负责知识库资料上传、解析记录、文档内容列表、删除管理和基于资料来源的 RAG 问答。',
+    highlights: ['资料上传', '内容管理', 'RAG问答']
   },
   assessment: {
     title: '练习试卷',
@@ -140,7 +141,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/daily-plan', name: 'daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
   { path: '/projects/:projectId(\\d+)/daily-plan', name: 'project-daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
   { path: '/profile', name: 'profile', component: WorkspaceModulePage, props: { mode: 'profile' }, meta: { page: 'profile' } },
-  { path: '/resources', name: 'resources', component: WorkspaceModulePage, props: { mode: 'resources' }, meta: { page: 'resources' } },
+  { path: '/resources', name: 'resources', component: KnowledgeStarMapPage, meta: { page: 'resources' } },
   { path: '/knowledge-upload', name: 'knowledge-upload', component: KnowledgeUploadPage, meta: { page: 'knowledge-upload' } },
   { path: '/assessment', name: 'assessment', component: PracticePaperListPage, meta: { page: 'assessment' } },
   { path: '/assessment/new', name: 'practice-paper-create', component: PracticePaperCreatePage, meta: { page: 'assessment' } },

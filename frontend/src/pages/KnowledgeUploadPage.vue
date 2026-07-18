@@ -2,7 +2,7 @@
   <div class="page knowledge-upload-page">
     <section class="page-hero knowledge-upload-hero">
       <div>
-        <h2>知识库上传</h2>
+        <h2>知识库</h2>
       </div>
       <div class="knowledge-upload-actions">
         <el-button :loading="loading" @click="loadAll">刷新</el-button>
@@ -134,6 +134,67 @@
         </div>
       </aside>
     </section>
+
+    <section class="panel-like knowledge-upload-panel knowledge-rag-panel">
+      <header>
+        <strong>知识库 RAG 问答</strong>
+        <span>基于已上传资料、项目上下文和知识点证据回答</span>
+      </header>
+      <div class="rag-scope-row">
+        <el-select v-model="ragProjectId" clearable placeholder="全部项目资料">
+          <el-option
+            v-for="project in projects"
+            :key="project.id"
+            :label="project.title"
+            :value="project.id"
+          />
+        </el-select>
+        <el-select v-model="ragKnowledgePoints" multiple collapse-tags collapse-tags-tooltip clearable placeholder="限定知识点">
+          <el-option v-for="point in knowledgePoints" :key="point.id" :label="point.name" :value="point.name" />
+        </el-select>
+      </div>
+      <el-input
+        v-model="ragQuestion"
+        type="textarea"
+        :rows="4"
+        placeholder="围绕已上传资料、课堂 PPT、笔记或知识点提问"
+      />
+      <div class="classroom-action-row">
+        <el-button type="primary" :loading="generatingRag" :disabled="!ragQuestion.trim()" @click="handleRagAsk">
+          基于知识库回答
+        </el-button>
+      </div>
+      <div v-if="ragAnswer" class="rag-answer">
+        <strong>回答</strong>
+        <p>{{ ragAnswer }}</p>
+        <div v-if="ragResponse?.related_points.length" class="rag-tags">
+          <el-tag v-for="point in ragResponse.related_points" :key="point" size="small" @click="searchByPoint(point)">
+            {{ point }}
+          </el-tag>
+        </div>
+        <small>
+          {{ ragResponse?.used_llm ? '由后端 RAG 结合大模型生成' : '由后端 RAG 检索结果生成' }}
+          · 置信度 {{ ragResponse?.confidence || 'medium' }}
+        </small>
+        <div v-if="ragResponse?.citations.length" class="citation-list">
+          <div v-for="(citation, index) in ragResponse.citations" :key="citation.id" class="citation-card">
+            <span>来源 {{ index + 1 }} · {{ citation.source_type }}</span>
+            <strong>{{ citation.title }}</strong>
+            <p>{{ citation.content }}</p>
+            <small>{{ renderCitationMeta(citation) }}</small>
+            <div class="citation-actions">
+              <el-button size="small" @click="locateCitation(citation)">定位片段</el-button>
+              <el-button v-if="citation.review_url" size="small" @click="openCitationReview(citation)">回看材料</el-button>
+            </div>
+          </div>
+        </div>
+        <div v-if="ragResponse?.follow_up_questions.length" class="follow-up-list">
+          <button v-for="question in ragResponse.follow_up_questions" :key="question" type="button" @click="ragQuestion = question">
+            {{ question }}
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -141,15 +202,22 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  askDatabase,
   deleteKnowledgeDocument,
   deleteKnowledgeImportJob,
   importKnowledgePackage,
+  listKnowledgePoints,
   listKnowledgeDocumentChunks,
   listKnowledgeDocuments,
   listKnowledgeImportJobs,
+  listLearningProjects,
+  type DatabaseAskResponse,
+  type DatabaseCitation,
   type KnowledgeChunkRead,
   type KnowledgeDocumentRead,
-  type KnowledgeImportJobRead
+  type KnowledgeImportJobRead,
+  type KnowledgePointRead,
+  type LearningProjectRead
 } from '../services/apiClient'
 
 const uploadForm = reactive({
@@ -161,20 +229,28 @@ const uploadForm = reactive({
 const jobs = ref<KnowledgeImportJobRead[]>([])
 const documents = ref<KnowledgeDocumentRead[]>([])
 const chunks = ref<KnowledgeChunkRead[]>([])
+const projects = ref<LearningProjectRead[]>([])
+const knowledgePoints = ref<KnowledgePointRead[]>([])
 const selectedDocument = ref<KnowledgeDocumentRead | null>(null)
 const documentQuery = ref('')
+const ragQuestion = ref('')
+const ragAnswer = ref('')
+const ragResponse = ref<DatabaseAskResponse | null>(null)
+const ragProjectId = ref<number | null>(null)
+const ragKnowledgePoints = ref<string[]>([])
 const loading = ref(false)
 const uploading = ref(false)
 const loadingJobs = ref(false)
 const loadingDocuments = ref(false)
 const loadingChunks = ref(false)
+const generatingRag = ref(false)
 
 onMounted(loadAll)
 
 async function loadAll() {
   loading.value = true
   try {
-    await Promise.all([loadJobs(), loadDocuments()])
+    await Promise.all([loadJobs(), loadDocuments(), loadProjects(), loadKnowledgePoints()])
   } finally {
     loading.value = false
   }
@@ -205,6 +281,16 @@ async function loadDocuments() {
   } finally {
     loadingDocuments.value = false
   }
+}
+
+async function loadProjects() {
+  const { data } = await listLearningProjects()
+  projects.value = data
+}
+
+async function loadKnowledgePoints() {
+  const { data } = await listKnowledgePoints()
+  knowledgePoints.value = data
 }
 
 async function handleUpload(uploadFile: any) {
@@ -269,6 +355,54 @@ async function handleDeleteJob(row: KnowledgeImportJobRead) {
   await deleteKnowledgeImportJob(row.id)
   ElMessage.success('上传记录已删除')
   await loadJobs()
+}
+
+async function handleRagAsk() {
+  generatingRag.value = true
+  try {
+    const { data } = await askDatabase({
+      question: ragQuestion.value,
+      project_id: ragProjectId.value,
+      knowledge_points: ragKnowledgePoints.value,
+      limit: 8
+    })
+    ragResponse.value = data
+    ragAnswer.value = data.answer
+  } finally {
+    generatingRag.value = false
+  }
+}
+
+function searchByPoint(point: string) {
+  documentQuery.value = point
+  void loadDocuments()
+}
+
+async function locateCitation(citation: DatabaseCitation) {
+  documentQuery.value = citation.knowledge_point || citation.title
+  await loadDocuments()
+  const matched = documents.value.find((document) => document.title === citation.title)
+  if (matched) {
+    await handleSelectDocument(matched)
+  }
+  ElMessage.success('已定位到知识库来源，可在文档列表和片段预览中继续查看。')
+}
+
+function renderCitationMeta(citation: DatabaseCitation) {
+  return [
+    citation.knowledge_point || citation.document_type,
+    citation.section_title,
+    citation.page_no ? `第 ${citation.page_no} 页` : '',
+    citation.slide_no ? `第 ${citation.slide_no} 页` : ''
+  ].filter(Boolean).join(' · ')
+}
+
+function openCitationReview(citation: DatabaseCitation) {
+  if (citation.review_url.startsWith('/api/classroom-resources/')) {
+    window.open(citation.review_url, '_blank')
+    return
+  }
+  void locateCitation(citation)
 }
 
 function jobStatusLabel(status: string) {
