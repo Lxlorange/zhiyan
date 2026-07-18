@@ -9257,9 +9257,12 @@ body::after {
 .knowledge-upload-layout,
 .knowledge-content-layout {
   display: grid;
-  grid-template-columns: minmax(420px, 1.16fr) minmax(0, 0.84fr);
   gap: 22px;
   align-items: start;
+}
+
+.knowledge-upload-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .knowledge-content-layout {
@@ -9294,14 +9297,35 @@ body::after {
 
 .knowledge-upload-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(160px, 0.8fr) minmax(260px, 1.2fr) auto;
+  align-items: end;
   gap: 14px;
 }
 
 .knowledge-upload-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knowledge-upload-option-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(96, 73, 57, 0.13);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.knowledge-upload-option-card .el-checkbox {
+  height: auto;
+}
+
+.knowledge-upload-option-card span {
+  color: var(--study-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .knowledge-storage-meter {
@@ -9348,9 +9372,9 @@ body::after {
 .knowledge-upload-drop .el-upload-dragger {
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 118px;
   border: 1px dashed rgba(7, 95, 86, 0.38);
-  border-radius: 22px;
+  border-radius: 16px;
   background: #f8f5ed;
 }
 
@@ -9362,18 +9386,44 @@ body::after {
 
 .knowledge-upload-drop-inner strong {
   color: var(--study-green);
-  font-size: 22px;
+  font-size: 19px;
 }
 
 .knowledge-upload-confirm {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 10px;
 }
 
+.knowledge-upload-confirm .el-button {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
 .knowledge-table {
   width: 100%;
+}
+
+.knowledge-import-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.knowledge-import-progress .el-progress {
+  width: 100%;
+}
+
+.knowledge-import-progress span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--study-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .knowledge-filter-row {
@@ -9823,6 +9873,18 @@ body::after {
 
   .knowledge-upload-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-upload-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-upload-confirm {
+    justify-content: stretch;
+  }
+
+  .knowledge-upload-confirm .el-button {
+    flex: 1 1 0;
   }
 
   .knowledge-filter-row,

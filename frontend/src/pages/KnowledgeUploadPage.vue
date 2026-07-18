@@ -32,10 +32,27 @@
             <el-form-item label="课程名称">
               <el-input v-model="uploadForm.course_title" placeholder="可选：例如 机器学习课程资料" />
             </el-form-item>
+            <div class="knowledge-upload-confirm">
+              <el-button
+                type="primary"
+                :loading="uploading"
+                :disabled="!selectedUploadFile"
+                @click="handleUploadConfirm"
+              >
+                开始分析
+              </el-button>
+              <el-button :disabled="uploading || !selectedUploadFile" @click="clearSelectedUpload">重新选择</el-button>
+            </div>
           </div>
           <div class="knowledge-upload-options">
-            <el-checkbox v-model="uploadForm.use_ocr">启用 OCR</el-checkbox>
-            <el-checkbox v-model="uploadForm.rebuild_course">导入前清空同课程资料</el-checkbox>
+            <label class="knowledge-upload-option-card">
+              <el-checkbox v-model="uploadForm.use_ocr">启用 OCR</el-checkbox>
+              <span>扫描版 PDF 或图片资料时使用</span>
+            </label>
+            <label class="knowledge-upload-option-card">
+              <el-checkbox v-model="uploadForm.rebuild_course">导入前清空同课程资料</el-checkbox>
+              <span>重新生成同课程的知识点与证据片段</span>
+            </label>
           </div>
         </el-form>
 
@@ -56,18 +73,6 @@
             <span>选择文件后，可先补充课程代码和名称，再点击开始分析。</span>
           </div>
         </el-upload>
-
-        <div class="knowledge-upload-confirm">
-          <el-button
-            type="primary"
-            :loading="uploading"
-            :disabled="!selectedUploadFile"
-            @click="handleUploadConfirm"
-          >
-            开始分析
-          </el-button>
-          <el-button :disabled="uploading || !selectedUploadFile" @click="clearSelectedUpload">重新选择</el-button>
-        </div>
       </article>
 
       <article class="panel-like knowledge-upload-panel">
@@ -82,6 +87,19 @@
           <el-table-column label="状态" width="110">
             <template #default="{ row }">
               <el-tag :type="jobStatusType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="进度" min-width="210">
+            <template #default="{ row }">
+              <div class="knowledge-import-progress">
+                <el-progress
+                  :percentage="jobProgressPercent(row)"
+                  :stroke-width="8"
+                  :show-text="false"
+                  :status="jobProgressStatus(row)"
+                />
+                <span>{{ jobProgressStage(row) }}</span>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="结果" width="150">
@@ -223,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile, UploadUserFile } from 'element-plus'
 import {
@@ -277,13 +295,16 @@ const loadingJobs = ref(false)
 const loadingDocuments = ref(false)
 const loadingChunks = ref(false)
 const generatingRag = ref(false)
+let importPollTimer: ReturnType<typeof window.setInterval> | null = null
 
 onMounted(loadAll)
+onBeforeUnmount(stopImportPolling)
 
 async function loadAll() {
   loading.value = true
   try {
     await Promise.all([loadStorageUsage(), loadJobs(), loadDocuments(), loadProjects(), loadKnowledgePoints()])
+    updateImportPolling()
   } finally {
     loading.value = false
   }
@@ -299,6 +320,7 @@ async function loadJobs() {
   try {
     const { data } = await listKnowledgeImportJobs(50)
     jobs.value = data
+    updateImportPolling()
   } finally {
     loadingJobs.value = false
   }
@@ -382,18 +404,55 @@ async function handleUploadConfirm() {
   if (!validateUploadFile(raw)) return
   uploading.value = true
   try {
-    await importKnowledgePackage(raw, {
+    const { data } = await importKnowledgePackage(raw, {
       course_code: uploadForm.course_code.trim(),
       course_title: uploadForm.course_title.trim(),
       use_ocr: uploadForm.use_ocr,
       rebuild_course: uploadForm.rebuild_course
     })
-    ElMessage.success('资料已解析入库')
+    ElMessage.success('资料已提交，后台正在解析')
     clearSelectedUpload()
-    await loadAll()
+    jobs.value = [data, ...jobs.value.filter((job) => job.id !== data.id)]
+    updateImportPolling()
+    await Promise.all([loadStorageUsage(), loadDocuments()])
   } finally {
     uploading.value = false
     void loadStorageUsage()
+  }
+}
+
+function updateImportPolling() {
+  const hasActiveImport = jobs.value.some((job) => isActiveImportStatus(job.status))
+  if (!hasActiveImport) {
+    stopImportPolling()
+    return
+  }
+  if (importPollTimer) return
+  importPollTimer = window.setInterval(() => {
+    void refreshImportJobsInBackground()
+  }, 2000)
+}
+
+function stopImportPolling() {
+  if (!importPollTimer) return
+  window.clearInterval(importPollTimer)
+  importPollTimer = null
+}
+
+async function refreshImportJobsInBackground() {
+  try {
+    const { data } = await listKnowledgeImportJobs(50)
+    const hadActiveImport = jobs.value.some((job) => isActiveImportStatus(job.status))
+    jobs.value = data
+    const hasActiveImport = data.some((job) => isActiveImportStatus(job.status))
+    if (!hasActiveImport) {
+      stopImportPolling()
+      if (hadActiveImport) {
+        await Promise.all([loadStorageUsage(), loadDocuments(), loadKnowledgePoints()])
+      }
+    }
+  } catch {
+    stopImportPolling()
   }
 }
 
@@ -442,6 +501,10 @@ async function handleDeleteDocument(row: KnowledgeDocumentRead) {
 }
 
 async function handleDeleteJob(row: KnowledgeImportJobRead) {
+  if (isActiveImportStatus(row.status)) {
+    ElMessage.warning('该资料仍在后台解析中，完成或失败后再删除。')
+    return
+  }
   try {
     await ElMessageBox.confirm(`确认删除上传记录“${row.source_name}”？该记录导入的文档片段和占用空间会一起清理。`, '清理知识库空间', {
       confirmButtonText: '删除并清理',
@@ -506,6 +569,7 @@ function openCitationReview(citation: DatabaseCitation) {
 
 function jobStatusLabel(status: string) {
   const labels: Record<string, string> = {
+    queued: '排队中',
     running: '解析中',
     completed: '已完成',
     partial_failed: '部分失败',
@@ -516,9 +580,38 @@ function jobStatusLabel(status: string) {
 
 function jobStatusType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'completed') return 'success'
-  if (status === 'partial_failed' || status === 'running') return 'warning'
+  if (status === 'partial_failed' || status === 'running' || status === 'queued') return 'warning'
   if (status === 'failed') return 'danger'
   return 'info'
+}
+
+function isActiveImportStatus(status: string) {
+  return status === 'queued' || status === 'running'
+}
+
+function jobProgressPercent(job: KnowledgeImportJobRead) {
+  const raw = Number(job.options?.progress_percent)
+  if (Number.isFinite(raw)) return Math.max(0, Math.min(100, Math.round(raw)))
+  if (job.status === 'completed' || job.status === 'partial_failed' || job.status === 'failed') return 100
+  return job.status === 'queued' ? 5 : 20
+}
+
+function jobProgressStage(job: KnowledgeImportJobRead) {
+  const stage = typeof job.options?.progress_stage === 'string' ? job.options.progress_stage : ''
+  if (stage) return stage
+  if (job.status === 'queued') return '等待后台解析'
+  if (job.status === 'running') return '正在清洗资料并生成知识点'
+  if (job.status === 'completed') return '导入完成'
+  if (job.status === 'partial_failed') return '部分文件导入失败'
+  if (job.status === 'failed') return job.error_message || '导入失败'
+  return job.status
+}
+
+function jobProgressStatus(job: KnowledgeImportJobRead): 'success' | 'exception' | 'warning' | undefined {
+  if (job.status === 'completed') return 'success'
+  if (job.status === 'failed') return 'exception'
+  if (job.status === 'partial_failed') return 'warning'
+  return undefined
 }
 
 function formatDate(value: string) {

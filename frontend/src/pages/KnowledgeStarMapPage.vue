@@ -68,3 +68,16 @@ function selectKnowledgeNode(node: KnowledgeLinkNode | null) {
   }
 }
 </script>
+
+<style scoped>
+:global(.app-main:has(.knowledge-star-map-page)) {
+  padding: 0;
+}
+
+.knowledge-star-map-page {
+  width: 100%;
+  max-width: none;
+  height: calc(100dvh - 64px);
+  margin: 0;
+}
+</style>

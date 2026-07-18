@@ -1,177 +1,54 @@
 <template>
   <section class="knowledge-sphere-panel">
-    <header class="knowledge-sphere-toolbar">
-      <div class="knowledge-sphere-toolbar__title">
-        <strong>知识漏斗</strong>
-        <span>{{ graphStats }}</span>
-      </div>
-      <div class="knowledge-sphere-toolbar__controls">
-        <el-select
-          :model-value="projectId"
-          clearable
-          placeholder="全部项目与资料"
-          class="knowledge-sphere-select"
-          @update:model-value="updateProjectId"
-        >
-          <el-option
-            v-for="project in projectOptions"
-            :key="project.id"
-            :label="project.title"
-            :value="project.id"
-          />
-        </el-select>
-        <el-input
-          :model-value="query"
-          class="knowledge-sphere-search"
-          placeholder="搜索知识点、项目目标或资料片段"
-          clearable
-          @update:model-value="updateQuery"
-          @keyup.enter="emit('search')"
-        />
-        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗视图">
+    <div
+      ref="canvasHost"
+      class="knowledge-sphere-stage"
+      @pointerdown="handlePointerDown"
+      @pointermove="handlePointerMove"
+      @pointerup="handlePointerUp"
+      @pointercancel="handlePointerCancel"
+      @pointerleave="handlePointerLeave"
+      @wheel="handleWheel"
+    >
+      <canvas ref="canvasRef" class="knowledge-sphere-canvas" />
+
+      <div class="knowledge-sphere-overlay">
+        <div v-if="categoryChips.length" class="knowledge-sphere-legend" aria-label="知识分类图例">
           <button
-            v-for="option in viewOptions"
-            :key="option.value"
+            v-for="item in categoryChips"
+            :key="item.key"
             type="button"
-            :class="{ active: viewMode === option.value }"
-            @click="viewMode = option.value"
+            :class="{ off: !activeCategories.has(item.key) }"
+            :aria-pressed="activeCategories.has(item.key)"
+            @click.stop="toggleCategory(item.key)"
           >
-            {{ option.label }}
+            <i :style="{ background: item.color }" />
+            <span>{{ item.label }}</span>
+            <b>{{ item.count }}</b>
           </button>
         </div>
-        <el-button :loading="loading" type="primary" @click="emit('search')">刷新图谱</el-button>
+
+        <article
+          v-if="selectedNode"
+          class="knowledge-sphere-popover"
+          :style="selectedPanelStyle"
+          @pointerdown.stop
+        >
+          <button type="button" class="knowledge-sphere-popover__close" @click.stop="clearSelection">×</button>
+          <div class="knowledge-sphere-popover__tags">
+            <small v-for="tag in selectedTags" :key="tag">{{ tag }}</small>
+          </div>
+          <h3>{{ selectedNode.label }}</h3>
+          <p>{{ selectedDescription }}</p>
+          <strong>需要 {{ selectedPrerequisites.length }} 个前置节点</strong>
+          <div class="knowledge-sphere-popover__parents">
+            <span v-for="node in selectedPrerequisites" :key="node.id">{{ node.label }}</span>
+            <em v-if="!selectedPrerequisites.length">无直系父节点</em>
+          </div>
+        </article>
+
+        <span v-if="loading" class="knowledge-sphere-loading">更新中</span>
       </div>
-    </header>
-
-    <div class="knowledge-sphere-layout">
-      <div
-        ref="canvasHost"
-        class="knowledge-sphere-stage"
-        @pointerdown="handlePointerDown"
-        @pointermove="handlePointerMove"
-        @pointerup="handlePointerUp"
-        @pointercancel="handlePointerCancel"
-        @pointerleave="handlePointerLeave"
-        @wheel="handleWheel"
-      >
-        <canvas ref="canvasRef" class="knowledge-sphere-canvas" />
-
-        <div class="knowledge-sphere-overlay">
-          <div class="knowledge-sphere-badge">
-            <strong>RAG DAG</strong>
-            <span>拖拽旋转，点击节点查看它的先修链和后续知识。</span>
-          </div>
-
-          <div v-if="hoveredNode" class="knowledge-sphere-tooltip" :style="tooltipStyle">
-            <strong>{{ hoveredNode.label }}</strong>
-            <span>{{ nodeSubtitle(hoveredNode) }}</span>
-            <small v-if="hoveredNode.meta?.path">第 {{ hoveredNode.meta.path.order }} 步</small>
-          </div>
-
-          <div class="knowledge-sphere-actions">
-            <button type="button" @click.stop="toggleRotation">
-              {{ autoRotate ? '暂停旋转' : '恢复旋转' }}
-            </button>
-            <button type="button" :disabled="!activeSuggestion?.steps.length" @click.stop="playPath">
-              播放路径
-            </button>
-            <button type="button" @click.stop="resetCamera">重置视角</button>
-          </div>
-
-          <div v-if="categoryChips.length" class="knowledge-sphere-categories">
-            <button
-              v-for="item in categoryChips"
-              :key="item.key"
-              type="button"
-              :class="{ off: !activeCategories.has(item.key) }"
-              @click.stop="toggleCategory(item.key)"
-            >
-              <i :style="{ background: item.color }" />
-              <span>{{ item.label }}</span>
-              <b>{{ item.count }}</b>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <aside class="knowledge-sphere-sidebar">
-        <div class="knowledge-sphere-card knowledge-sphere-current">
-          <div class="knowledge-sphere-card-head">
-            <strong>节点</strong>
-            <button v-if="selectedNode" type="button" @click="clearSelection">清除</button>
-          </div>
-          <template v-if="selectedNode">
-            <span>{{ nodeSubtitle(selectedNode) }}</span>
-            <h3>{{ selectedNode.label }}</h3>
-            <p>{{ selectedDescription }}</p>
-            <div class="knowledge-sphere-meta">
-              <small v-for="item in selectedFacts" :key="item.label">
-                <b>{{ item.label }}</b>{{ item.value }}
-              </small>
-            </div>
-            <div v-if="selectedEvidence.length" class="knowledge-sphere-evidence">
-              <strong>证据</strong>
-              <p v-for="item in selectedEvidence" :key="item">{{ item }}</p>
-            </div>
-            <div class="knowledge-sphere-relations">
-              <section>
-                <strong>先学</strong>
-                <button
-                  v-for="node in selectedPrerequisites"
-                  :key="node.id"
-                  type="button"
-                  @click="selectNode(node.id, true)"
-                >
-                  {{ node.label }}
-                </button>
-                <span v-if="!selectedPrerequisites.length">无</span>
-              </section>
-              <section>
-                <strong>后续</strong>
-                <button
-                  v-for="node in selectedNext"
-                  :key="node.id"
-                  type="button"
-                  @click="selectNode(node.id, true)"
-                >
-                  {{ node.label }}
-                </button>
-                <span v-if="!selectedNext.length">无</span>
-              </section>
-            </div>
-          </template>
-          <template v-else>
-            <span>点击任意节点，查看它在学习顺序中的位置。</span>
-          </template>
-        </div>
-
-        <div class="knowledge-sphere-card">
-          <div class="knowledge-sphere-card-head">
-            <strong>学习路径</strong>
-            <span>{{ activeSuggestion?.project_title || '全部知识库' }}</span>
-          </div>
-          <p v-if="activeSuggestion?.strategy" class="knowledge-sphere-strategy">
-            {{ activeSuggestion.strategy }}
-          </p>
-          <div v-if="activeSuggestion?.dynamic_signals?.length" class="knowledge-sphere-signals">
-            <small v-for="signal in activeSuggestion.dynamic_signals" :key="signal">{{ signal }}</small>
-          </div>
-          <ol v-if="activeSuggestion?.steps.length" class="knowledge-sphere-path">
-            <li
-              v-for="step in activeSuggestion.steps"
-              :key="step.id"
-              :class="{ active: selectedNode?.id === step.id }"
-              @click="selectNode(step.id, true)"
-            >
-              <b>{{ step.order || '?' }}</b>
-              <span>{{ step.label }}</span>
-              <em>{{ step.phase || step.layer }} · {{ step.estimated_minutes || 35 }} 分钟</em>
-              <small>{{ step.reason }}</small>
-            </li>
-          </ol>
-          <span v-else>上传资料或建立项目知识点后，系统会重新计算路径。</span>
-        </div>
-      </aside>
     </div>
   </section>
 </template>
@@ -181,11 +58,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import type {
   KnowledgeLinkEdge,
   KnowledgeLinkGraphResponse,
-  KnowledgeLinkNode,
-  KnowledgePathSuggestion
+  KnowledgeLinkNode
 } from '../services/apiClient'
 
-type ViewMode = 'all' | 'path' | 'evidence'
 type Vec3 = {
   x: number
   y: number
@@ -200,6 +75,7 @@ type WorldNode = Vec3 & {
   categoryKey: string
   appear: number
   countWeight: number
+  driftSeed: number
 }
 type WorldEdge = {
   index: number
@@ -246,24 +122,15 @@ const palette = ['#dc8b5e', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0
 
 const canvasHost = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const hoveredNode = ref<KnowledgeLinkNode | null>(null)
 const selectedNode = ref<KnowledgeLinkNode | null>(null)
-const tooltipStyle = ref<Record<string, string>>({})
-const viewMode = ref<ViewMode>('all')
 const autoRotate = ref(true)
 const activeCategories = shallowRef<Set<string>>(new Set())
 const categoryChips = ref<CategoryChip[]>([])
-
-const viewOptions: Array<{ label: string; value: ViewMode }> = [
-  { label: '全部', value: 'all' },
-  { label: '路径', value: 'path' },
-  { label: '证据', value: 'evidence' }
-]
+const selectedPanelStyle = ref<Record<string, string>>({})
 
 let context: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
 let animationFrame = 0
-let pathTimer = 0
 let dpr = 1
 let width = 0
 let height = 0
@@ -271,6 +138,7 @@ let reduceMotion = false
 let startedAt = 0
 let lastFrameAt = 0
 let grow = 0
+let driftTime = 0
 let rotY = 0.58
 let tilt = -0.32
 let zoom = 1
@@ -290,25 +158,10 @@ const projectedNodes: ProjectedNode[] = []
 const worldEdges: WorldEdge[] = []
 const nodeIndexById = new Map<string, number>()
 const directPre = new Map<string, string[]>()
-const directNext = new Map<string, string[]>()
 let lineageNodes = new Set<string>()
 let lineageEdges = new Set<number>()
 
-const activeSuggestion = computed<KnowledgePathSuggestion | null>(() => {
-  if (!props.graph?.path_suggestions.length) return null
-  if (!props.projectId) return props.graph.path_suggestions[0]
-  return props.graph.path_suggestions.find((item) => item.project_id === props.projectId) || props.graph.path_suggestions[0]
-})
-
-const pathNodeIds = computed(() => new Set((activeSuggestion.value?.steps || []).map((step) => step.id)))
-
-const graphStats = computed(() => {
-  const nodes = props.graph?.nodes.length || 0
-  const edges = props.graph?.edges.length || 0
-  const documents = props.graph?.meta?.document_count || 0
-  const points = props.graph?.meta?.knowledge_point_count || 0
-  return `${nodes} 节点 · ${edges} 关系 · ${documents} 资料 · ${points} 知识点`
-})
+const pathNodeIds = computed(() => new Set((props.graph?.path_suggestions[0]?.steps || []).map((step) => step.id)))
 
 const selectedDescription = computed(() => {
   if (!selectedNode.value) return ''
@@ -321,33 +174,17 @@ const selectedDescription = computed(() => {
   )
 })
 
-const selectedEvidence = computed<string[]>(() => {
-  const meta = selectedNode.value?.meta || {}
-  const evidence = Array.isArray(meta.evidence) ? meta.evidence : []
-  return evidence.map((item) => String(item)).filter(Boolean).slice(0, 3)
-})
-
-const selectedFacts = computed<Array<{ label: string; value: string }>>(() => {
+const selectedTags = computed<string[]>(() => {
   if (!selectedNode.value) return []
   const node = selectedNode.value
   const meta = node.meta || {}
-  const facts: Array<{ label: string; value: string }> = []
-  facts.push({ label: '分类', value: node.category || '知识点' })
-  if (meta.chapter) facts.push({ label: '章节', value: formatMeta(meta.chapter) })
-  if (meta.difficulty) facts.push({ label: '难度', value: formatMeta(meta.difficulty) })
-  if (meta.chunk_count) facts.push({ label: '片段', value: formatMeta(meta.chunk_count) })
-  if (meta.document_count) facts.push({ label: '资料', value: formatMeta(meta.document_count) })
-  if (meta.dag_level !== undefined) facts.push({ label: '层级', value: formatMeta(meta.dag_level) })
-  if (meta.degree !== undefined) facts.push({ label: '关系', value: `${formatMeta(meta.degree)} 条` })
-  if (meta.path) {
-    const path = meta.path as Record<string, unknown>
-    facts.push({ label: '路径', value: `第 ${path.order || '?'} 步` })
-  }
-  return facts.slice(0, 8)
+  const tags = Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)).filter(Boolean) : []
+  return [categoryLabel(categoryKey(node)), ...tags]
+    .filter((item, index, array) => item && array.indexOf(item) === index)
+    .slice(0, 7)
 })
 
 const selectedPrerequisites = computed(() => relatedNodes(selectedNode.value?.id || '', directPre))
-const selectedNext = computed(() => relatedNodes(selectedNode.value?.id || '', directNext))
 
 watch(
   () => props.graph,
@@ -373,7 +210,7 @@ watch(
   }
 )
 
-watch([viewMode, pathNodeIds], () => {
+watch(pathNodeIds, () => {
   rebuildWorldGraph()
 })
 
@@ -392,17 +229,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (animationFrame) cancelAnimationFrame(animationFrame)
-  if (pathTimer) window.clearInterval(pathTimer)
   resizeObserver?.disconnect()
 })
-
-function updateProjectId(value: number | string | null | undefined) {
-  emit('update:projectId', value === null || value === undefined || value === '' ? null : Number(value))
-}
-
-function updateQuery(value: string | number | null | undefined) {
-  emit('update:query', String(value ?? ''))
-}
 
 function restartGrowth() {
   startedAt = performance.now()
@@ -416,7 +244,6 @@ function rebuildWorldGraph() {
   worldEdges.length = 0
   nodeIndexById.clear()
   directPre.clear()
-  directNext.clear()
 
   const graph = props.graph
   if (!graph) {
@@ -455,12 +282,15 @@ function rebuildWorldGraph() {
       categoryKey: categoryKey(node),
       appear: Math.min(1, Math.max(0, position.y / WORLD_HEIGHT)),
       countWeight: Math.max(1, Number(node.weight || 1)),
+      driftSeed: hashString(`${node.id}:drift`) % 10000,
       ...position
     }
     nodeIndexById.set(node.id, worldNode.index)
     worldNodes.push(worldNode)
     projectedNodes.push({ sx: 0, sy: 0, pf: 1, radius: worldNode.radius, visible: false })
   })
+
+  relaxFunnelForces(graph, maxLevel)
 
   graph.edges.slice(0, MAX_DRAW_EDGES).forEach((edge, index) => {
     const source = nodeIndexById.get(edge.source)
@@ -470,11 +300,102 @@ function rebuildWorldGraph() {
     worldEdges.push({ index, source, target, edge, path })
     if (edge.relation === 'prerequisite') {
       pushRelation(directPre, edge.target, edge.source)
-      pushRelation(directNext, edge.source, edge.target)
     }
   })
 
   buildLineage(selectedNode.value?.id || props.selectedNodeId || '')
+}
+
+function relaxFunnelForces(graph: KnowledgeLinkGraphResponse, maxLevel: number) {
+  if (worldNodes.length < 3) return
+  const velocity = worldNodes.map(() => ({ x: 0, y: 0, z: 0 }))
+  const springs = graph.edges
+    .slice(0, MAX_DRAW_EDGES)
+    .map((edge) => ({
+      edge,
+      source: nodeIndexById.get(edge.source),
+      target: nodeIndexById.get(edge.target)
+    }))
+    .filter((item): item is { edge: KnowledgeLinkEdge; source: number; target: number } => (
+      item.source !== undefined && item.target !== undefined
+    ))
+
+  for (let pass = 0; pass < 72; pass += 1) {
+    const cooling = 1 - pass / 84
+    for (let left = 0; left < worldNodes.length; left += 1) {
+      for (let right = left + 1; right < worldNodes.length; right += 1) {
+        const a = worldNodes[left]
+        const b = worldNodes[right]
+        const dx = b.x - a.x
+        const dy = (b.y - a.y) * 0.44
+        const dz = b.z - a.z
+        const distSq = Math.max(90, dx * dx + dy * dy + dz * dz)
+        const force = Math.min(1.85, 1450 / distSq) * cooling
+        const invDist = 1 / Math.sqrt(distSq)
+        velocity[left].x -= dx * invDist * force
+        velocity[left].z -= dz * invDist * force
+        velocity[left].y -= dy * invDist * force * 0.22
+        velocity[right].x += dx * invDist * force
+        velocity[right].z += dz * invDist * force
+        velocity[right].y += dy * invDist * force * 0.22
+      }
+    }
+
+    springs.forEach(({ edge, source, target }) => {
+      const a = worldNodes[source]
+      const b = worldNodes[target]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dz = b.z - a.z
+      const dist = Math.max(1, Math.hypot(dx, dy * 0.55, dz))
+      const ideal = edge.relation === 'evidence' ? 210 : edge.relation === 'prerequisite' ? 150 : 180
+      const force = (dist - ideal) * (edge.relation === 'prerequisite' ? 0.0036 : 0.0025) * cooling
+      velocity[source].x += dx / dist * force
+      velocity[source].z += dz / dist * force
+      velocity[target].x -= dx / dist * force
+      velocity[target].z -= dz / dist * force
+      if (edge.relation === 'prerequisite') {
+        const targetGap = Math.max(70, WORLD_HEIGHT / (maxLevel + 2))
+        const desiredY = Math.min(WORLD_HEIGHT * 0.96, a.y + targetGap)
+        const yPull = (desiredY - b.y) * 0.0018 * cooling
+        velocity[source].y -= yPull * 0.38
+        velocity[target].y += yPull
+      }
+    })
+
+    worldNodes.forEach((node, index) => {
+      const anchorX = node.x
+      const anchorY = node.y
+      const anchorZ = node.z
+      const v = velocity[index]
+      node.x += clamp(v.x, -8, 8)
+      node.y = clamp(node.y + clamp(v.y, -5, 5), WORLD_HEIGHT * 0.05, WORLD_HEIGHT * 0.97)
+      node.z += clamp(v.z, -8, 8)
+      node.x += (anchorX - node.x) * 0.022
+      node.y += (anchorY - node.y) * 0.052
+      node.z += (anchorZ - node.z) * 0.022
+      constrainToFunnel(node)
+      v.x *= 0.68
+      v.y *= 0.64
+      v.z *= 0.68
+    })
+  }
+}
+
+function constrainToFunnel(node: WorldNode) {
+  const yNorm = Math.min(0.98, Math.max(0.02, node.y / WORLD_HEIGHT))
+  const maxRadius = 118 + (1 - yNorm) * 468
+  const minRadius = node.node.layer === 'project' ? 18 : 22
+  const radius = Math.hypot(node.x, node.z)
+  if (radius > maxRadius) {
+    const scale = maxRadius / radius
+    node.x *= scale
+    node.z *= scale
+  } else if (radius < minRadius && node.node.layer !== 'project') {
+    const angle = Math.atan2(node.z, node.x) || (node.driftSeed * 0.01)
+    node.x = Math.cos(angle) * minRadius
+    node.z = Math.sin(angle) * minRadius
+  }
 }
 
 function buildCategoryChips(nodes: KnowledgeLinkNode[]): CategoryChip[] {
@@ -512,6 +433,7 @@ function syncActiveCategories(keys: string[]) {
     if (current.has(key)) next.add(key)
   })
   activeCategories.value = next.size ? next : new Set(keys)
+  clearSelectionIfHidden()
 }
 
 function toggleCategory(key: string) {
@@ -519,6 +441,12 @@ function toggleCategory(key: string) {
   if (next.has(key)) next.delete(key)
   else next.add(key)
   activeCategories.value = next
+  clearSelectionIfHidden()
+}
+
+function clearSelectionIfHidden() {
+  if (!selectedNode.value) return
+  if (!activeCategories.value.has(categoryKey(selectedNode.value))) clearSelection()
 }
 
 function positionForNode(
@@ -557,7 +485,7 @@ function positionForNode(
 
 function pathPosition(node: KnowledgeLinkNode, path: Record<string, unknown>): Vec3 {
   const order = Math.max(1, Number(path.order || 1))
-  const total = Math.max(1, activeSuggestion.value?.steps.length || 1)
+  const total = Math.max(1, props.graph?.path_suggestions[0]?.steps.length || 1)
   const t = total <= 1 ? 0.5 : (order - 1) / Math.max(1, total - 1)
   const y = (0.12 + t * 0.78) * WORLD_HEIGHT
   const angle = order * 1.22 + (hashString(node.id) % 19) * 0.03
@@ -609,6 +537,7 @@ function frame(ts: number) {
 
   const dt = Math.min(64, ts - lastFrameAt)
   lastFrameAt = ts
+  driftTime = ts * 0.001
   if (autoRotate.value && hoverIndex < 0 && !selectedNode.value && !dragging && !reduceMotion) {
     rotY += SPIN_SPEED * dt
   }
@@ -636,30 +565,27 @@ function draw() {
   ctx.clearRect(0, 0, width, height)
   drawBackground(ctx)
   projectNodes()
+  if (selectedNode.value) updateSelectedPanelPosition(selectedNode.value.id)
   drawFunnelGuides(ctx)
   drawEdges(ctx)
   drawNodes(ctx)
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D) {
-  const gradient = ctx.createLinearGradient(0, 0, width, height)
-  gradient.addColorStop(0, '#fffdf9')
-  gradient.addColorStop(0.58, '#ffffff')
-  gradient.addColorStop(1, '#fff8ef')
-  ctx.fillStyle = gradient
+  ctx.fillStyle = '#fff7ed'
   ctx.fillRect(0, 0, width, height)
 
   ctx.save()
-  ctx.globalAlpha = 0.22
-  ctx.strokeStyle = '#f0cebb'
+  ctx.globalAlpha = 0.18
+  ctx.strokeStyle = '#ead8c3'
   ctx.lineWidth = 1
-  for (let x = 0; x < width; x += 42) {
+  for (let x = 0; x < width; x += 64) {
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, height)
     ctx.stroke()
   }
-  for (let y = 0; y < height; y += 42) {
+  for (let y = 0; y < height; y += 64) {
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(width, y)
@@ -682,7 +608,7 @@ function drawFunnelGuides(ctx: CanvasRenderingContext2D) {
       const projected = projectPoint({ x: Math.cos(angle) * radius, y, z: Math.sin(angle) * radius })
       points.push({ x: projected.sx, y: projected.sy })
     }
-    ctx.strokeStyle = index === levels.length - 1 ? 'rgba(220,139,94,0.3)' : 'rgba(92,92,92,0.16)'
+    ctx.strokeStyle = index === 0 ? 'rgba(15,118,110,0.28)' : 'rgba(120,113,108,0.14)'
     ctx.beginPath()
     points.forEach((point, pointIndex) => {
       if (pointIndex === 0) ctx.moveTo(point.x, point.y)
@@ -693,7 +619,7 @@ function drawFunnelGuides(ctx: CanvasRenderingContext2D) {
 
   const axisStart = projectPoint({ x: 0, y: 0, z: 0 })
   const axisEnd = projectPoint({ x: 0, y: WORLD_HEIGHT, z: 0 })
-  ctx.strokeStyle = 'rgba(220,139,94,0.22)'
+  ctx.strokeStyle = 'rgba(120,113,108,0.18)'
   ctx.setLineDash([6, 8])
   ctx.beginPath()
   ctx.moveTo(axisStart.sx, axisStart.sy)
@@ -729,14 +655,21 @@ function drawEdges(ctx: CanvasRenderingContext2D) {
     const rgb = inLineage ? sourceNode.rgb : edgeRgb(worldEdge.edge)
     const depth = Math.max(0.35, Math.min(1.15, (source.pf + target.pf) / 2))
 
-    ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha * depth})`
-    ctx.lineWidth = inLineage || worldEdge.path ? 1.35 : worldEdge.edge.relation === 'prerequisite' ? 0.85 : 0.62
+    const pulse = reduceMotion ? 0 : Math.sin(driftTime * 1.6 + worldEdge.index * 0.37) * 0.16
+    ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, alpha * depth + pulse * alpha)})`
+    ctx.lineWidth = inLineage || worldEdge.path ? 1.55 : worldEdge.edge.relation === 'prerequisite' ? 0.9 : 0.64
     ctx.beginPath()
     ctx.moveTo(source.sx, source.sy)
-    ctx.lineTo(target.sx, target.sy)
+    const midX = (source.sx + target.sx) / 2
+    const midY = (source.sy + target.sy) / 2
+    const dx = target.sx - source.sx
+    const dy = target.sy - source.sy
+    const length = Math.max(1, Math.hypot(dx, dy))
+    const curve = Math.min(26, length * 0.12) * (worldEdge.index % 2 ? 1 : -1)
+    ctx.quadraticCurveTo(midX - dy / length * curve, midY + dx / length * curve, target.sx, target.sy)
     ctx.stroke()
 
-    if (worldEdge.edge.relation === 'prerequisite' && (inLineage || worldEdge.path || viewMode.value !== 'evidence')) {
+    if (worldEdge.edge.relation === 'prerequisite') {
       drawArrow(ctx, source, target, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(0.72, alpha * 1.25)})`)
     }
   })
@@ -762,20 +695,20 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     const path = pathNodeIds.value.has(node.id)
     let dim = 1
     if (hasSelection && !selected && !lineage && !path) dim = 0.14
-    if (viewMode.value === 'path' && !path && !selected) dim *= node.layer === 'project' ? 0.35 : 0.22
-    if (viewMode.value === 'evidence' && !['document', 'knowledge_base'].includes(node.layer) && !path) dim *= 0.22
 
     const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : path ? 1.18 : 1)
     const alpha = Math.min(1, dim * (0.62 + 0.38 * Math.min(1, projected.pf * projected.pf)))
     const [red, green, blue] = worldNode.rgb
 
-    ctx.shadowBlur = 0
+    ctx.shadowBlur = selected || hovered || lineage || path ? 12 : 4
+    ctx.shadowColor = `rgba(${red}, ${green}, ${blue}, ${0.26 * alpha})`
     ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.strokeStyle = selected || hovered || lineage || path ? '#172033' : `rgba(23, 32, 51, ${0.22 * dim})`
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = selected || hovered || lineage || path ? '#17312c' : `rgba(23, 32, 51, ${0.2 * dim})`
     ctx.lineWidth = selected || hovered ? 1.3 : lineage || path ? 0.95 : 0.55
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
@@ -788,27 +721,8 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
       ctx.arc(projected.sx, projected.sy, r + 2.8, 0, Math.PI * 2)
       ctx.stroke()
     }
-
-    if (path) drawPathOrder(ctx, node, projected, r)
   })
   ctx.restore()
-}
-
-function drawPathOrder(ctx: CanvasRenderingContext2D, node: KnowledgeLinkNode, projected: ProjectedNode, radius: number) {
-  const order = Number(node.meta?.path?.order || 0)
-  if (!order) return
-  const badgeRadius = Math.max(5.5, Math.min(8.5, radius * 0.72))
-  const x = projected.sx + radius * 0.6
-  const y = projected.sy - radius * 0.7
-  ctx.fillStyle = '#172033'
-  ctx.beginPath()
-  ctx.arc(x, y, badgeRadius, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#ffffff'
-  ctx.font = `700 ${Math.max(9, badgeRadius * 0.88)}px Inter, system-ui, sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(String(order), x, y + 0.4)
 }
 
 function drawArrow(ctx: CanvasRenderingContext2D, source: ProjectedNode, target: ProjectedNode, color: string) {
@@ -832,9 +746,11 @@ function drawArrow(ctx: CanvasRenderingContext2D, source: ProjectedNode, target:
 
 function projectNodes() {
   worldNodes.forEach((node) => {
-    const projected = projectPoint(node)
+    const livePoint = dynamicPoint(node)
+    const projected = projectPoint(livePoint)
     const scaleBoost = Math.min(1.24, Math.max(0.8, zoom))
-    const radius = (0.9 + Math.sqrt(node.countWeight) * node.radius * 0.22) * projected.pf * scaleBoost
+    const breathe = reduceMotion ? 1 : 1 + Math.sin(driftTime * 1.8 + node.driftSeed * 0.01) * 0.055
+    const radius = (0.9 + Math.sqrt(node.countWeight) * node.radius * 0.22) * projected.pf * scaleBoost * breathe
     projectedNodes[node.index] = {
       sx: projected.sx,
       sy: projected.sy,
@@ -845,8 +761,21 @@ function projectNodes() {
   })
 }
 
+function dynamicPoint(node: WorldNode): Vec3 {
+  if (reduceMotion) return node
+  const seed = node.driftSeed * 0.01
+  const layerFloat = node.node.layer === 'project' ? 0.35 : node.node.layer === 'document' ? 0.72 : 1
+  const categoryFloat = 0.72 + (hashString(node.categoryKey) % 28) / 100
+  const strength = (lineageNodes.has(node.node.id) || pathNodeIds.value.has(node.node.id) ? 13 : 8) * layerFloat
+  return {
+    x: node.x + Math.sin(driftTime * 0.74 * categoryFloat + seed) * strength,
+    y: node.y + Math.sin(driftTime * 0.48 + seed * 1.7) * strength * 0.42,
+    z: node.z + Math.cos(driftTime * 0.62 * categoryFloat + seed * 1.31) * strength
+  }
+}
+
 function projectPoint(point: Vec3) {
-  const centeredY = point.y - WORLD_HEIGHT / 2
+  const centeredY = WORLD_HEIGHT / 2 - point.y
   const cosY = Math.cos(rotY)
   const sinY = Math.sin(rotY)
   const cosTilt = Math.cos(tilt)
@@ -870,8 +799,6 @@ function projectPoint(point: Vec3) {
 
 function isNodeVisible(worldNode: WorldNode) {
   if (!activeCategories.value.has(worldNode.categoryKey)) return false
-  if (viewMode.value === 'path') return pathNodeIds.value.has(worldNode.node.id) || worldNode.node.layer === 'project' || lineageNodes.has(worldNode.node.id)
-  if (viewMode.value === 'evidence') return ['document', 'knowledge_base'].includes(worldNode.node.layer) || pathNodeIds.value.has(worldNode.node.id)
   return true
 }
 
@@ -979,8 +906,6 @@ function updateHover(event: PointerEvent) {
     clearHover()
     return
   }
-  hoveredNode.value = worldNodes[index].node
-  tooltipStyle.value = placeTooltip(event.clientX - rect.left, event.clientY - rect.top)
   canvasHost.value.style.cursor = 'pointer'
 }
 
@@ -995,18 +920,8 @@ function selectFromPointer(event: PointerEvent) {
   selectNode(worldNodes[index].node.id, true)
 }
 
-function placeTooltip(x: number, y: number) {
-  const left = x > width - 280 ? x - 248 : x + 16
-  const top = y > height - 150 ? y - 116 : y + 16
-  return {
-    left: `${Math.max(12, left)}px`,
-    top: `${Math.max(12, top)}px`
-  }
-}
-
 function clearHover() {
   hoverIndex = -1
-  hoveredNode.value = null
   if (canvasHost.value) canvasHost.value.style.cursor = 'grab'
 }
 
@@ -1014,6 +929,7 @@ function clearSelection() {
   selectedNode.value = null
   emit('select-node', null)
   buildLineage('')
+  selectedPanelStyle.value = {}
 }
 
 function selectNode(nodeId: string, shouldEmit: boolean) {
@@ -1022,6 +938,7 @@ function selectNode(nodeId: string, shouldEmit: boolean) {
   selectedNode.value = node
   buildLineage(node.id)
   focusNode(node.id)
+  updateSelectedPanelPosition(node.id)
   if (shouldEmit) emit('select-node', node)
 }
 
@@ -1064,32 +981,21 @@ function focusNode(nodeId: string) {
   zoomTarget = Math.max(1.45, zoom)
 }
 
-function resetCamera() {
-  rotYTarget = 0.58
-  tiltTarget = -0.32
-  zoomTarget = 1
-}
-
-function toggleRotation() {
-  autoRotate.value = !autoRotate.value
-}
-
-function playPath() {
-  const steps = activeSuggestion.value?.steps || []
-  if (!steps.length) return
-  if (pathTimer) window.clearInterval(pathTimer)
-  viewMode.value = 'path'
-  let index = 0
-  selectNode(steps[index].id, true)
-  pathTimer = window.setInterval(() => {
-    index += 1
-    if (index >= steps.length) {
-      window.clearInterval(pathTimer)
-      pathTimer = 0
-      return
-    }
-    selectNode(steps[index].id, true)
-  }, 1550)
+function updateSelectedPanelPosition(nodeId: string) {
+  const index = nodeIndexById.get(nodeId)
+  const projected = index === undefined ? null : projectedNodes[index]
+  if (!projected || !projected.visible) {
+    selectedPanelStyle.value = { left: '24px', top: '24px' }
+    return
+  }
+  const panelWidth = Math.min(360, Math.max(280, width - 32))
+  const left = projected.sx > width - panelWidth - 40 ? projected.sx - panelWidth - 24 : projected.sx + 24
+  const top = projected.sy > height - 260 ? projected.sy - 224 : projected.sy + 22
+  selectedPanelStyle.value = {
+    left: `${clamp(left, 16, Math.max(16, width - panelWidth - 16))}px`,
+    top: `${clamp(top, 16, Math.max(16, height - 236))}px`,
+    width: `${panelWidth}px`
+  }
 }
 
 function relatedNodes(nodeId: string, source: Map<string, string[]>) {
@@ -1161,36 +1067,6 @@ function edgeRgb(edge: KnowledgeLinkEdge): [number, number, number] {
   return [103, 127, 74]
 }
 
-function nodeSubtitle(node: KnowledgeLinkNode) {
-  if (node.layer === 'project') return `项目 · ${node.category || '学习目标'}`
-  if (node.layer === 'document') return `资料 · ${node.category || 'document'}`
-  if (node.layer === 'platform') return '平台功能介绍'
-  if (node.layer === 'knowledge_base') return `知识点 · ${node.category || '知识库'}`
-  const meta = node.meta || {}
-  const age = formatAge(meta.age_range)
-  return `${meta.subject || '知识'} · ${meta.domain || node.category || 'domain'}${age ? ` · ${age}` : ''}`
-}
-
-function formatAge(value: unknown): string {
-  if (!Array.isArray(value)) return ''
-  const [start, end] = value
-  if (!start && !end) return ''
-  return `${start || '?'}-${end || '?'} 岁`
-}
-
-function formatMeta(value: unknown): string {
-  if (Array.isArray(value)) return value.map((item) => String(item)).slice(0, 4).join(' / ')
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
-  if (typeof value === 'object' && value) {
-    return Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== null && item !== undefined && item !== '')
-      .map(([key, item]) => `${key.replace(/_/g, ' ')}: ${formatMeta(item)}`)
-      .slice(0, 4)
-      .join(' / ')
-  }
-  return String(value)
-}
-
 function hexToRgb(color: string): [number, number, number] {
   const value = color.replace('#', '')
   const numeric = Number.parseInt(value.length === 3 ? value.split('').map((char) => char + char).join('') : value, 16)
@@ -1216,95 +1092,32 @@ function normalizedAngle(value: number) {
 
 <style scoped>
 .knowledge-sphere-panel {
-  display: grid;
-  gap: 16px;
+  position: relative;
+  display: block;
   grid-column: 1 / -1;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100dvh - 64px);
 }
 
-.knowledge-sphere-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.knowledge-sphere-toolbar__title {
-  display: grid;
-  gap: 4px;
-}
-
-.knowledge-sphere-toolbar__title strong {
-  color: var(--study-ink);
-  font-size: 28px;
-  letter-spacing: 0;
-}
-
-.knowledge-sphere-toolbar__title span {
-  color: var(--study-muted);
-  font-size: 12px;
-}
-
-.knowledge-sphere-toolbar__controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.knowledge-sphere-select {
-  width: 190px;
-}
-
-.knowledge-sphere-search {
-  width: min(380px, 42vw);
-}
-
-.knowledge-sphere-segments {
-  display: inline-flex;
-  padding: 3px;
-  border: 1px solid rgba(220, 139, 94, 0.2);
-  border-radius: 8px;
-  background: #ffefd6;
-}
-
-.knowledge-sphere-segments button,
-.knowledge-sphere-actions button,
-.knowledge-sphere-categories button,
-.knowledge-sphere-card-head button,
-.knowledge-sphere-relations button {
+.knowledge-sphere-legend button,
+.knowledge-sphere-popover__close {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #596273;
+  color: var(--study-soft, #596273);
   cursor: pointer;
   font-size: 12px;
   transition: background 180ms ease, color 180ms ease, transform 180ms ease;
 }
 
-.knowledge-sphere-segments button {
-  padding: 7px 10px;
-}
-
-.knowledge-sphere-segments button.active {
-  background: #dc8b5e;
-  color: #fff;
-}
-
-.knowledge-sphere-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.92fr) minmax(330px, 0.72fr);
-  gap: 16px;
-}
-
 .knowledge-sphere-stage {
   position: relative;
-  min-height: 760px;
-  border: 1px solid rgba(220, 139, 94, 0.16);
-  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100dvh - 64px);
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 20px 54px rgba(60, 48, 42, 0.1);
+  background: var(--study-paper, #fff7ed);
   cursor: grab;
   touch-action: none;
 }
@@ -1325,339 +1138,168 @@ function normalizedAngle(value: number) {
   pointer-events: none;
 }
 
-.knowledge-sphere-badge,
-.knowledge-sphere-actions,
-.knowledge-sphere-tooltip,
-.knowledge-sphere-categories {
-  border: 1px solid rgba(70, 74, 82, 0.12);
-  background: rgba(255, 253, 249, 0.9);
-  box-shadow: 0 12px 28px rgba(58, 54, 49, 0.1);
-  backdrop-filter: blur(14px);
-}
-
-.knowledge-sphere-badge {
+.knowledge-sphere-popover {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  z-index: 5;
   display: grid;
-  max-width: 300px;
-  gap: 5px;
-  padding: 12px 14px;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 16px;
+  border: 1px solid rgba(120, 113, 108, 0.18);
   border-radius: 8px;
-  color: #172033;
-  font-size: 12px;
-}
-
-.knowledge-sphere-badge strong {
-  font-size: 15px;
-}
-
-.knowledge-sphere-badge span {
-  color: #6d6472;
-  line-height: 1.5;
-}
-
-.knowledge-sphere-tooltip {
-  position: absolute;
-  z-index: 4;
-  display: grid;
-  width: 238px;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: #172033;
-}
-
-.knowledge-sphere-tooltip strong,
-.knowledge-sphere-tooltip span,
-.knowledge-sphere-tooltip small {
-  display: block;
-}
-
-.knowledge-sphere-tooltip span,
-.knowledge-sphere-tooltip small {
-  color: #6d6472;
-  font-size: 12px;
-}
-
-.knowledge-sphere-actions {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  gap: 6px;
-  padding: 5px;
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--study-surface, #fffaf2) 92%, white);
+  box-shadow: 0 18px 44px rgba(80, 64, 45, 0.16);
+  color: var(--study-ink, #172033);
   pointer-events: auto;
+  backdrop-filter: blur(16px);
 }
 
-.knowledge-sphere-actions button {
-  padding: 7px 9px;
-}
-
-.knowledge-sphere-actions button:hover,
-.knowledge-sphere-categories button:hover,
-.knowledge-sphere-card-head button:hover,
-.knowledge-sphere-relations button:hover {
-  background: rgba(220, 139, 94, 0.12);
-  color: #172033;
-  transform: translateY(-1px);
-}
-
-.knowledge-sphere-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.knowledge-sphere-categories {
+.knowledge-sphere-popover__close {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  left: 16px;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  color: var(--study-muted, #6d6472);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.knowledge-sphere-popover__close:hover {
+  background: rgba(120, 113, 108, 0.1);
+  color: var(--study-ink, #172033);
+}
+
+.knowledge-sphere-popover__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-right: 24px;
+}
+
+.knowledge-sphere-popover__tags small {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--study-muted, #6d6472);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.knowledge-sphere-popover h3 {
+  margin: 0;
+  color: var(--study-ink, #172033);
+  font-size: 20px;
+  line-height: 1.28;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.knowledge-sphere-popover p {
+  margin: 0;
+  color: var(--study-soft, #4c4139);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.knowledge-sphere-popover > strong {
+  color: var(--study-ink, #172033);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+.knowledge-sphere-popover__parents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.knowledge-sphere-popover__parents span,
+.knowledge-sphere-popover__parents em {
+  display: inline-flex;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--study-paper, #fff7ed) 74%, white);
+  color: var(--study-soft, #4c4139);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.knowledge-sphere-legend {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 9px;
+  max-height: 112px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid rgba(120, 113, 108, 0.16);
   border-radius: 8px;
+  background: color-mix(in srgb, var(--study-surface, #fffaf2) 88%, white);
+  box-shadow: 0 14px 34px rgba(80, 64, 45, 0.1);
   pointer-events: auto;
+  backdrop-filter: blur(14px);
 }
 
-.knowledge-sphere-categories button {
+.knowledge-sphere-legend button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.76);
-  color: #383c44;
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--study-soft, #383c44);
 }
 
-.knowledge-sphere-categories button.off {
-  opacity: 0.42;
+.knowledge-sphere-legend button:hover {
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--study-ink, #172033);
+  transform: translateY(-1px);
 }
 
-.knowledge-sphere-categories i {
+.knowledge-sphere-legend button.off {
+  opacity: 0.38;
+}
+
+.knowledge-sphere-legend i {
   width: 8px;
   height: 8px;
   border-radius: 999px;
   box-shadow: 0 0 0 1px rgba(23, 32, 51, 0.16);
 }
 
-.knowledge-sphere-categories b {
-  color: #8d4d2f;
+.knowledge-sphere-legend b {
+  color: var(--study-muted, #8d4d2f);
   font-variant-numeric: tabular-nums;
 }
 
-.knowledge-sphere-sidebar {
-  display: grid;
-  gap: 14px;
-  align-content: start;
-}
-
-.knowledge-sphere-card {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid rgba(220, 139, 94, 0.16);
+.knowledge-sphere-loading {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 7px 10px;
   border-radius: 8px;
-  background: #ffefd6;
-}
-
-.knowledge-sphere-card strong {
-  color: var(--study-ink);
-}
-
-.knowledge-sphere-card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.knowledge-sphere-card-head button {
-  padding: 5px 8px;
-}
-
-.knowledge-sphere-card-head span,
-.knowledge-sphere-current > span,
-.knowledge-sphere-card > span {
-  color: var(--study-muted);
+  background: color-mix(in srgb, var(--study-surface, #fffaf2) 88%, white);
+  color: var(--study-muted, #6d6472);
   font-size: 12px;
-}
-
-.knowledge-sphere-card h3 {
-  margin: 0;
-  color: var(--study-ink);
-  font-size: 18px;
-  line-height: 1.3;
-  text-wrap: balance;
-}
-
-.knowledge-sphere-card p {
-  margin: 0;
-  color: var(--study-soft);
-  line-height: 1.65;
-}
-
-.knowledge-sphere-meta,
-.knowledge-sphere-signals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.knowledge-sphere-meta small,
-.knowledge-sphere-signals small {
-  display: inline-flex;
-  gap: 5px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: #f0cebb;
-  color: #4c4139;
-}
-
-.knowledge-sphere-meta b {
-  color: #8d4d2f;
-}
-
-.knowledge-sphere-evidence {
-  display: grid;
-  gap: 6px;
-  padding-top: 4px;
-}
-
-.knowledge-sphere-evidence strong {
-  font-size: 13px;
-}
-
-.knowledge-sphere-evidence p {
-  padding-left: 10px;
-  border-left: 2px solid #dc8b5e;
-  font-size: 13px;
-}
-
-.knowledge-sphere-relations {
-  display: grid;
-  gap: 8px;
-}
-
-.knowledge-sphere-relations section {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  align-items: center;
-}
-
-.knowledge-sphere-relations strong {
-  width: 42px;
-  font-size: 13px;
-}
-
-.knowledge-sphere-relations button,
-.knowledge-sphere-relations span {
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, #ffffff 60%, #c4daeb);
-  color: #4c4139;
-  font-size: 12px;
-}
-
-.knowledge-sphere-strategy {
-  font-size: 13px;
-}
-
-.knowledge-sphere-path {
-  max-height: 430px;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-  overflow: auto;
-  list-style: none;
-}
-
-.knowledge-sphere-path li {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 2px 10px;
-  padding: 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, #ffefd6 74%, #ffffff);
-  cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
-}
-
-.knowledge-sphere-path li:hover,
-.knowledge-sphere-path li.active {
-  background: #fadfa7;
-  box-shadow: 0 10px 24px rgba(220, 139, 94, 0.12);
-  transform: translateY(-1px);
-}
-
-.knowledge-sphere-path b {
-  grid-row: 1 / span 3;
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border-radius: 8px;
-  background: #dc8b5e;
-  color: #fff;
-  font-size: 12px;
-}
-
-.knowledge-sphere-path span {
-  min-width: 0;
-  color: var(--study-ink);
-  font-weight: 650;
-}
-
-.knowledge-sphere-path em {
-  color: #8d4d2f;
-  font-size: 12px;
-  font-style: normal;
-}
-
-.knowledge-sphere-path small {
-  color: var(--study-muted);
-  line-height: 1.45;
-}
-
-@media (max-width: 1180px) {
-  .knowledge-sphere-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .knowledge-sphere-stage {
-    min-height: 620px;
-  }
 }
 
 @media (max-width: 720px) {
-  .knowledge-sphere-toolbar__controls,
-  .knowledge-sphere-search,
-  .knowledge-sphere-select {
-    width: 100%;
-  }
-
+  .knowledge-sphere-panel,
   .knowledge-sphere-stage {
-    min-height: 560px;
+    min-height: calc(100dvh - 64px);
   }
 
-  .knowledge-sphere-actions {
-    top: auto;
+  .knowledge-sphere-legend {
     right: 12px;
-    bottom: 92px;
-  }
-
-  .knowledge-sphere-badge {
-    right: 12px;
-    max-width: none;
-  }
-
-  .knowledge-sphere-categories {
-    max-height: 78px;
-    overflow: auto;
+    bottom: 12px;
+    left: 12px;
+    max-height: 88px;
   }
 }
 </style>

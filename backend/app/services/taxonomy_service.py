@@ -1,5 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import json
+import re
 from collections import Counter, defaultdict, deque
 from typing import Any, Optional
 
@@ -19,72 +21,11 @@ from app.models.learning import (
 from app.models.user import User
 from app.schemas import KnowledgeLinkEdge, KnowledgeLinkGraphResponse, KnowledgeLinkNode
 from app.services.knowledge_ingestion_service import _job_id_from_document_path
+from app.services.platform_knowledge_service import PLATFORM_COURSE_CODE, ensure_platform_knowledge_points
 
 
 GRAPH_ATTRIBUTION = "知识漏斗由当前用户上传知识库、项目知识点、平台功能介绍与学习画像动态聚合生成。"
 
-PLATFORM_FEATURE_NODES: list[dict[str, Any]] = [
-    {
-        "id": "platform:knowledge-base",
-        "label": "知识库",
-        "description": "上传 PDF、PPT、文档和压缩包，解析为可检索、可引用的学习资料。",
-        "prerequisites": [],
-    },
-    {
-        "id": "platform:rag-qa",
-        "label": "RAG 问答",
-        "description": "基于已上传资料检索证据，再结合模型生成可追溯回答。",
-        "prerequisites": ["知识库"],
-    },
-    {
-        "id": "platform:knowledge-dag",
-        "label": "知识漏斗",
-        "description": "把知识库片段整理成有向无环知识图，显示先学什么、后学什么。",
-        "prerequisites": ["知识库"],
-    },
-    {
-        "id": "platform:learning-profile",
-        "label": "学习画像",
-        "description": "沉淀学生目标、薄弱点、偏好、练习证据和学习节奏。",
-        "prerequisites": [],
-    },
-    {
-        "id": "platform:project-planning",
-        "label": "项目规划",
-        "description": "围绕学生目标生成项目、阶段目标、输出要求和推进策略。",
-        "prerequisites": ["学习画像"],
-    },
-    {
-        "id": "platform:syllabus",
-        "label": "学习清单",
-        "description": "把项目目标拆解为可执行的学习条目，并支持动态调整。",
-        "prerequisites": ["项目规划", "知识漏斗"],
-    },
-    {
-        "id": "platform:daily-plan",
-        "label": "每日计划",
-        "description": "根据学习清单、可用时间和进度生成当天学习安排。",
-        "prerequisites": ["学习清单"],
-    },
-    {
-        "id": "platform:ai-classroom",
-        "label": "AI 课堂",
-        "description": "围绕学习条目生成讲解、PPT、可视化、练习和反思反馈。",
-        "prerequisites": ["每日计划"],
-    },
-    {
-        "id": "platform:practice-paper",
-        "label": "练习试卷",
-        "description": "从知识图节点生成题目，记录作答结果并反哺学习画像。",
-        "prerequisites": ["知识漏斗", "AI 课堂"],
-    },
-    {
-        "id": "platform:research-tools",
-        "label": "科研工具",
-        "description": "支持文献阅读、论文写作、实验方法和答辩准备等大学生科研任务。",
-        "prerequisites": ["项目规划", "知识库"],
-    },
-]
 
 
 def build_knowledge_link_graph(
@@ -100,6 +41,9 @@ def build_knowledge_link_graph(
     owned_course_codes = _load_owned_course_codes(db, user)
     owned_document_ids = _owned_document_ids(db, user, owned_course_codes)
     database_points = _load_database_points(db, owned_document_ids, query=query, limit=limit)
+    platform_points = _load_platform_points(db, query=query)
+    database_points = [*database_points, *platform_points]
+    database_points = _compact_database_points(database_points, limit=limit)
     documents = _load_documents(db, owned_document_ids, query=query, limit=max(24, limit // 3))
     profile_data = _load_profile_data(db, user)
 
@@ -107,10 +51,9 @@ def build_knowledge_link_graph(
     project_nodes = _add_project_nodes(nodes, projects)
     document_nodes = _add_document_nodes(nodes, documents)
     kb_nodes = _add_knowledge_base_nodes(nodes, database_points)
-    platform_nodes = _add_platform_feature_nodes(nodes)
+    platform_nodes = [node for node in kb_nodes if node.layer == "platform"]
 
     edges: list[KnowledgeLinkEdge] = []
-    edges.extend(_link_platform_features(platform_nodes))
     edges.extend(_link_documents_to_points(document_nodes, kb_nodes))
     edges.extend(_link_projects_to_points(project_nodes, kb_nodes, document_nodes))
     edges.extend(_link_database_prerequisites(kb_nodes))
@@ -195,6 +138,7 @@ def _load_database_points(
             func.array_agg(func.distinct(KnowledgeDocument.title)).label("document_titles"),
             func.array_agg(func.distinct(KnowledgeDocument.doc_type)).label("document_types"),
             func.array_agg(func.distinct(DocumentChunk.section_title)).label("section_titles"),
+            func.array_agg(KnowledgeDocument.parse_meta).label("document_parse_meta"),
         )
         .join(CourseChapter, KnowledgePoint.chapter_id == CourseChapter.id)
         .join(Course, Course.id == CourseChapter.course_id)
@@ -267,6 +211,40 @@ def _load_documents(db: Session, document_ids: set[int], *, query: str, limit: i
     return [dict(row._mapping) for row in rows]
 
 
+def _load_platform_points(db: Session, *, query: str) -> list[dict[str, Any]]:
+    points = ensure_platform_knowledge_points(db, commit=False)
+    query_value = query.strip().lower()
+    rows: list[dict[str, Any]] = []
+    for point in points:
+        searchable = " ".join([point.name, point.description, " ".join(map(str, point.tags or []))]).lower()
+        if query_value and query_value not in searchable:
+            continue
+        rows.append(
+            _clean_point_row(
+                {
+                    "point_id": point.id,
+                    "name": point.name,
+                    "description": point.description,
+                    "prerequisites": point.prerequisites,
+                    "tags": point.tags,
+                    "difficulty": point.difficulty,
+                    "chapter_id": point.chapter_id,
+                    "chapter": PLATFORM_COURSE_CODE,
+                    "course_title": "平台功能介绍",
+                    "course_code": PLATFORM_COURSE_CODE,
+                    "chunk_count": 1,
+                    "document_count": 0,
+                    "document_titles": [],
+                    "document_types": [],
+                    "section_titles": [],
+                    "document_parse_meta": [],
+                    "source_kind": "platform",
+                }
+            )
+        )
+    return rows
+
+
 def _load_profile_data(db: Session, user: User) -> dict[str, Any]:
     record = db.scalar(
         select(StudentProfileRecord)
@@ -279,18 +257,160 @@ def _load_profile_data(db: Session, user: User) -> dict[str, Any]:
 def _clean_point_row(row: dict[str, Any]) -> dict[str, Any]:
     for key in ["document_titles", "document_types", "section_titles"]:
         row[key] = [str(item) for item in (row.get(key) or []) if item]
+    row["document_parse_meta"] = [item for item in (row.get("document_parse_meta") or []) if isinstance(item, dict)]
     row["course_title"] = str(row.get("course_title") or row.get("chapter") or "知识库")
     row["course_code"] = str(row.get("course_code") or "")
+    tags = [str(item) for item in row.get("tags") or [] if item]
+    row["tags"] = tags
+    taxonomy = _taxonomy_meta_from_row(row)
+    row["taxonomy"] = taxonomy
+    row["topic_type"] = taxonomy.get("type", "")
+    row["assessment_prompt"] = taxonomy.get("assessment_prompt", "")
+    row["source_kind"] = str(row.get("source_kind") or ("platform" if "platform_feature" in tags else "rag"))
     return row
+
+
+def _taxonomy_meta_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    tags = {str(item) for item in row.get("tags") or []}
+    section_titles = [str(item) for item in row.get("section_titles") or [] if item]
+    topic_meta = _topic_meta_from_parse_meta(row)
+    type_tags = {"CONCEPTUAL", "PROCEDURAL", "REPRESENTATIONAL", "LANGUAGE", "META"}
+    topic_type = str(topic_meta.get("type") or next((tag.upper() for tag in tags if tag.upper() in type_tags), ""))
+    is_topic = "taxonomy_topic" in tags
+    is_platform = "platform_feature" in tags
+    return {
+        "is_topic": is_topic,
+        "type": topic_type,
+        "subject": str(topic_meta.get("subject") or ""),
+        "domain": str(topic_meta.get("domain") or ""),
+        "evidence": [str(item) for item in topic_meta.get("evidence") or [] if item][:4],
+        "assessment_prompt": str(topic_meta.get("assessment_prompt") or ""),
+        "assessmentPrompt": str(topic_meta.get("assessmentPrompt") or topic_meta.get("assessment_prompt") or ""),
+        "standards": [str(item) for item in topic_meta.get("standards") or [] if item][:6],
+        "source_sections": section_titles[:6],
+        "cleaning_policy": "platform-seed" if is_platform else "topic-first" if is_topic else "legacy-compacted",
+    }
+
+
+def _topic_meta_from_parse_meta(row: dict[str, Any]) -> dict[str, Any]:
+    point_key = _taxonomy_topic_key(str(row.get("name") or ""))
+    if not point_key:
+        return {}
+    seen_meta: set[str] = set()
+    for meta in row.get("document_parse_meta") or []:
+        meta_key = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+        if meta_key in seen_meta:
+            continue
+        seen_meta.add(meta_key)
+        for topic in meta.get("taxonomy_topics") or []:
+            if not isinstance(topic, dict):
+                continue
+            if _taxonomy_topic_key(str(topic.get("name") or "")) == point_key:
+                return topic
+    return {}
+
+
+def _taxonomy_topic_key(value: str) -> str:
+    return re.sub(r"[\s\-_:：/\\（）()【】\[\]·•]+", "", _normalize_label(value))
+
+
+def _compact_database_points(rows: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    platform_rows = [row for row in rows if row.get("source_kind") == "platform"]
+    taxonomy_rows = [row for row in rows if row.get("source_kind") != "platform" and row.get("taxonomy", {}).get("is_topic")]
+    legacy_rows = [row for row in rows if row.get("source_kind") != "platform" and not row.get("taxonomy", {}).get("is_topic")]
+    compacted_legacy = _compact_legacy_rows(legacy_rows) if legacy_rows else []
+    result = [*platform_rows, *taxonomy_rows, *compacted_legacy]
+    result.sort(
+        key=lambda row: (
+            0 if row.get("source_kind") == "platform" else 1,
+            0 if row.get("taxonomy", {}).get("is_topic") else 1,
+            -int(row.get("document_count") or 0),
+            -int(row.get("chunk_count") or 0),
+            str(row.get("name") or ""),
+        )
+    )
+    return result[:limit]
+
+
+def _compact_legacy_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[_legacy_topic_group_key(row)].append(row)
+    compacted: list[dict[str, Any]] = []
+    for key, group_rows in groups.items():
+        ranked = sorted(group_rows, key=lambda row: (-int(row.get("chunk_count") or 0), len(str(row.get("name") or ""))))
+        base = dict(ranked[0])
+        if len(group_rows) == 1:
+            compacted.append(base)
+            continue
+        names = [str(row.get("name") or "") for row in ranked if row.get("name")]
+        descriptions = [str(row.get("description") or "") for row in ranked if row.get("description")]
+        document_titles = _unique_flatten(row.get("document_titles") for row in group_rows)
+        section_titles = _unique_flatten(row.get("section_titles") for row in group_rows)
+        tags = _unique_flatten(row.get("tags") for row in group_rows)
+        base["point_id"] = f"legacy:{abs(hash(key))}"
+        base["name"] = _compact_legacy_topic_name(names, document_titles, base)
+        base["description"] = _compact_text("；".join(descriptions), limit=360) or _compact_text("；".join(names), limit=240)
+        base["chunk_count"] = sum(int(row.get("chunk_count") or 0) for row in group_rows)
+        base["document_count"] = len({title for title in document_titles if title}) or int(base.get("document_count") or 1)
+        base["document_titles"] = document_titles[:8]
+        base["section_titles"] = section_titles[:10]
+        base["tags"] = [*tags, "legacy_compacted"][:12]
+        base["prerequisites"] = []
+        base["taxonomy"] = {
+            "is_topic": False,
+            "type": "",
+            "source_sections": section_titles[:6],
+            "cleaning_policy": "legacy-compacted",
+            "compacted_from": len(group_rows),
+        }
+        compacted.append(base)
+    return compacted
+
+
+def _legacy_topic_group_key(row: dict[str, Any]) -> str:
+    titles = [str(item) for item in row.get("document_titles") or [] if item]
+    course = str(row.get("course_code") or row.get("course_title") or "")
+    chapter = str(row.get("chapter") or "")
+    text = " ".join([str(row.get("name") or ""), str(row.get("description") or ""), chapter])
+    tokens = _token_set(text)
+    stable_terms = sorted(set(token for token in tokens if len(token) >= 2))[:3]
+    doc_key = titles[0] if titles else course
+    return "|".join([course, doc_key, chapter, "-".join(stable_terms)])
+
+
+def _compact_legacy_topic_name(names: list[str], document_titles: list[str], row: dict[str, Any]) -> str:
+    usable = [
+        _normalize_label(name)
+        for name in names
+        if name and not re.fullmatch(r"(slide|page|section)?\s*\d+", name.strip(), flags=re.IGNORECASE)
+    ]
+    if usable:
+        common = Counter(usable).most_common(1)[0][0]
+        return _compact_text(common, limit=48)
+    if document_titles:
+        return _compact_text(document_titles[0], limit=42) + "核心知识"
+    return _compact_text(str(row.get("chapter") or row.get("course_title") or "资料核心知识"), limit=48)
+
+
+def _unique_flatten(values: Any) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            text = str(item or "").strip()
+            if text and text not in result:
+                result.append(text)
+    return result
 
 
 def _point_category(row: dict[str, Any]) -> str:
     course_title = str(row.get("course_title") or "").strip()
-    if course_title and course_title not in {"个人知识库", "导入课件资料"}:
+    if course_title and course_title not in {"个人知识库", "导入课件资料", "知识库"}:
         return course_title
     tags = [str(item).strip() for item in row.get("tags") or [] if str(item).strip()]
     for tag in tags:
-        if tag not in {"imported", "courseware", "知识库", "个人知识库"}:
+        if tag not in {"imported", "taxonomy_topic", "legacy_compacted", "courseware", "知识库", "个人知识库"}:
             return tag
     chapter = str(row.get("chapter") or "").strip()
     if chapter and chapter != "导入课件资料":
@@ -367,10 +487,13 @@ def _add_knowledge_base_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[di
     for row in rows:
         point_name = str(row["name"])
         category = _point_category(row)
+        source_kind = str(row.get("source_kind") or "rag")
+        layer = "platform" if source_kind == "platform" else "knowledge_base"
+        node_id = _node_id_for_row(row)
         node = KnowledgeLinkNode(
-            id=f"kb:{row['point_id']}",
+            id=node_id,
             label=point_name,
-            layer="knowledge_base",
+            layer=layer,
             category=category,
             description=str(row.get("description") or ""),
             weight=max(1, int(row.get("chunk_count") or 1)),
@@ -390,7 +513,12 @@ def _add_knowledge_base_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[di
                 "prerequisites": list(row.get("prerequisites") or []),
                 "difficulty": row.get("difficulty", "medium"),
                 "evidence": _evidence_for_point(row),
-                "source_kind": "rag",
+                "taxonomy": row.get("taxonomy") or {},
+                "topic_type": row.get("topic_type", ""),
+                "assessment_prompt": row.get("assessment_prompt", ""),
+                "assessmentPrompt": (row.get("taxonomy") or {}).get("assessmentPrompt", ""),
+                "standards": (row.get("taxonomy") or {}).get("standards", []),
+                "source_kind": source_kind,
             },
         )
         nodes[node.id] = node
@@ -398,46 +526,9 @@ def _add_knowledge_base_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[di
     return result
 
 
-def _add_platform_feature_nodes(nodes: dict[str, KnowledgeLinkNode]) -> list[KnowledgeLinkNode]:
-    result: list[KnowledgeLinkNode] = []
-    for index, item in enumerate(PLATFORM_FEATURE_NODES, start=1):
-        node = KnowledgeLinkNode(
-            id=str(item["id"]),
-            label=str(item["label"]),
-            layer="platform",
-            category="平台功能介绍",
-            description=str(item["description"]),
-            weight=3,
-            meta={
-                "source_kind": "platform",
-                "chapter": "平台功能介绍",
-                "difficulty": "easy" if index <= 4 else "medium",
-                "prerequisites": list(item.get("prerequisites") or []),
-                "evidence": ["系统预置基础说明，用于帮助学生理解平台功能关系。"],
-            },
-        )
-        nodes[node.id] = node
-        result.append(node)
-    return result
-
-
-def _link_platform_features(platform_nodes: list[KnowledgeLinkNode]) -> list[KnowledgeLinkEdge]:
-    by_label = {_normalize_label(node.label): node for node in platform_nodes}
-    edges: list[KnowledgeLinkEdge] = []
-    for node in platform_nodes:
-        for prereq in node.meta.get("prerequisites", []) or []:
-            source = by_label.get(_normalize_label(str(prereq)))
-            if source:
-                edges.append(
-                    KnowledgeLinkEdge(
-                        source=source.id,
-                        target=node.id,
-                        relation="prerequisite",
-                        strength="hard",
-                        reason="平台功能的使用顺序关系",
-                    )
-                )
-    return edges
+def _node_id_for_row(row: dict[str, Any]) -> str:
+    prefix = "platform" if row.get("source_kind") == "platform" else "kb"
+    return f"{prefix}:{row.get('point_id')}"
 
 
 def _link_documents_to_points(
@@ -447,6 +538,8 @@ def _link_documents_to_points(
     by_title = {node.label: node for node in document_nodes}
     edges: list[KnowledgeLinkEdge] = []
     for point in kb_nodes:
+        if point.layer == "platform":
+            continue
         for title in point.meta.get("document_titles", []) or []:
             document = by_title.get(str(title))
             if not document:
@@ -527,7 +620,7 @@ def _link_document_sequence_edges(
     document_ids: set[int],
     kb_nodes: list[KnowledgeLinkNode],
 ) -> list[KnowledgeLinkEdge]:
-    by_id = {str(node.meta.get("point_id")): node for node in kb_nodes}
+    by_id = {str(node.meta.get("point_id")): node for node in kb_nodes if node.meta.get("source_kind") != "platform"}
     if not document_ids or not by_id:
         return []
     chunks = db.execute(
@@ -664,9 +757,9 @@ def _build_path_suggestions(
         ranked = _rank_rows_for_project(rows, project, profile_data)
         steps = [
             {
-                "id": f"kb:{row.get('point_id')}",
+                "id": _node_id_for_row(row),
                 "label": str(row.get("name") or ""),
-                "layer": "knowledge_base",
+                "layer": "platform" if row.get("source_kind") == "platform" else "knowledge_base",
                 "reason": _kb_path_reason(row, project, profile_data),
                 "phase": _phase_for_difficulty(str(row.get("difficulty") or "")),
                 "estimated_minutes": _estimated_minutes(row, project, profile_data),
@@ -690,14 +783,14 @@ def _build_path_suggestions(
             {
                 "project_id": None,
                 "project_title": "全部知识库",
-                "strategy": "按上传资料证据量、先修关系、难度和学习画像动态排序，先学证据充分且更基础的知识点。",
+                "strategy": "按上传资料证据量、先修关系、难度和学习画像动态排序，优先学习证据充分且更基础的知识点。",
                 "dynamic_signals": _dynamic_signals(None, profile_data),
                 "steps": _number_path_steps(
                     [
                         {
-                            "id": f"kb:{row.get('point_id')}",
+                            "id": _node_id_for_row(row),
                             "label": str(row.get("name") or ""),
-                            "layer": "knowledge_base",
+                            "layer": "platform" if row.get("source_kind") == "platform" else "knowledge_base",
                             "reason": _generic_kb_path_reason(row, profile_data),
                             "phase": _phase_for_difficulty(str(row.get("difficulty") or "")),
                             "estimated_minutes": _estimated_minutes(row, None, profile_data),
@@ -709,29 +802,6 @@ def _build_path_suggestions(
             }
         )
 
-    if not suggestions and not rows:
-        suggestions.append(
-            {
-                "project_id": None,
-                "project_title": "平台功能介绍",
-                "strategy": "先理解平台的数据入口，再进入知识图谱、学习清单、AI 课堂和练习反馈，形成完整学习闭环。",
-                "dynamic_signals": _dynamic_signals(None, profile_data),
-                "steps": _number_path_steps(
-                    [
-                        {
-                            "id": item["id"],
-                            "label": item["label"],
-                            "layer": "platform",
-                            "reason": str(item["description"]),
-                            "phase": "平台入门",
-                            "estimated_minutes": 8,
-                            "evidence": ["系统预置基础说明。"],
-                        }
-                        for item in PLATFORM_FEATURE_NODES
-                    ]
-                ),
-            }
-        )
     return suggestions
 
 
@@ -813,16 +883,20 @@ def _build_graph_meta(
         if node.layer == "document":
             doc_type = str(node.category or "document")
             documents_by_type[doc_type] = documents_by_type.get(doc_type, 0) + 1
+    topic_rows = [row for row in rows if row.get("taxonomy", {}).get("is_topic")]
+    compacted_rows = [row for row in rows if row.get("taxonomy", {}).get("cleaning_policy") == "legacy-compacted"]
     return {
         "graph_source": "user_knowledge_base",
         "knowledge_point_count": len(rows),
+        "taxonomy_topic_count": len(topic_rows),
+        "legacy_compacted_count": len(compacted_rows),
         "document_count": len(documents),
         "platform_feature_count": len([node for node in nodes.values() if node.layer == "platform"]),
         "document_types": documents_by_type,
         "chapter_subjects": chapters,
-        "taxonomy_selected_topics": 0,
-        "taxonomy_total_topics": 0,
-        "taxonomy_subjects": {},
+        "taxonomy_selected_topics": len(topic_rows),
+        "taxonomy_total_topics": len(rows),
+        "taxonomy_subjects": dict(Counter(str(row.get("course_title") or "知识库") for row in rows)),
         "edge_count": len(edges),
         "dag_edge_count": len([edge for edge in edges if edge.relation == "prerequisite"]),
         "isolated_count": len([node for node in nodes.values() if node.meta.get("is_isolated")]),
@@ -893,7 +967,11 @@ def _unique_terms(values: list[str], *, limit: int) -> list[str]:
 def _token_set(*values: str) -> list[str]:
     text = " ".join(str(value or "") for value in values).lower()
     ascii_tokens = [part for part in text.replace("_", " ").replace("-", " ").split() if len(part) >= 2]
-    cjk_tokens = [text[index : index + 2] for index in range(max(0, len(text) - 1)) if any("\u4e00" <= char <= "\u9fff" for char in text[index : index + 2])]
+    cjk_tokens = [
+        text[index : index + 2]
+        for index in range(max(0, len(text) - 1))
+        if any("\u4e00" <= char <= "\u9fff" for char in text[index : index + 2])
+    ]
     cjk_tokens.extend([char for char in text if "\u4e00" <= char <= "\u9fff"])
     return ascii_tokens + cjk_tokens
 
@@ -910,10 +988,14 @@ def _evidence_for_point(row: dict[str, Any]) -> list[str]:
     evidence: list[str] = []
     titles = [str(item) for item in row.get("document_titles") or [] if item]
     sections = [str(item) for item in row.get("section_titles") or [] if item]
+    taxonomy = row.get("taxonomy") or {}
+    if taxonomy.get("cleaning_policy"):
+        policy = taxonomy.get("cleaning_policy")
+        evidence.append(f"清洗策略：{policy}")
     if titles:
         evidence.append("资料来源：" + "、".join(titles[:3]))
     if sections:
-        evidence.append("片段位置：" + "、".join(sections[:3]))
+        evidence.append("证据位置：" + "、".join(sections[:3]))
     if row.get("description"):
         evidence.append(str(row.get("description"))[:160])
     return evidence[:3]
@@ -951,10 +1033,12 @@ def _kb_path_reason(row: dict[str, Any], project: LearningProject, profile_data:
     parts = ["知识库已有可回看证据"]
     chunk_count = int(row.get("chunk_count") or 0)
     document_count = int(row.get("document_count") or 0)
+    if row.get("taxonomy", {}).get("is_topic"):
+        parts.append("已归并为核心知识点")
     if chunk_count:
-        parts.append(f"{chunk_count} 个片段")
+        parts.append(f"覆盖 {chunk_count} 个片段")
     if document_count:
-        parts.append(f"{document_count} 份资料")
+        parts.append(f"来自 {document_count} 份资料")
     weak_terms = _token_set(
         " ".join(map(str, project.current_weak_points or [])),
         " ".join(map(str, profile_data.get("weak_points") or [])),
@@ -962,18 +1046,23 @@ def _kb_path_reason(row: dict[str, Any], project: LearningProject, profile_data:
     row_terms = _token_set(str(row.get("name") or ""), str(row.get("description") or ""), str(row.get("chapter") or ""))
     if set(weak_terms) & set(row_terms):
         parts.append("命中薄弱点")
-    return "，".join(parts) + "。"
+    return "；".join(parts) + "。"
 
 
 def _generic_kb_path_reason(row: dict[str, Any], profile_data: dict[str, Any]) -> str:
     parts = ["按上传资料中的证据量和难度排序"]
+    if row.get("taxonomy", {}).get("is_topic"):
+        parts.append("该节点是清洗归并后的核心知识点")
+    elif row.get("taxonomy", {}).get("cleaning_policy") == "legacy-compacted":
+        parts.append("旧导入资料已在图谱层降噪归并")
     if row.get("document_count"):
-        parts.append(f"覆盖 {int(row.get('document_count') or 0)} 份资料")
+        document_count = int(row.get("document_count") or 0)
+        parts.append(f"覆盖 {document_count} 份资料")
     profile_terms = _token_set(" ".join(_profile_terms(profile_data)))
     row_terms = _token_set(str(row.get("name") or ""), str(row.get("description") or ""))
     if set(profile_terms) & set(row_terms):
         parts.append("与学习画像相关")
-    return "，".join(parts) + "。"
+    return "；".join(parts) + "。"
 
 
 def _phase_for_difficulty(difficulty: str) -> str:
@@ -1041,3 +1130,4 @@ def _dynamic_signals(project: Optional[LearningProject], profile_data: dict[str,
 
 def _normalize_label(value: str) -> str:
     return " ".join(value.lower().replace("_", " ").replace("-", " ").split())
+

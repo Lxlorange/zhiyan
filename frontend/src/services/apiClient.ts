@@ -1310,7 +1310,7 @@ export function importKnowledgePackage(file: File, payload: {
   formData.append('use_ocr', String(Boolean(payload.use_ocr)))
   formData.append('rebuild_course', String(Boolean(payload.rebuild_course)))
   return api.post<KnowledgeImportJobRead>('/course/knowledge/import', formData, {
-    timeout: 30 * 60 * 1000
+    timeout: 120000
   })
 }
 

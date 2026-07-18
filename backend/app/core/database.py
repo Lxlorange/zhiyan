@@ -255,6 +255,8 @@ def init_db() -> None:
     import app.models.learning  # noqa: F401
     import app.models.user  # noqa: F401
     from app.services.auth_service import seed_demo_users
+    from app.services.knowledge_ingestion_service import mark_interrupted_import_jobs
+    from app.services.platform_knowledge_service import ensure_platform_knowledge_points
 
     _ensure_postgres_extensions()
     _register_pgvector_adapter()
@@ -263,5 +265,7 @@ def init_db() -> None:
     db = SessionLocal()
     try:
         seed_demo_users(db)
+        ensure_platform_knowledge_points(db)
+        mark_interrupted_import_jobs(db)
     finally:
         db.close()
