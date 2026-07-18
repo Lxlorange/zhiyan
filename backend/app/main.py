@@ -28,9 +28,13 @@ app_dir = Path(__file__).resolve().parent
 repo_root = app_dir.parents[1]
 vue_dist_dir = repo_root / "frontend" / "dist"
 vue_index = vue_dist_dir / "index.html"
+uploads_dir = repo_root / "backend" / "app" / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
 
 if (vue_dist_dir / "assets").exists():
     app.mount("/assets", StaticFiles(directory=vue_dist_dir / "assets"), name="vue_assets")
+
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
 def ensure_vue_dist() -> Path:
@@ -64,7 +68,7 @@ def root() -> FileResponse:
 
 @app.get("/{full_path:path}")
 def spa_route(full_path: str) -> FileResponse:
-    reserved_prefixes = ("api", "docs", "redoc", "openapi.json", "assets")
+    reserved_prefixes = ("api", "docs", "redoc", "openapi.json", "assets", "uploads")
     if full_path.startswith(reserved_prefixes):
         raise HTTPException(status_code=404, detail="Not found")
 

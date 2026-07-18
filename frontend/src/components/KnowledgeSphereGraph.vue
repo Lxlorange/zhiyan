@@ -884,7 +884,13 @@ function formatAge(value: unknown) {
 function formatMeta(value: unknown) {
   if (Array.isArray(value)) return value.map((item) => String(item)).slice(0, 4).join(' / ')
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
-  if (typeof value === 'object' && value) return JSON.stringify(value)
+  if (typeof value === 'object' && value) {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== null && item !== undefined && item !== '')
+      .map(([key, item]) => `${key.replace(/_/g, ' ')}: ${formatMeta(item)}`)
+      .slice(0, 4)
+      .join(' / ')
+  }
   return String(value)
 }
 </script>

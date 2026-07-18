@@ -5130,6 +5130,23 @@ textarea {
   line-height: 1.55;
 }
 
+.profile-entry-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.profile-entry-value small {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--study-rule);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--study-cream) 56%, #ffffff);
+  color: var(--study-soft-ink);
+  overflow-wrap: anywhere;
+}
+
 .profile-entry-grid.editable .el-button {
   justify-self: start;
 }
@@ -9252,6 +9269,8 @@ body::after {
 .knowledge-upload-panel {
   display: grid;
   gap: 16px;
+  min-width: 0;
+  padding: 20px;
 }
 
 .knowledge-upload-panel > header {
@@ -9320,23 +9339,31 @@ body::after {
 .knowledge-chunk-panel {
   position: sticky;
   top: 88px;
+  grid-template-rows: auto minmax(0, 1fr);
   max-height: calc(100dvh - 130px);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .knowledge-chunk-list {
+  position: relative;
   display: grid;
   gap: 12px;
+  min-height: 180px;
+  max-height: calc(100dvh - 238px);
   overflow: auto;
-  padding-right: 4px;
+  padding: 2px 8px 2px 2px;
+  border-radius: 14px;
+  scrollbar-color: rgba(7, 95, 86, 0.28) transparent;
+  scrollbar-width: thin;
 }
 
 .knowledge-chunk-list article {
   display: grid;
   gap: 10px;
-  padding: 14px;
+  min-width: 0;
+  padding: 16px;
   border: 1px solid var(--study-rule);
-  border-radius: 16px;
+  border-radius: 12px;
   background: #fffdfa;
 }
 
@@ -9346,16 +9373,24 @@ body::after {
 }
 
 .knowledge-chunk-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--study-ink);
+  line-height: 1.45;
 }
 
 .knowledge-chunk-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--study-muted);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .knowledge-chunk-list p {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--study-soft);
   font-size: 14px;
   line-height: 1.7;
@@ -9651,6 +9686,38 @@ body::after {
   gap: 14px;
 }
 
+.avatar-upload-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--study-rule);
+  border-radius: 12px;
+  background: #fffdfa;
+}
+
+.avatar-upload-copy {
+  display: grid;
+  min-width: 220px;
+  gap: 6px;
+}
+
+.avatar-upload-copy strong {
+  color: var(--study-ink);
+  line-height: 1.35;
+}
+
+.avatar-upload-copy span {
+  color: var(--study-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.avatar-upload-copy .el-upload {
+  justify-self: start;
+}
+
 .settings-action-row {
   display: flex;
   align-items: center;
@@ -9729,6 +9796,194 @@ body::after {
   .settings-form-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Layout safety pass: keep borders, loading masks, and dense data controls from crowding text. */
+.panel-like,
+.workspace-panel,
+.practice-config-card,
+.practice-paper-row,
+.practice-question-card,
+.methods-panel,
+.knowledge-sphere-card,
+.todo-work-card,
+.todo-current-card,
+.project-overview-card,
+.project-config-card,
+.syllabus-item-card,
+.classroom-content-card,
+.classroom-task-card {
+  min-width: 0;
+}
+
+.panel-like:not(.knowledge-sphere-panel):not(.knowledge-upload-panel):not(.todo-workspace-topbar):not(.syllabus-overview) {
+  padding: max(18px, var(--panel-padding, 18px));
+}
+
+.panel-like > :first-child,
+.workspace-panel > :first-child,
+.practice-config-card > :first-child,
+.practice-question-card > :first-child,
+.methods-panel > :first-child,
+.knowledge-sphere-card > :first-child,
+.project-config-card > :first-child,
+.todo-work-card > :first-child,
+.classroom-content-card > :first-child {
+  margin-top: 0;
+}
+
+.panel-like > :last-child,
+.workspace-panel > :last-child,
+.practice-config-card > :last-child,
+.practice-question-card > :last-child,
+.methods-panel > :last-child,
+.knowledge-sphere-card > :last-child,
+.project-config-card > :last-child,
+.todo-work-card > :last-child,
+.classroom-content-card > :last-child {
+  margin-bottom: 0;
+}
+
+.el-loading-mask {
+  border-radius: inherit;
+  background-color: rgba(255, 253, 248, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.knowledge-chunk-list .el-loading-mask {
+  inset: 0 8px 0 0;
+  border: 1px solid rgba(7, 95, 86, 0.08);
+  border-radius: 12px;
+  background-color: rgba(255, 253, 248, 0.58);
+}
+
+.el-table {
+  --el-table-header-bg-color: rgba(255, 253, 248, 0.92);
+  --el-table-row-hover-bg-color: rgba(240, 206, 187, 0.16);
+  border-radius: 10px;
+}
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  padding: 12px 0;
+}
+
+.el-table .cell {
+  min-width: 0;
+  padding: 0 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.el-table__fixed-right::before,
+.el-table__fixed::before {
+  background-color: rgba(17, 24, 20, 0.08);
+}
+
+.el-form-item {
+  margin-bottom: 18px;
+}
+
+.el-form-item__label {
+  min-height: 22px;
+  padding: 0 0 7px;
+  line-height: 1.45;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.el-textarea__inner {
+  padding: 11px 12px;
+}
+
+.el-button {
+  min-height: 38px;
+  padding-inline: 14px;
+}
+
+.el-button + .el-button {
+  margin-left: 8px;
+}
+
+.el-button.is-link,
+.el-button--text {
+  min-height: 30px;
+  padding-inline: 6px;
+}
+
+.el-tag {
+  max-width: 100%;
+  min-height: 26px;
+  padding: 0 9px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.el-tag__content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tags,
+.knowledge-chunk-tags,
+.practice-paper-tags,
+.rag-tags,
+.citation-actions,
+.follow-up-list,
+.project-card-controls,
+.project-head-actions,
+.settings-action-row,
+.classroom-action-row,
+.todo-work-actions,
+.todo-current-actions,
+.practice-paper-row-actions,
+.practice-create-head,
+.practice-detail-head,
+.knowledge-upload-options {
+  gap: 10px;
+}
+
+.project-card-controls .el-button + .el-button,
+.project-head-actions .el-button + .el-button,
+.settings-action-row .el-button + .el-button,
+.classroom-action-row .el-button + .el-button,
+.todo-work-actions .el-button + .el-button,
+.todo-current-actions .el-button + .el-button,
+.practice-paper-row-actions .el-button + .el-button,
+.practice-create-head .el-button + .el-button,
+.practice-detail-head .el-button + .el-button {
+  margin-left: 0;
+}
+
+.knowledge-panel-toolbar,
+.workspace-panel header,
+.practice-config-card header,
+.practice-paper-hero,
+.practice-create-head,
+.practice-detail-head,
+.system-settings-panel header,
+.methods-panel-head,
+.todo-focus-head,
+.project-detail-head {
+  min-width: 0;
+}
+
+.knowledge-panel-toolbar > *,
+.workspace-panel header > *,
+.practice-config-card header > *,
+.practice-paper-hero > *,
+.practice-create-head > *,
+.practice-detail-head > *,
+.system-settings-panel header > *,
+.methods-panel-head > *,
+.todo-focus-head > *,
+.project-detail-head > * {
+  min-width: 0;
 }
 
 /* Course outline mode for the syllabus page. */
@@ -12852,4 +13107,100 @@ body::after {
   border-color: var(--study-rule) !important;
   color: #5d6861 !important;
   opacity: 1 !important;
+}
+
+/* EOF layout safety lock: keep dense panels readable after theme overrides. */
+.knowledge-upload-panel {
+  min-width: 0 !important;
+  padding: 20px !important;
+}
+
+.knowledge-chunk-panel {
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: visible !important;
+}
+
+.knowledge-chunk-list {
+  position: relative !important;
+  min-height: 180px !important;
+  max-height: calc(100dvh - 238px) !important;
+  overflow: auto !important;
+  padding: 2px 8px 2px 2px !important;
+  border-radius: 14px !important;
+}
+
+.knowledge-chunk-list .el-loading-mask {
+  inset: 0 8px 0 0 !important;
+  border: 1px solid rgba(96, 73, 57, 0.08) !important;
+  border-radius: 12px !important;
+  background-color: rgba(255, 250, 242, 0.58) !important;
+  backdrop-filter: blur(2px);
+}
+
+.knowledge-chunk-list article {
+  min-width: 0 !important;
+  padding: 16px !important;
+  border-radius: 12px !important;
+}
+
+.knowledge-chunk-list strong,
+.knowledge-chunk-list span,
+.knowledge-chunk-list p,
+.el-table .cell,
+.el-tag__content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  padding-block: 12px !important;
+}
+
+.el-table .cell {
+  padding-inline: 14px !important;
+  line-height: 1.55 !important;
+}
+
+.el-form-item {
+  margin-bottom: 18px !important;
+}
+
+.el-form-item__label {
+  padding-bottom: 7px !important;
+  line-height: 1.45 !important;
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+  min-height: 40px !important;
+  padding-inline: 12px !important;
+}
+
+.el-textarea__inner {
+  padding: 11px 12px !important;
+}
+
+.el-button {
+  min-height: 38px;
+}
+
+.el-tag {
+  max-width: 100%;
+  min-height: 26px;
+  padding-inline: 9px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.project-card-controls .el-button + .el-button,
+.project-head-actions .el-button + .el-button,
+.settings-action-row .el-button + .el-button,
+.classroom-action-row .el-button + .el-button,
+.todo-work-actions .el-button + .el-button,
+.todo-current-actions .el-button + .el-button,
+.practice-paper-row-actions .el-button + .el-button,
+.practice-create-head .el-button + .el-button,
+.practice-detail-head .el-button + .el-button {
+  margin-left: 0 !important;
 }

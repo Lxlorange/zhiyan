@@ -521,10 +521,18 @@ function asList(value: unknown): string[] {
     if (typeof item === 'string') return item
     if (item && typeof item === 'object') {
       const record = item as Record<string, unknown>
-      return String(record.title || record.name || record.summary || record.reason || JSON.stringify(record))
+      return String(record.title || record.name || record.summary || record.reason || readableRecord(record))
     }
     return String(item)
   }).filter(Boolean) : []
+}
+
+function readableRecord(record: Record<string, unknown>) {
+  return Object.entries(record)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key.replace(/_/g, ' ')}：${Array.isArray(value) ? value.join('、') : String(value)}`)
+    .slice(0, 5)
+    .join('；')
 }
 
 function asArray(value: unknown): unknown[] {

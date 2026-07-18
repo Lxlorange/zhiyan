@@ -20,6 +20,13 @@ type ApiErrorPayload = {
 function stringifyErrorDetail(raw: unknown): string {
   if (typeof raw === 'string') return raw
   if (raw === null || raw === undefined) return '未知错误'
+  if (Array.isArray(raw)) return raw.map((item) => stringifyErrorDetail(item)).filter(Boolean).join('；')
+  if (typeof raw === 'object') {
+    const entries = Object.entries(raw as Record<string, unknown>)
+      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+      .map(([key, value]) => `${key.replace(/_/g, ' ')}：${stringifyErrorDetail(value)}`)
+    return entries.length ? entries.join('；') : '未知错误'
+  }
   try {
     return JSON.stringify(raw, null, 2)
   } catch {
@@ -767,6 +774,14 @@ export function getCurrentUserSilently() {
 
 export function updateCurrentUser(payload: Partial<User>) {
   return api.patch<User>('/auth/me', payload)
+}
+
+export function uploadCurrentUserAvatar(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post<User>('/auth/me/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 }
 
 export function getDirectionTemplates() {

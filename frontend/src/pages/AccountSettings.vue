@@ -99,8 +99,24 @@
             </el-form-item>
           </div>
 
-          <el-form-item label="头像 URL">
-            <el-input v-model.trim="form.avatar_url" placeholder="https://..." />
+          <el-form-item label="头像">
+            <div class="avatar-upload-field">
+              <el-avatar :src="form.avatar_url || undefined" :size="68">{{ avatarText }}</el-avatar>
+              <div class="avatar-upload-copy">
+                <strong>{{ form.avatar_url ? '已设置头像' : '还没有头像' }}</strong>
+                <span>支持 JPG、PNG、WebP，单张不超过 5MB。</span>
+                <el-upload
+                  action="#"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="image/jpeg,image/png,image/webp"
+                  :before-upload="handleAvatarBeforeUpload"
+                  :on-change="handleAvatarChange"
+                >
+                  <el-button :loading="uploadingAvatar">上传头像</el-button>
+                </el-upload>
+              </div>
+            </div>
           </el-form-item>
 
           <div class="settings-form-row">
@@ -154,9 +170,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import type { UploadFile, UploadRawFile } from 'element-plus'
 import {
   getModelSettings,
   saveAuth,
+  uploadCurrentUserAvatar,
   updateCurrentUser,
   updateModelSettings,
   verifyModelSettings,
@@ -172,6 +190,7 @@ const router = useRouter()
 const saving = ref(false)
 const savingModel = ref(false)
 const testingModel = ref(false)
+const uploadingAvatar = ref(false)
 const showApiKey = ref(false)
 const providerOptions = ref<ModelProviderOption[]>([])
 
@@ -278,6 +297,34 @@ async function handleSave() {
     ElMessage.success('个人资料已保存')
   } finally {
     saving.value = false
+  }
+}
+
+function handleAvatarBeforeUpload(file: UploadRawFile) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    ElMessage.warning('头像仅支持 JPG、PNG 或 WebP 图片')
+    return false
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('头像图片不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+async function handleAvatarChange(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw || !handleAvatarBeforeUpload(raw)) return
+  uploadingAvatar.value = true
+  try {
+    const { data } = await uploadCurrentUserAvatar(raw)
+    form.avatar_url = data.avatar_url || ''
+    const token = localStorage.getItem('access_token') || ''
+    saveAuth({ access_token: token, token_type: 'bearer', user: data })
+    emit('saved', data)
+    ElMessage.success('头像已更新')
+  } finally {
+    uploadingAvatar.value = false
   }
 }
 </script>

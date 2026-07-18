@@ -29,7 +29,9 @@
           <div v-if="profileEntries.length" class="profile-entry-grid editable">
             <div v-for="entry in profileEntries" :key="entry.key" :class="{ muted: !entry.is_enabled }">
               <span>{{ entry.label }}</span>
-              <strong>{{ asText(entry.value) }}</strong>
+              <div class="profile-entry-value">
+                <small v-for="part in displayParts(entry.value)" :key="part">{{ part }}</small>
+              </div>
               <small>{{ entry.source }} · 置信度 {{ entry.confidence }}% · {{ entry.is_enabled ? '参与推荐' : '已停用' }}</small>
               <div class="profile-entry-actions">
                 <el-button size="small" @click="openProfileEntry(entry)">编辑</el-button>
@@ -135,7 +137,7 @@
                     <li v-for="item in compactOutput(run.output_data)" :key="item">{{ item }}</li>
                   </ul>
                   <div v-if="Array.isArray(run.output_data.defense_questions) && run.output_data.defense_questions.length" class="workspace-list">
-                    <p v-for="question in run.output_data.defense_questions" :key="JSON.stringify(question)">
+                    <p v-for="(question, index) in run.output_data.defense_questions" :key="`defense-${run.id}-${index}`">
                       {{ renderDefenseQuestion(question) }}
                     </p>
                   </div>
@@ -444,8 +446,23 @@ async function handleRunTool() {
 
 function asText(value: unknown) {
   if (Array.isArray(value)) return value.join(' / ')
-  if (typeof value === 'object' && value) return JSON.stringify(value)
+  if (typeof value === 'object' && value) return displayParts(value).join(' / ')
   return String(value || '')
+}
+
+function displayParts(value: unknown): string[] {
+  if (value === null || value === undefined || value === '') return ['暂无内容']
+  if (Array.isArray(value)) {
+    const parts = value.flatMap((item) => displayParts(item))
+    return parts.length ? parts : ['暂无内容']
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== null && entryValue !== undefined && entryValue !== '')
+      .map(([key, entryValue]) => `${readableKey(key)}：${displayParts(entryValue).join('、')}`)
+    return entries.length ? entries : ['暂无内容']
+  }
+  return [String(value)]
 }
 
 function splitList(value: string) {
@@ -491,14 +508,40 @@ function compactOutput(data: Record<string, any>) {
     ...(data.source_notes || []),
     ...(data.safety_notes || []),
     ...(data.next_actions || [])
-  ].map((item) => typeof item === 'string' ? item : JSON.stringify(item)).slice(0, 14)
+  ].flatMap((item) => displayParts(item)).slice(0, 14)
 }
 
 function renderDefenseQuestion(value: Record<string, any>) {
   const stage = value.stage || value.type || '答辩'
-  const question = value.question || value.prompt || JSON.stringify(value)
+  const question = value.question || value.prompt || displayParts(value).join('；')
   const followUp = value.follow_up || value.followup || value.follow_up_question
   return followUp ? `${stage}：${question} 追问：${followUp}` : `${stage}：${question}`
+}
+
+function readableKey(key: string) {
+  const labels: Record<string, string> = {
+    knowledge_base: '知识基础',
+    learning_goal: '学习目标',
+    cognitive_style: '认知风格',
+    weak_points: '薄弱点',
+    practice_level: '实践能力',
+    resource_preference: '资源偏好',
+    learning_pace: '学习节奏',
+    interest_direction: '兴趣方向',
+    current_research_direction: '当前科研方向',
+    academic_writing: '学术写作',
+    literature_reading: '文献阅读',
+    coding_practice: '代码实践',
+    experiment_design: '实验设计',
+    reason: '原因',
+    title: '标题',
+    summary: '摘要',
+    action: '行动',
+    score: '评分',
+    question: '问题',
+    follow_up: '追问'
+  }
+  return labels[key] || key.replace(/_/g, ' ')
 }
 
 function formatDate(value: string) {
