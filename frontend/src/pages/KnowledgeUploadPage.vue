@@ -81,7 +81,12 @@
 
         <el-table :data="jobs" v-loading="loadingJobs" class="knowledge-table" row-key="id">
           <el-table-column prop="source_name" label="文件" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="course_code" label="课程" width="150" show-overflow-tooltip />
+          <el-table-column label="课程代码" width="130" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.course_code || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="课程名称" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.course_title || '-' }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="110">
             <template #default="{ row }">
               <el-tag :type="jobStatusType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag>

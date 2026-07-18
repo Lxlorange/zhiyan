@@ -42,6 +42,7 @@ from app.services.knowledge_ingestion_service import search_knowledge_enhanced
 from app.services.llm_client import qwen_chat_json
 from app.services.persistence_service import upsert_profile_from_dialogue
 from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
+from app.services.taxonomy_service import build_knowledge_link_graph
 
 
 class _GeneratedSyllabusItem(BaseModel):
@@ -248,6 +249,48 @@ def _knowledge_base_version(knowledge: list[dict]) -> str:
     return ("知识库：" + " / ".join(sources))[:128]
 
 
+def _knowledge_funnel_path_context(db: Session, user: User, project: LearningProject) -> str:
+    training = dict(project.research_training or {})
+    raw_path = training.get("knowledge_funnel_path")
+    path_items = raw_path if isinstance(raw_path, list) else []
+    if not path_items:
+        graph = build_knowledge_link_graph(
+            db,
+            user,
+            project_id=project.id,
+            query=f"{project.research_direction} {project.learning_goal} {' '.join(project.related_knowledge_points or [])}",
+            limit=80,
+        )
+        path_items = [
+            {
+                "order": step.order or index + 1,
+                "label": step.label,
+                "phase": step.phase or "",
+                "estimated_minutes": step.estimated_minutes or 45,
+                "reason": step.reason,
+                "evidence": step.evidence or [],
+            }
+            for index, step in enumerate((graph.path_suggestions[0].steps if graph.path_suggestions else [])[:12])
+        ]
+    if not path_items:
+        return "知识漏斗未命中可用路径。"
+    lines = ["知识漏斗课程路径（必须按 order 生成学习清单）："]
+    for index, item in enumerate(path_items[:12], start=1):
+        if not isinstance(item, dict):
+            continue
+        order = item.get("order") or index
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+        lines.append(
+            f"{order}. {label} | 阶段={item.get('phase') or ''} | 建议时长={item.get('estimated_minutes') or 45} 分钟 | "
+            f"理由={item.get('reason') or ''} | 证据={'；'.join(str(value) for value in evidence[:2])}"
+        )
+    lines.append("学习清单 items 应优先一项或多项覆盖一个路径节点；prerequisites 要引用前序节点；knowledge_points 要使用路径中的 label。")
+    return "\n".join(lines)
+
+
 def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:
     if profile is None:
         return {}
@@ -256,7 +299,7 @@ def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:
     return data
 
 
-def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRecord], knowledge: list[dict]) -> str:
+def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRecord], knowledge: list[dict], funnel_path: str) -> str:
     return (
         "请为一个高校科研学习项目生成可执行的个性化学习清单。必须输出严格 JSON，不要 Markdown。\n"
         "清单必须围绕科研方向，不要把重点放在展示用户画像；用户画像只作为个性化依据。\n"
@@ -284,6 +327,8 @@ def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRe
         f"截止时间：{project.deadline.isoformat() if project.deadline else '未设置'}\n"
         f"用户画像：{_profile_context(profile)}\n"
         f"课程知识库检索结果：{knowledge}\n"
+        f"知识漏斗路径：\n{funnel_path}\n"
+        "路径约束：如果知识漏斗路径命中，items 必须按路径 order 排列，先生成前置节点课程，再生成核心节点课程，再进入应用/产出任务；不得只按通用目录或 PPT 页码排序。\n"
         "输出 JSON 格式："
         '{"generation_reason":"...","syllabus_agent_summary":"...",'
         '"path_planner_summary":"...","adaptation_strategy":"...",'
@@ -305,11 +350,12 @@ def generate_syllabus(
     project = _project_or_404(db, user, project_id)
     profile = _latest_profile(db, user)
     knowledge = _knowledge_context(db, project)
+    funnel_path = _knowledge_funnel_path_context(db, user, project)
     started_at = time.perf_counter()
 
     result = qwen_chat_json(
         "你是 SyllabusAgent 与 PathPlannerAgent。你的任务是把科研方向拆成可操作学习清单，并保证结构化、可执行、可评估。",
-        _project_prompt(project, profile, knowledge)
+        _project_prompt(project, profile, knowledge, funnel_path)
         + f"\n本次额外生成目标：{request.generation_goal or '按项目目标完整生成'}",
         _GeneratedSyllabus,
         user=user,
@@ -922,9 +968,10 @@ def regenerate_stage(
     source = _version_or_404(db, user, version_id)
     project = _project_or_404(db, user, source.project_id)
     profile = _latest_profile(db, user)
+    funnel_path = _knowledge_funnel_path_context(db, user, project)
     current_stage_items = [item for item in source.items if item.stage == request.stage and item.status != "deleted"]
     prompt = (
-        _project_prompt(project, profile, _knowledge_context(db, project))
+        _project_prompt(project, profile, _knowledge_context(db, project), funnel_path)
         + f"\n只重新生成阶段：{request.stage}\n"
         + f"原阶段学习项：{[item.title for item in current_stage_items]}\n"
         + f"用户指令：{request.instruction or '优化该阶段的顺序、难度和资源类型'}"
@@ -964,8 +1011,9 @@ def adapt_syllabus(
     project = _project_or_404(db, user, project_id)
     source = get_current_syllabus(db, user, project_id)
     profile = _latest_profile(db, user)
+    funnel_path = _knowledge_funnel_path_context(db, user, project)
     prompt = (
-        _project_prompt(project, profile, _knowledge_context(db, project))
+        _project_prompt(project, profile, _knowledge_context(db, project), funnel_path)
         + f"\n当前清单：{[{'id': item.id, 'title': item.title, 'stage': item.stage, 'status': item.status} for item in source.items]}\n"
         + f"触发类型：{request.trigger_type}\n"
         + f"证据：{request.evidence}\n"

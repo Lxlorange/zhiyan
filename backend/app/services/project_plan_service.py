@@ -31,6 +31,7 @@ from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.llm_client import LLMResponseError, qwen_chat_json, qwen_chat_stream_text
 from app.services.scholarly_search_service import ScholarlySearchError, verify_candidate_resource_url
 from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
+from app.services.taxonomy_service import build_knowledge_link_graph
 
 
 class RecommendedResource(BaseModel):
@@ -83,6 +84,7 @@ class ProjectPlanAgentResult(BaseModel):
     assistant_message: str
     suggested_project: ProjectSuggestion
     research_training: ResearchTrainingPlan = Field(default_factory=ResearchTrainingPlan)
+    knowledge_funnel_path: list[dict[str, object]] = Field(default_factory=list)
 
 
 def _message(role: str, content: str) -> dict:
@@ -99,6 +101,42 @@ def _split_display_and_model_message(message: str) -> tuple[str, str]:
 
 def _knowledge_context(db: Session, query: str) -> str:
     return build_rag_context(db, query, limit=8)
+
+
+def _knowledge_funnel_context(db: Session, user: User, query: str) -> tuple[str, list[dict[str, object]]]:
+    graph = build_knowledge_link_graph(db, user, query=query, limit=80)
+    suggestions = graph.path_suggestions or []
+    if not suggestions or not suggestions[0].steps:
+        return "知识漏斗未命中可用路径；按普通项目规划生成。", []
+    steps: list[dict[str, object]] = []
+    lines = [
+        "知识漏斗已命中用户 RAG 知识库。课程必须优先沿以下学习路径生成，不能只按模型常识重新排序："
+    ]
+    for step in suggestions[0].steps[:12]:
+        item = {
+            "order": step.order or len(steps) + 1,
+            "label": step.label,
+            "phase": step.phase or "",
+            "estimated_minutes": step.estimated_minutes or 45,
+            "reason": step.reason,
+            "evidence": step.evidence or [],
+        }
+        steps.append(item)
+        evidence = "；".join((step.evidence or [])[:2])
+        lines.append(
+            f"{item['order']}. {step.label} | 阶段={item['phase']} | 建议时长={item['estimated_minutes']} 分钟 | "
+            f"理由={step.reason} | 证据={evidence}"
+        )
+    lines.extend(
+        [
+            "",
+            "生成要求：",
+            "- target_breakdown、milestones、resource_plan、suggested_project.related_knowledge_points 必须覆盖上述路径中的核心节点。",
+            "- 如果要生成课程或学习清单，顺序必须遵循 order：先前置节点，再核心节点，再应用/产出节点。",
+            "- 如果用户目标与某些路径节点弱相关，可以合并或降权，但不要凭空新增大量未命中的知识点。",
+        ]
+    )
+    return "\n".join(lines), steps
 
 
 def _profile_context(db: Session, user: User) -> str:
@@ -145,6 +183,7 @@ def _run_project_plan_agent(
     current_plan: Optional[dict] = None,
 ) -> ProjectPlanAgentResult:
     knowledge_context = _knowledge_context(db, f"{learning_goal}\n{extra_requirements}")
+    funnel_context, funnel_steps = _knowledge_funnel_context(db, user, f"{learning_goal}\n{extra_requirements}")
     profile_context = _profile_context(db, user)
     prompt = _build_project_plan_prompt(
         learning_type,
@@ -152,6 +191,7 @@ def _run_project_plan_agent(
         extra_requirements,
         messages,
         knowledge_context,
+        funnel_context,
         profile_context,
         current_plan,
     )
@@ -162,6 +202,7 @@ def _run_project_plan_agent(
         user=user,
     )
     result = _verify_recommended_resources(result, learning_goal)
+    result = _apply_funnel_path_to_plan(result, funnel_steps)
     return _verify_research_training(result, learning_type, learning_goal)
 
 
@@ -171,6 +212,7 @@ def _build_project_plan_prompt(
     extra_requirements: str,
     messages: list[dict],
     knowledge_context: str,
+    funnel_context: str,
     profile_context: str,
     current_plan: Optional[dict] = None,
 ) -> str:
@@ -194,6 +236,9 @@ def _build_project_plan_prompt(
 可引用知识来源：
 {knowledge_context}
 
+知识漏斗路径约束：
+{funnel_context}
+
 用户学习画像上下文：
 {profile_context}
 
@@ -209,6 +254,7 @@ def _build_project_plan_prompt(
 1. 涉及课程内容、实验方法、论文写作规范、习题解析时，优先引用上方知识库来源。
 2. recommended_resources 中如使用知识库资料，source 必须写明文档标题、页码或幻灯片编号。
 3. 不得声称知识库没有出现的课件内容已经存在；缺少来源时写入 risk_notes 或 next_questions。
+4. 如果“知识漏斗路径约束”中给出了路径，milestones 和 suggested_project.related_knowledge_points 必须按该路径的先后顺序组织课程，而不是按 PPT 页码或通用目录重排。
 
 历史对话：
 {json.dumps(messages, ensure_ascii=False)}
@@ -301,6 +347,7 @@ def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) ->
 def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequest) -> Iterator[dict]:
     messages = [_message("user", request.learning_goal)]
     knowledge_context = _knowledge_context(db, f"{request.learning_goal}\n{request.extra_requirements}")
+    funnel_context, funnel_steps = _knowledge_funnel_context(db, user, f"{request.learning_goal}\n{request.extra_requirements}")
     profile_context = _profile_context(db, user)
     json_prompt = _build_project_plan_prompt(
         request.learning_type,
@@ -308,6 +355,7 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
         request.extra_requirements,
         messages,
         knowledge_context,
+        funnel_context,
         profile_context,
     )
     stream_prompt = _stream_prompt_from_json_prompt(json_prompt)
@@ -326,6 +374,8 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
         user=user,
     )
     result = _verify_recommended_resources(result, request.learning_goal)
+    result = _apply_funnel_path_to_plan(result, funnel_steps)
+    result = _verify_research_training(result, request.learning_type, request.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)
     assistant_content = streamed_text.strip() or result.assistant_message
     messages.append(_message("assistant", assistant_content))
@@ -422,6 +472,11 @@ def stream_adjust_project_plan(
     messages = [*session.messages, _message("user", display_message)]
     model_messages = [*session.messages, _message("user", model_message)]
     knowledge_context = _knowledge_context(db, f"{session.learning_goal}\n{session.extra_requirements}\n{model_message}")
+    funnel_context, funnel_steps = _knowledge_funnel_context(
+        db,
+        user,
+        f"{session.learning_goal}\n{session.extra_requirements}\n{model_message}",
+    )
     profile_context = _profile_context(db, user)
     json_prompt = _build_project_plan_prompt(
         session.learning_type,
@@ -429,6 +484,7 @@ def stream_adjust_project_plan(
         session.extra_requirements,
         model_messages,
         knowledge_context,
+        funnel_context,
         profile_context,
         session.plan_data,
     )
@@ -448,6 +504,8 @@ def stream_adjust_project_plan(
         user=user,
     )
     result = _verify_recommended_resources(result, session.learning_goal)
+    result = _apply_funnel_path_to_plan(result, funnel_steps)
+    result = _verify_research_training(result, session.learning_type, session.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)
     messages.append(_message("assistant", streamed_text.strip() or result.assistant_message))
     session.title = result.title
@@ -484,6 +542,15 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
 
     result = ProjectPlanAgentResult.model_validate(session.plan_data)
     suggestion = result.suggested_project
+    funnel_path = _funnel_path_from_plan_data(session.plan_data)
+    related_points = _merge_ordered(
+        [str(item.get("label") or "") for item in funnel_path],
+        list(suggestion.related_knowledge_points or []),
+    )
+    research_training = result.research_training.model_dump(mode="json")
+    if funnel_path:
+        research_training["knowledge_funnel_path"] = funnel_path
+        research_training["path_generation_method"] = "knowledge_funnel_rag"
     direction = ResearchDirection(
         user_id=user.id,
         template_id=None,
@@ -517,9 +584,9 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         study_weekdays=[0, 1, 2, 3, 4],
         difficulty=suggestion.difficulty,
         related_course=suggestion.related_course,
-        related_knowledge_points=suggestion.related_knowledge_points,
+        related_knowledge_points=related_points,
         related_documents=suggestion.related_documents,
-        research_training=result.research_training.model_dump(mode="json"),
+        research_training=research_training,
         status="resources_queued",
         current_stage="项目资源准备中",
         risk_notes=suggestion.risk_notes,
@@ -551,6 +618,62 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         plan=ProjectPlanRead.model_validate(session),
         project=LearningProjectRead.model_validate(project),
     )
+
+
+def _apply_funnel_path_to_plan(result: ProjectPlanAgentResult, funnel_steps: list[dict[str, object]]) -> ProjectPlanAgentResult:
+    if not funnel_steps:
+        return result
+    ordered_labels = [str(step.get("label") or "").strip() for step in funnel_steps if str(step.get("label") or "").strip()]
+    result.suggested_project.related_knowledge_points = _merge_ordered(
+        ordered_labels,
+        list(result.suggested_project.related_knowledge_points or []),
+    )[:18]
+    plan_data = result.model_dump(mode="json")
+    plan_data["knowledge_funnel_path"] = funnel_steps
+    result = ProjectPlanAgentResult.model_validate(plan_data)
+    result.assistant_message = (
+        result.assistant_message
+        + "\n\n已命中知识库资料，我会按知识漏斗的先修路径组织课程："
+        + " -> ".join(ordered_labels[:8])
+    )
+    return result
+
+
+def _funnel_path_from_plan_data(plan_data: object) -> list[dict[str, object]]:
+    if not isinstance(plan_data, dict):
+        return []
+    raw = plan_data.get("knowledge_funnel_path")
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        result.append(
+            {
+                "order": int(item.get("order") or len(result) + 1),
+                "label": label,
+                "phase": str(item.get("phase") or ""),
+                "estimated_minutes": int(item.get("estimated_minutes") or 45),
+                "reason": str(item.get("reason") or ""),
+                "evidence": [str(value) for value in item.get("evidence", []) if str(value).strip()]
+                if isinstance(item.get("evidence"), list)
+                else [],
+            }
+        )
+    return result
+
+
+def _merge_ordered(primary: list[str], secondary: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in [*primary, *secondary]:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
 
 
 def _verify_recommended_resources(result: ProjectPlanAgentResult, learning_goal: str) -> ProjectPlanAgentResult:

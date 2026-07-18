@@ -37,6 +37,7 @@ from app.schemas import (
 )
 from app.services.knowledge_service import search_knowledge
 from app.services.llm_client import qwen_chat_json
+from app.services.taxonomy_service import build_knowledge_link_graph
 
 
 class ProjectSuggestion(BaseModel):
@@ -163,6 +164,34 @@ def _knowledge_context(db: Session, query: str) -> str:
     )
 
 
+def _knowledge_funnel_context(db: Session, user: Optional[User], query: str) -> tuple[str, list[str]]:
+    if user is None:
+        return "No authenticated user, cannot build personalized knowledge funnel path.", []
+    graph = build_knowledge_link_graph(db, user, query=query, limit=80)
+    suggestions = graph.path_suggestions or []
+    if not suggestions or not suggestions[0].steps:
+        return "No knowledge funnel path matched RAG content.", []
+    labels: list[str] = []
+    lines = ["Matched knowledge funnel path from uploaded RAG materials. Use this as course order:"]
+    for step in suggestions[0].steps[:12]:
+        if step.label and step.label not in labels:
+            labels.append(step.label)
+        evidence = "；".join((step.evidence or [])[:2])
+        lines.append(
+            f"{step.order or len(labels)}. {step.label} | phase={step.phase or ''} | reason={step.reason} | evidence={evidence}"
+        )
+    return "\n".join(lines), labels
+
+
+def _merge_ordered(primary: list[str], secondary: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in [*primary, *secondary]:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
 def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optional[User] = None) -> DirectionAnalyzeResponse:
     seed_direction_templates(db)
     template = None
@@ -170,6 +199,7 @@ def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optio
         template = db.get(ResearchDirectionTemplate, request.template_id)
     profile_context = _latest_profile_context(db, user)
     knowledge_context = _knowledge_context(db, f"{request.message} {request.extra_context or ''}")
+    funnel_context, funnel_points = _knowledge_funnel_context(db, user, f"{request.message} {request.extra_context or ''}")
     prompt = f"""
 你是 DirectionAgent，负责把用户输入的科研方向或课程目标转化为结构化学习项目建议。
 必须只输出 JSON，且严格匹配 schema。
@@ -190,6 +220,7 @@ def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optio
 3. suggested_project 必须是完整学习项目容器，包含项目名、科研方向、学科类别、目标类型、学习目标、基础摘要、预期产出、推荐周期、每日时长、难度、课程、知识点、资料、风险、个性化策略、今日建议、薄弱点、产出清单、下一步。
 4. 对作业代写、论文代写、虚构实验结果、虚构引用必须给出 risk_notes。
 5. 不要让画像成为用户可见中心，项目建议应围绕科研方向学习。
+6. 如果 Knowledge funnel path 命中 RAG 资料，suggested_project.related_knowledge_points 必须按该路径顺序组织，并在 today_recommendations / next_step 中体现“先学前置节点，再学核心节点”的课程安排。
 
 schema:
 {json.dumps(DirectionAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
@@ -200,6 +231,8 @@ Additional personalization context:
 - User profile context: {profile_context}
 - Course knowledge context:
 {knowledge_context}
+- Knowledge funnel path:
+{funnel_context}
 """
     result = qwen_chat_json(
         "你是智研星链的科研方向理解智能体。只返回合法 JSON。",
@@ -207,7 +240,16 @@ Additional personalization context:
         DirectionAgentResult,
         user=user,
     )
-    return DirectionAnalyzeResponse(**result.model_dump(mode="json"))
+    response = DirectionAnalyzeResponse(**result.model_dump(mode="json"))
+    if funnel_points:
+        project = response.suggested_project
+        project.related_knowledge_points = _merge_ordered(funnel_points, project.related_knowledge_points)[:18]
+        project.next_step = (
+            "按知识漏斗路径启动课程："
+            + " -> ".join(project.related_knowledge_points[:6])
+            + "。"
+        )
+    return response
 
 
 def _record_direction_ai_trace(
