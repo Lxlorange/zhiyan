@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
@@ -249,10 +249,68 @@ def _knowledge_base_version(knowledge: list[dict]) -> str:
     return ("知识库：" + " / ".join(sources))[:128]
 
 
+def _path_items_from_suggestions(suggestions: object, *, limit: int = 12) -> list[dict[str, object]]:
+    if not isinstance(suggestions, list) or not suggestions:
+        return []
+    first = suggestions[0]
+    raw_steps = first.get("steps", []) if isinstance(first, dict) else getattr(first, "steps", [])
+    if not isinstance(raw_steps, list):
+        return []
+    path_items: list[dict[str, object]] = []
+    for index, step in enumerate(raw_steps[:limit], start=1):
+        if isinstance(step, dict):
+            label = str(step.get("label") or "").strip()
+            evidence = step.get("evidence") if isinstance(step.get("evidence"), list) else []
+            item = {
+                "order": step.get("order") or index,
+                "label": label,
+                "phase": step.get("phase") or "",
+                "estimated_minutes": step.get("estimated_minutes") or 45,
+                "reason": step.get("reason") or "",
+                "evidence": evidence,
+            }
+        else:
+            label = str(getattr(step, "label", "") or "").strip()
+            item = {
+                "order": getattr(step, "order", None) or index,
+                "label": label,
+                "phase": getattr(step, "phase", "") or "",
+                "estimated_minutes": getattr(step, "estimated_minutes", None) or 45,
+                "reason": getattr(step, "reason", "") or "",
+                "evidence": getattr(step, "evidence", None) or [],
+            }
+        if label:
+            path_items.append(item)
+    return path_items
+
+
+def _normalize_funnel_path_items(raw_path: object, *, limit: int = 12) -> list[dict[str, object]]:
+    if not isinstance(raw_path, list):
+        return []
+    path_items: list[dict[str, object]] = []
+    for index, item in enumerate(raw_path[:limit], start=1):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+        path_items.append(
+            {
+                "order": item.get("order") or index,
+                "label": label,
+                "phase": item.get("phase") or "",
+                "estimated_minutes": item.get("estimated_minutes") or 45,
+                "reason": item.get("reason") or "",
+                "evidence": evidence,
+            }
+        )
+    return path_items
+
+
 def _knowledge_funnel_path_context(db: Session, user: User, project: LearningProject) -> str:
     training = dict(project.research_training or {})
-    raw_path = training.get("knowledge_funnel_path")
-    path_items = raw_path if isinstance(raw_path, list) else []
+    path_items = _normalize_funnel_path_items(training.get("knowledge_funnel_path"))
     if not path_items:
         graph = build_knowledge_link_graph(
             db,
@@ -261,23 +319,11 @@ def _knowledge_funnel_path_context(db: Session, user: User, project: LearningPro
             query=f"{project.research_direction} {project.learning_goal} {' '.join(project.related_knowledge_points or [])}",
             limit=80,
         )
-        path_items = [
-            {
-                "order": step.order or index + 1,
-                "label": step.label,
-                "phase": step.phase or "",
-                "estimated_minutes": step.estimated_minutes or 45,
-                "reason": step.reason,
-                "evidence": step.evidence or [],
-            }
-            for index, step in enumerate((graph.path_suggestions[0].steps if graph.path_suggestions else [])[:12])
-        ]
+        path_items = _path_items_from_suggestions(graph.path_suggestions)
     if not path_items:
         return "知识漏斗未命中可用路径。"
     lines = ["知识漏斗课程路径（必须按 order 生成学习清单）："]
     for index, item in enumerate(path_items[:12], start=1):
-        if not isinstance(item, dict):
-            continue
         order = item.get("order") or index
         label = str(item.get("label") or "").strip()
         if not label:
@@ -289,7 +335,6 @@ def _knowledge_funnel_path_context(db: Session, user: User, project: LearningPro
         )
     lines.append("学习清单 items 应优先一项或多项覆盖一个路径节点；prerequisites 要引用前序节点；knowledge_points 要使用路径中的 label。")
     return "\n".join(lines)
-
 
 def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:
     if profile is None:
@@ -1456,3 +1501,4 @@ def _sync_daily_plan_item_statuses(db: Session, plan: DailyLearningPlan) -> bool
     if changed:
         db.flush()
     return changed
+

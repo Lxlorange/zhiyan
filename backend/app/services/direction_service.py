@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import time
@@ -164,24 +164,58 @@ def _knowledge_context(db: Session, query: str) -> str:
     )
 
 
+def _path_steps_from_suggestions(suggestions: object, *, limit: int = 12) -> list[dict[str, object]]:
+    if not isinstance(suggestions, list) or not suggestions:
+        return []
+    first = suggestions[0]
+    raw_steps = first.get("steps", []) if isinstance(first, dict) else getattr(first, "steps", [])
+    if not isinstance(raw_steps, list):
+        return []
+    steps: list[dict[str, object]] = []
+    for index, step in enumerate(raw_steps[:limit], start=1):
+        if isinstance(step, dict):
+            label = str(step.get("label") or "").strip()
+            evidence = step.get("evidence") if isinstance(step.get("evidence"), list) else []
+            item = {
+                "order": step.get("order") or index,
+                "label": label,
+                "phase": step.get("phase") or "",
+                "reason": step.get("reason") or "",
+                "evidence": evidence,
+            }
+        else:
+            label = str(getattr(step, "label", "") or "").strip()
+            item = {
+                "order": getattr(step, "order", None) or index,
+                "label": label,
+                "phase": getattr(step, "phase", "") or "",
+                "reason": getattr(step, "reason", "") or "",
+                "evidence": getattr(step, "evidence", None) or [],
+            }
+        if label:
+            steps.append(item)
+    return steps
+
+
 def _knowledge_funnel_context(db: Session, user: Optional[User], query: str) -> tuple[str, list[str]]:
     if user is None:
         return "No authenticated user, cannot build personalized knowledge funnel path.", []
     graph = build_knowledge_link_graph(db, user, query=query, limit=80)
-    suggestions = graph.path_suggestions or []
-    if not suggestions or not suggestions[0].steps:
+    steps = _path_steps_from_suggestions(graph.path_suggestions)
+    if not steps:
         return "No knowledge funnel path matched RAG content.", []
     labels: list[str] = []
     lines = ["Matched knowledge funnel path from uploaded RAG materials. Use this as course order:"]
-    for step in suggestions[0].steps[:12]:
-        if step.label and step.label not in labels:
-            labels.append(step.label)
-        evidence = "；".join((step.evidence or [])[:2])
+    for step in steps:
+        label = str(step.get("label") or "").strip()
+        if label and label not in labels:
+            labels.append(label)
+        evidence = "；".join(str(value) for value in (step.get("evidence") or [])[:2])
         lines.append(
-            f"{step.order or len(labels)}. {step.label} | phase={step.phase or ''} | reason={step.reason} | evidence={evidence}"
+            f"{step.get('order') or len(labels)}. {label} | phase={step.get('phase') or ''} | "
+            f"reason={step.get('reason') or ''} | evidence={evidence}"
         )
     return "\n".join(lines), labels
-
 
 def _merge_ordered(primary: list[str], secondary: list[str]) -> list[str]:
     result: list[str] = []
@@ -796,3 +830,4 @@ def build_direction_dashboard(db: Session) -> DirectionDashboardResponse:
         pending_reviews=pending_reviews,
         recommended_templates=[DirectionTemplateRead.model_validate(template) for template in templates],
     )
+

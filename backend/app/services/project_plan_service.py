@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import time
@@ -103,29 +103,55 @@ def _knowledge_context(db: Session, query: str) -> str:
     return build_rag_context(db, query, limit=8)
 
 
+def _path_steps_from_suggestions(suggestions: object, *, limit: int = 12) -> list[dict[str, object]]:
+    if not isinstance(suggestions, list) or not suggestions:
+        return []
+    first = suggestions[0]
+    raw_steps = first.get("steps", []) if isinstance(first, dict) else getattr(first, "steps", [])
+    if not isinstance(raw_steps, list):
+        return []
+    steps: list[dict[str, object]] = []
+    for index, step in enumerate(raw_steps[:limit], start=1):
+        if isinstance(step, dict):
+            label = str(step.get("label") or "").strip()
+            evidence = step.get("evidence") if isinstance(step.get("evidence"), list) else []
+            item = {
+                "order": step.get("order") or index,
+                "label": label,
+                "phase": step.get("phase") or "",
+                "estimated_minutes": step.get("estimated_minutes") or 45,
+                "reason": step.get("reason") or "",
+                "evidence": evidence,
+            }
+        else:
+            label = str(getattr(step, "label", "") or "").strip()
+            item = {
+                "order": getattr(step, "order", None) or index,
+                "label": label,
+                "phase": getattr(step, "phase", "") or "",
+                "estimated_minutes": getattr(step, "estimated_minutes", None) or 45,
+                "reason": getattr(step, "reason", "") or "",
+                "evidence": getattr(step, "evidence", None) or [],
+            }
+        if label:
+            steps.append(item)
+    return steps
+
+
 def _knowledge_funnel_context(db: Session, user: User, query: str) -> tuple[str, list[dict[str, object]]]:
     graph = build_knowledge_link_graph(db, user, query=query, limit=80)
-    suggestions = graph.path_suggestions or []
-    if not suggestions or not suggestions[0].steps:
+    steps = _path_steps_from_suggestions(graph.path_suggestions)
+    if not steps:
         return "知识漏斗未命中可用路径；按普通项目规划生成。", []
-    steps: list[dict[str, object]] = []
+
     lines = [
         "知识漏斗已命中用户 RAG 知识库。课程必须优先沿以下学习路径生成，不能只按模型常识重新排序："
     ]
-    for step in suggestions[0].steps[:12]:
-        item = {
-            "order": step.order or len(steps) + 1,
-            "label": step.label,
-            "phase": step.phase or "",
-            "estimated_minutes": step.estimated_minutes or 45,
-            "reason": step.reason,
-            "evidence": step.evidence or [],
-        }
-        steps.append(item)
-        evidence = "；".join((step.evidence or [])[:2])
+    for item in steps:
+        evidence = "；".join(str(value) for value in (item.get("evidence") or [])[:2])
         lines.append(
-            f"{item['order']}. {step.label} | 阶段={item['phase']} | 建议时长={item['estimated_minutes']} 分钟 | "
-            f"理由={step.reason} | 证据={evidence}"
+            f"{item['order']}. {item['label']} | 阶段={item['phase']} | 建议时长={item['estimated_minutes']} 分钟 | "
+            f"理由={item['reason']} | 证据={evidence}"
         )
     lines.extend(
         [
@@ -137,7 +163,6 @@ def _knowledge_funnel_context(db: Session, user: User, query: str) -> tuple[str,
         ]
     )
     return "\n".join(lines), steps
-
 
 def _profile_context(db: Session, user: User) -> str:
     record = db.scalar(
@@ -804,3 +829,4 @@ def _merge_reading_resources(resources: list[RecommendedResource], readings: lis
         )
         existing.add(url)
     return merged[:12]
+
