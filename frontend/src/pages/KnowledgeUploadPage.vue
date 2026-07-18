@@ -47,11 +47,9 @@
           <div class="knowledge-upload-options">
             <label class="knowledge-upload-option-card">
               <el-checkbox v-model="uploadForm.use_ocr">启用 OCR</el-checkbox>
-              <span>扫描版 PDF 或图片资料时使用</span>
             </label>
             <label class="knowledge-upload-option-card">
               <el-checkbox v-model="uploadForm.rebuild_course">导入前清空同课程资料</el-checkbox>
-              <span>重新生成同课程的知识点与证据片段</span>
             </label>
           </div>
         </el-form>

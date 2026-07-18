@@ -967,11 +967,13 @@ def _build_import_taxonomy(
     local = _heuristic_import_taxonomy(title, parsed, chunks)
     try:
         validate_qwen_config()
+        local = _localize_import_taxonomy(local, title, chunks)
         taxonomy = qwen_chat_json(
-            "You extract a compact learning-topic taxonomy from uploaded course material. Return valid JSON only.",
+            "你负责从课程资料中抽取中文学习主题图谱。只返回合法 JSON。",
             _taxonomy_prompt(title, parsed, chunks, local),
             ImportedKnowledgeTaxonomy,
         )
+        taxonomy = _localize_import_taxonomy(taxonomy, title, chunks)
         return _normalize_import_taxonomy(taxonomy, title, chunks, local)
     except Exception:
         return local
@@ -1001,6 +1003,8 @@ def _taxonomy_prompt(
     return "\n".join(
         [
             "请把上传资料抽象成类似 os-taxonomy 的学习主题图谱，而不是把 RAG chunk 当作知识点。",
+            "无论原始资料是中文还是英文，最终写入知识库的小球名称和说明都必须使用简体中文。",
+            "只有专业缩写、代码标识符、产品名、专有名词可以保留英文；其余字段不要整句英文。",
             f"资料标题：{title}",
             f"资料类型：{parsed.doc_type}",
             f"原始 section 数：{section_count}",
@@ -1012,6 +1016,11 @@ def _taxonomy_prompt(
             "- 一节课的教案或 PPT 通常只生成 3 个左右核心知识点；只有内容跨度很大时才增加。",
             "- 不要按 PPT 页码顺序机械生成，不要把每页标题、目录页、参考页、封面页当作 topic。",
             "- 每个 topic 必须不重不漏：名称互不重复，描述覆盖资料重点，但不能把细节碎片都列成 topic。",
+            "",
+            "语言要求：",
+            "- topic.name：使用简短简体中文，建议 4-12 个汉字；不要使用完整英文短语。",
+            "- topic.description、evidence、assessment_prompt、dependency.reason：使用自然简体中文。",
+            "- dependency.topic_name 和 prerequisite_name 必须严格引用中文 topic.name。",
             "",
             "topic 字段参考：type, subject, domain, name, description, evidence, assessment_prompt, source_cues。",
             "dependency 字段参考：topic_name, prerequisite_name, strength, reason；必须形成 DAG。",
@@ -1029,6 +1038,78 @@ def _taxonomy_prompt(
             schema_json,
         ]
     )
+
+
+def _localize_import_taxonomy(
+    taxonomy: ImportedKnowledgeTaxonomy,
+    title: str,
+    chunks: list[ParsedSection],
+) -> ImportedKnowledgeTaxonomy:
+    if not _taxonomy_needs_chinese_localization(taxonomy):
+        return taxonomy
+    try:
+        localized = qwen_chat_json(
+            "你负责把学习主题图谱本地化为简体中文。只返回合法 JSON。",
+            _taxonomy_localization_prompt(taxonomy, title, chunks),
+            ImportedKnowledgeTaxonomy,
+        )
+        if localized.topics and not _taxonomy_needs_chinese_localization(localized):
+            return localized
+    except Exception:
+        pass
+    return taxonomy
+
+
+def _taxonomy_localization_prompt(
+    taxonomy: ImportedKnowledgeTaxonomy,
+    title: str,
+    chunks: list[ParsedSection],
+) -> str:
+    sample_chunks = _sample_chunks_for_taxonomy(chunks, limit=6)
+    taxonomy_json = json.dumps(taxonomy.model_dump(mode="json"), ensure_ascii=False)
+    schema_json = json.dumps(ImportedKnowledgeTaxonomy.model_json_schema(mode="validation"), ensure_ascii=False)
+    return "\n".join(
+        [
+            "请把下面的 taxonomy 改写成适合中文界面的版本。",
+            f"资料标题：{title}",
+            "",
+            "必须遵守：",
+            "- 不改变 topic 数量、学习顺序和依赖关系含义。",
+            "- topic.name 必须是简短简体中文，建议 4-12 个汉字；专业缩写可保留。",
+            "- topic.description、evidence、assessment_prompt、dependency.reason 必须是简体中文。",
+            "- dependency.topic_name 和 prerequisite_name 必须引用改写后的中文 topic.name。",
+            "- id、type、standards 可保留原值。",
+            "",
+            "代表性片段：",
+            sample_chunks,
+            "",
+            "待本地化 taxonomy：",
+            taxonomy_json,
+            "",
+            "输出 JSON schema:",
+            schema_json,
+        ]
+    )
+
+
+def _taxonomy_needs_chinese_localization(taxonomy: ImportedKnowledgeTaxonomy) -> bool:
+    if not taxonomy.topics:
+        return False
+    checked = 0
+    missing = 0
+    for topic in taxonomy.topics:
+        for value in (topic.name, topic.description):
+            text_value = _clean_text(value)
+            if not text_value:
+                continue
+            checked += 1
+            if not _contains_cjk(text_value):
+                missing += 1
+    return checked > 0 and missing >= max(1, checked // 2)
+
+
+def _contains_cjk(value: object) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", _clean_text(value)))
 
 
 

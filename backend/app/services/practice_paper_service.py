@@ -29,6 +29,7 @@ from app.schemas import (
 from app.services.knowledge_service import search_knowledge
 from app.services.llm_client import qwen_chat_json
 from app.services.taxonomy_service import build_knowledge_link_graph
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 class _GeneratedPaperQuestion(BaseModel):
@@ -382,6 +383,7 @@ def _generate_paper_with_llm(
 7. explanation 要说明为什么正确、常见错误是什么、如何补救。
 8. source_title/source_excerpt 必须尽量来自资料库片段；资料不足时在 explanation 里说明还需要补充材料，不得编造来源。
 9. 不要输出 markdown，不要输出代码块。
+{FORMULA_OUTPUT_INSTRUCTIONS}
 
 schema:
 {_GeneratedPaper.model_json_schema(mode="validation")}

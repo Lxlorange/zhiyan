@@ -47,6 +47,7 @@ from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwe
 from app.services.syllabus_service import update_syllabus_item_status
 from app.services.adaptive_visualization_renderer import render_adaptive_visualization_html
 from app.services.visualization_3d_renderer import render_three_physics_html
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 PREGENERATE_CLASSROOM_LIMIT = 2
@@ -1459,6 +1460,7 @@ def _generate_dialogue_response(
             "你是 DialogueAgent，是课堂中的 AI 助教。"
             "回答必须依托当前课堂上下文，短而可执行；需要时输出 cards 用于前端卡片展示。"
             "只输出 JSON，不输出 Markdown 外壳。"
+            f"{FORMULA_OUTPUT_INSTRUCTIONS}"
         ),
         (
             f"项目：{project.title}\n"
@@ -1752,6 +1754,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
         "reflection_prompts: 3 条。safety_notes: 至少 1 条。\n"
         "严禁省略字段，严禁只返回 slides。字段缺失会触发一次自动修复；修复仍失败会被系统直接判定为生成失败。\n"
+        f"{FORMULA_OUTPUT_INSTRUCTIONS}\n"
         "如果某字段暂时无法确定，必须基于学习项、课程知识库和项目目标生成可执行内容；不得返回空字符串、空数组或占位符。\n"
         "文献综述模式必须给出论文/资料列表、摘要要点、来源字段、对比矩阵和阅读任务；不得编造已发表事实。\n"
         "选题凝练模式必须形成具体题目、研究问题、方法边界、数据与指标、预期贡献和不可做事项。\n"
@@ -2427,6 +2430,7 @@ def _generate_visualization_demo(
             "先判断内容最适合 diagram、simulation、code、timeline 还是 visualization3d。"
             "只有真实空间结构、物理装置、几何、机械、分子、3D 坐标关系等内容才允许使用 visualization3d。"
             "只输出严格 JSON，不输出 Markdown、HTML 或 JavaScript。"
+            f"{FORMULA_OUTPUT_INSTRUCTIONS}"
         ),
         (
             "输出顶层字段必须完整包含：title, widget_type, demo_type, learning_goal, description, "

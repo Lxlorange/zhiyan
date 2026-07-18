@@ -33,6 +33,7 @@ from app.schemas import (
 )
 from app.services.llm_client import qwen_chat_json
 from app.services.knowledge_service import search_knowledge
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 PROFILE_ENTRY_LABELS: dict[str, str] = {
@@ -391,6 +392,7 @@ def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) 
         "defense 输出开题/中期/答辩问题、追问、参考回答要点、评分量表和修改建议。"
         "输出字段：title, revised_text, diagnosis, structure_suggestions, citation_suggestions, method_steps, "
         "topic_options, final_topic, experiment_plan, defense_questions, scoring_rubric, source_notes, safety_notes, next_actions。"
+        f"\n{FORMULA_OUTPUT_INSTRUCTIONS}"
     )
     output = qwen_chat_json(system_prompt, user_prompt, _ResearchToolOutput, user=user)
     run = ResearchToolRun(

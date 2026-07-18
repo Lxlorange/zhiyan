@@ -41,6 +41,7 @@ from app.services.ai_workflow import build_profile_with_summary
 from app.services.knowledge_ingestion_service import search_knowledge_enhanced
 from app.services.llm_client import qwen_chat_json
 from app.services.persistence_service import upsert_profile_from_dialogue
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 class _GeneratedSyllabusItem(BaseModel):
@@ -269,6 +270,7 @@ def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRe
         "5. 模拟答辩课：生成开题/中期/最终答辩问题、追问、评分和修改建议。\n"
         "这些模式都从课堂入口进入，但 item_type 和 classroom_types 要明确区分，例如 literature_review, topic_selection, experiment_assistant, paper_writing, mock_defense。\n"
         "每个科研学习项的 related_documents 必须尽量引用课程知识库或用户文献库中已有资料名称，不要编造来源。\n"
+        f"{FORMULA_OUTPUT_INSTRUCTIONS}\n"
         f"项目标题：{project.title}\n"
         f"科研方向：{project.research_direction}\n"
         f"学科：{project.subject}\n"

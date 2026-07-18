@@ -29,6 +29,7 @@ from app.schemas import (
 from app.services.knowledge_ingestion_service import KnowledgeIngestionError, search_knowledge_enhanced
 from app.services.knowledge_service import search_knowledge
 from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 class _RagAnswerLLM(BaseModel):
@@ -296,6 +297,7 @@ def _generate_llm_answer(user: User, question: str, citations: list[DatabaseCita
 3. related_points 返回 2-6 个相关知识点。
 4. follow_up_questions 返回 3 个适合继续复习的问题。
 5. confidence 只能是 high、medium、low。
+{FORMULA_OUTPUT_INSTRUCTIONS}
 """
     return qwen_chat_json(
         "你是高校个性化学习平台的 RAG 问答 Agent，必须保证回答可回溯到资料来源。",

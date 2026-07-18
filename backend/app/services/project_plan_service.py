@@ -30,6 +30,7 @@ from app.services.direction_service import ProjectSuggestion
 from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.llm_client import LLMResponseError, qwen_chat_json, qwen_chat_stream_text
 from app.services.scholarly_search_service import ScholarlySearchError, verify_candidate_resource_url
+from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
 
 class RecommendedResource(BaseModel):
@@ -223,6 +224,7 @@ def _build_project_plan_prompt(
 5. suggested_project 必须完整，可直接用于创建 LearningProject。
 6. 不要给出预设模板答案，不要声称已完成真实实验或已引用不存在论文。
 7. 如果用户要求代写、虚构实验、虚构引用，必须写入 risk_notes 并改成合规学习支持方案。
+{FORMULA_OUTPUT_INSTRUCTIONS}
 
 8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；url 必须是你确信真实存在且与学习目标直接相关的 http/https 链接，例如官方文档、课程主页、arXiv/DOI/Semantic Scholar/OpenAlex、教材官网、权威教程或用户上传/知识库来源。不得只给资源标题让后端猜链接，不得编造 DOI、论文链接或官网链接；没有可靠链接时不要放入 recommended_resources，改写入 risk_notes。
 9. 对通用技能学习目标优先推荐官方文档、权威教程、课程主页和实践项目；只有用户明确要求论文、综述、科研选题、实验或引用时，才推荐论文数据库链接。
@@ -248,6 +250,7 @@ def _stream_prompt_from_json_prompt(json_prompt: str) -> str:
 2. 用简洁中文分段输出。
 3. 说明目标拆解、关键知识点、阶段安排、资源计划、风险边界。
 4. 不要声称已完成真实实验或已引用不存在论文。
+{FORMULA_OUTPUT_INSTRUCTIONS}
 
 规划上下文如下：
 {json_prompt}
