@@ -355,7 +355,7 @@ function initScene() {
   if (!host) return
 
   scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(0x111827, 520, 1200)
+  scene.fog = new THREE.Fog(0x4c4139, 520, 1200)
 
   camera = new THREE.PerspectiveCamera(42, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 4000)
   camera.position.set(0, 130, 780)
@@ -382,9 +382,9 @@ function initScene() {
   controls.autoRotateSpeed = 0.55
 
   const ambient = new THREE.AmbientLight(0xffffff, 1.35)
-  const key = new THREE.DirectionalLight(0xfff2d7, 2.2)
+  const key = new THREE.DirectionalLight(0xffefd6, 2.2)
   key.position.set(220, 260, 260)
-  const fill = new THREE.DirectionalLight(0x8bd3ff, 1.1)
+  const fill = new THREE.DirectionalLight(0xc4daeb, 1.1)
   fill.position.set(-260, -120, 180)
   scene.add(ambient, key, fill)
 
@@ -411,8 +411,8 @@ function addCoreObjects() {
   const core = new THREE.Mesh(
     new THREE.SphereGeometry(56, 48, 24),
     new THREE.MeshStandardMaterial({
-      color: 0x172554,
-      emissive: 0x0b3b4b,
+      color: 0xdc8b5e,
+      emissive: 0x6f3a26,
       emissiveIntensity: 0.85,
       roughness: 0.36,
       metalness: 0.18,
@@ -425,7 +425,7 @@ function addCoreObjects() {
   const shell = new THREE.Mesh(
     new THREE.SphereGeometry(360, 64, 32),
     new THREE.MeshBasicMaterial({
-      color: 0xb9c7d5,
+      color: 0xc4daeb,
       wireframe: true,
       transparent: true,
       opacity: 0.045
@@ -541,7 +541,7 @@ function rebuildPathLayer() {
     const tube = new THREE.Mesh(
       new THREE.TubeGeometry(curve, 36, 2.4, 8, false),
       new THREE.MeshBasicMaterial({
-        color: 0xf59e0b,
+        color: 0xdc8b5e,
         transparent: true,
         opacity: viewMode.value === 'taxonomy' ? 0.12 : 0.58
       })
@@ -633,7 +633,7 @@ function createHalo(node: KnowledgeLinkNode, color: number) {
   const halo = new THREE.Mesh(
     new THREE.TorusGeometry(radius, 1.2, 8, 48),
     new THREE.MeshBasicMaterial({
-      color: isPathNode(node.id) ? 0xf59e0b : color,
+      color: isPathNode(node.id) ? 0xdc8b5e : color,
       transparent: true,
       opacity: isPathNode(node.id) ? 0.9 : 0.38
     })
@@ -652,23 +652,23 @@ function createNodeLabel(node: KnowledgeLinkNode) {
 }
 
 function nodeColor(node: KnowledgeLinkNode) {
-  if (node.layer === 'project') return 0x0f766e
-  if (node.layer === 'knowledge_base') return 0xc26b28
+  if (node.layer === 'project') return 0xdc8b5e
+  if (node.layer === 'knowledge_base') return 0xc4daeb
   return subjectColor(String(node.meta?.subject || node.category || 'taxonomy'))
 }
 
 function subjectColor(subject: string) {
   const colors: Record<string, number> = {
-    Science: 0x3b82a0,
-    Mathematics: 0x516f37,
-    English: 0x8a5a44,
-    History: 0x8b5cf6,
-    Computing: 0xd97706,
-    'Life Skills': 0x0f766e,
-    'Learning to Learn': 0xbe5f28,
-    'Personal & Social Development': 0xdb6b72
+    Science: 0xc4daeb,
+    Mathematics: 0xcadab2,
+    English: 0xf0cebb,
+    History: 0xfadfa7,
+    Computing: 0xdc8b5e,
+    'Life Skills': 0xcadab2,
+    'Learning to Learn': 0xffefd6,
+    'Personal & Social Development': 0xf0cebb
   }
-  return colors[subject] || 0x64748b
+  return colors[subject] || 0xc4daeb
 }
 
 function cssSubjectColor(subject: string) {
@@ -676,10 +676,10 @@ function cssSubjectColor(subject: string) {
 }
 
 function edgeColor(edge: KnowledgeLinkEdge) {
-  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? 0xef9f2f : 0xd8b96f
-  if (edge.relation === 'aligns') return 0x57b8a8
-  if (edge.relation === 'maps_to') return 0x7aa2d8
-  return 0x8ba6a9
+  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? 0xdc8b5e : 0xfadfa7
+  if (edge.relation === 'aligns') return 0xcadab2
+  if (edge.relation === 'maps_to') return 0xc4daeb
+  return 0xf0cebb
 }
 
 function nodeOpacity(node: KnowledgeLinkNode) {
@@ -944,9 +944,9 @@ function formatMeta(value: unknown) {
 .knowledge-sphere-segments {
   display: inline-flex;
   padding: 3px;
-  border: 1px solid rgba(33, 44, 56, 0.12);
+  border: 1px solid rgba(220, 139, 94, 0.22);
   border-radius: 10px;
-  background: #f7f3eb;
+  background: #ffefd6;
 }
 
 .knowledge-sphere-segments button,
@@ -965,7 +965,7 @@ function formatMeta(value: unknown) {
 }
 
 .knowledge-sphere-segments button.active {
-  background: #1f2937;
+  background: #dc8b5e;
   color: #fff;
 }
 
@@ -982,9 +982,9 @@ function formatMeta(value: unknown) {
   border-radius: 18px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 28% 18%, rgba(255, 252, 242, 0.95), rgba(229, 236, 231, 0.82) 26%, rgba(30, 41, 59, 0.24) 58%, rgba(17, 24, 39, 0.86)),
-    linear-gradient(135deg, #f8f2e8 0%, #dfe9df 42%, #111827 100%);
-  box-shadow: 0 28px 70px rgba(36, 45, 52, 0.18);
+    radial-gradient(circle at 28% 18%, rgba(255, 239, 214, 0.96), rgba(196, 218, 235, 0.72) 28%, rgba(220, 139, 94, 0.18) 58%, rgba(76, 65, 57, 0.88)),
+    linear-gradient(135deg, #ffefd6 0%, #cadab2 42%, #4c4139 100%);
+  box-shadow: 0 28px 70px rgba(76, 65, 57, 0.18);
 }
 
 .knowledge-sphere-stage::after {
@@ -1130,19 +1130,19 @@ function formatMeta(value: unknown) {
 }
 
 .knowledge-sphere-legend i.project {
-  background: #0f766e;
+  background: #dc8b5e;
 }
 
 .knowledge-sphere-legend i.knowledge_base {
-  background: #c26b28;
+  background: #c4daeb;
 }
 
 .knowledge-sphere-legend i.taxonomy {
-  background: #3b82a0;
+  background: #cadab2;
 }
 
 .knowledge-sphere-legend i.path {
-  background: #f59e0b;
+  background: #fadfa7;
 }
 
 .knowledge-sphere-actions {
@@ -1181,9 +1181,9 @@ function formatMeta(value: unknown) {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border: 1px solid rgba(33, 44, 56, 0.1);
+  border: 1px solid rgba(220, 139, 94, 0.16);
   border-radius: 14px;
-  background: #fffdfa;
+  background: #ffefd6;
 }
 
 .knowledge-sphere-card strong {
@@ -1229,8 +1229,8 @@ function formatMeta(value: unknown) {
 .knowledge-sphere-signals small {
   padding: 6px 8px;
   border-radius: 8px;
-  background: #f1eadf;
-  color: #576171;
+  background: #f0cebb;
+  color: #4c4139;
 }
 
 .knowledge-sphere-evidence {
@@ -1245,7 +1245,7 @@ function formatMeta(value: unknown) {
 
 .knowledge-sphere-evidence p {
   padding-left: 10px;
-  border-left: 2px solid #e4a14b;
+  border-left: 2px solid #dc8b5e;
   font-size: 13px;
 }
 
@@ -1270,15 +1270,15 @@ function formatMeta(value: unknown) {
   gap: 2px 10px;
   padding: 10px 10px;
   border-radius: 11px;
-  background: #f7f2e9;
+  background: color-mix(in srgb, #ffefd6 74%, #ffffff);
   cursor: pointer;
   transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .knowledge-sphere-path li:hover,
 .knowledge-sphere-path li.active {
-  background: #eef7f3;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  background: #fadfa7;
+  box-shadow: 0 10px 24px rgba(220, 139, 94, 0.12);
   transform: translateY(-1px);
 }
 
@@ -1289,7 +1289,7 @@ function formatMeta(value: unknown) {
   height: 26px;
   place-items: center;
   border-radius: 8px;
-  background: #1f2937;
+  background: #dc8b5e;
   color: #fff;
   font-size: 12px;
 }
@@ -1301,7 +1301,7 @@ function formatMeta(value: unknown) {
 }
 
 .knowledge-sphere-path em {
-  color: #9a5f17;
+  color: #8d4d2f;
   font-size: 12px;
   font-style: normal;
 }
@@ -1322,8 +1322,8 @@ function formatMeta(value: unknown) {
   gap: 2px;
   padding: 10px;
   border-radius: 10px;
-  background: #f6efe4;
-  color: #596273;
+  background: #f0cebb;
+  color: #4c4139;
   font-size: 12px;
 }
 
@@ -1337,8 +1337,8 @@ function formatMeta(value: unknown) {
   padding: 5px 7px;
   border-left: 3px solid var(--subject-color);
   border-radius: 7px;
-  background: #f8f4ed;
-  color: #596273;
+  background: color-mix(in srgb, #c4daeb 48%, #ffffff);
+  color: #4c4139;
   font-size: 12px;
 }
 

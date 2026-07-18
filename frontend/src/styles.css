@@ -8642,13 +8642,13 @@ body::after {
 }
 
 .el-button--warning:not(.is-disabled) {
-  background: #8a5700 !important;
-  border-color: #8a5700 !important;
+  background: #9b6c16 !important;
+  border-color: #9b6c16 !important;
 }
 
 .el-button--warning:not(.is-disabled):hover {
-  background: #6f4500 !important;
-  border-color: #6f4500 !important;
+  background: #7a5511 !important;
+  border-color: #7a5511 !important;
 }
 
 .el-button--danger:not(.is-disabled) {
@@ -8657,13 +8657,14 @@ body::after {
 }
 
 .el-button--danger:not(.is-disabled):hover {
-  background: #7e2219 !important;
-  border-color: #7e2219 !important;
+  background: #854135 !important;
+  border-color: #854135 !important;
 }
 
 .el-button--info:not(.is-disabled) {
-  background: #33423b !important;
-  border-color: #33423b !important;
+  background: #c4daeb !important;
+  border-color: #c4daeb !important;
+  color: #342d28 !important;
 }
 
 .el-button.is-link:not(.is-disabled),
@@ -8680,7 +8681,7 @@ body::after {
 .el-button.is-disabled .el-icon {
   background: #eeeae1 !important;
   border-color: var(--study-rule) !important;
-  color: #5d6861 !important;
+  color: #8b7466 !important;
   opacity: 1 !important;
 }
 
@@ -11853,20 +11854,26 @@ button:focus-visible,
 
 /* Final responsive folio pass: a single reading direction, high contrast, no crowded grids. */
 :root {
-  --study-paper: #fbfaf6;
-  --study-surface: #ffffff;
-  --study-ink: #101713;
-  --study-muted: #46544d;
-  --study-subtle: #6e7a73;
-  --study-rule: rgba(16, 23, 19, 0.14);
-  --study-rule-strong: rgba(16, 23, 19, 0.3);
-  --study-green: #075f56;
-  --study-green-2: #064a43;
-  --study-red: #9f2d20;
-  --study-gold: #9a6500;
-  --study-wash: rgba(7, 95, 86, 0.08);
-  --study-note: #fff3d9;
-  --study-shadow: 0 18px 44px rgba(16, 23, 19, 0.08);
+  --study-blush: #f0cebb;
+  --study-cream: #ffefd6;
+  --study-honey: #fadfa7;
+  --study-sky: #c4daeb;
+  --study-sage: #cadab2;
+  --study-coral: #dc8b5e;
+  --study-paper: #ffefd6;
+  --study-surface: #fffaf2;
+  --study-ink: #342d28;
+  --study-muted: #6d5d53;
+  --study-subtle: #8b7466;
+  --study-rule: rgba(96, 73, 57, 0.16);
+  --study-rule-strong: rgba(96, 73, 57, 0.3);
+  --study-green: #dc8b5e;
+  --study-green-2: #b96e45;
+  --study-red: #a85443;
+  --study-gold: #9b6c16;
+  --study-wash: rgba(220, 139, 94, 0.12);
+  --study-note: #fadfa7;
+  --study-shadow: 0 18px 44px rgba(96, 73, 57, 0.1);
   --study-serif: Fraunces, "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
   --study-sans: Aptos, "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --study-mono: "JetBrains Mono", Consolas, monospace;
@@ -11883,8 +11890,9 @@ body,
 body {
   color: var(--study-ink);
   background:
-    linear-gradient(90deg, rgba(7, 95, 86, 0.05) 1px, transparent 1px) 0 0 / 44px 44px,
-    radial-gradient(circle at 10% 8%, rgba(154, 101, 0, 0.09), transparent 420px),
+    linear-gradient(90deg, rgba(220, 139, 94, 0.07) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(circle at 10% 8%, rgba(196, 218, 235, 0.45), transparent 420px),
+    radial-gradient(circle at 88% 18%, rgba(202, 218, 178, 0.34), transparent 420px),
     var(--study-paper);
   font-family: var(--study-sans);
 }
@@ -12054,8 +12062,8 @@ small,
   --el-button-hover-bg-color: var(--study-green-2);
   --el-button-hover-border-color: var(--study-green-2);
   --el-button-hover-text-color: #ffffff;
-  --el-button-active-bg-color: #033d38;
-  --el-button-active-border-color: #033d38;
+  --el-button-active-bg-color: #965735;
+  --el-button-active-border-color: #965735;
   --el-button-active-text-color: #ffffff;
   background: var(--study-green);
   border-color: var(--study-green);
@@ -12067,8 +12075,8 @@ small,
   --el-button-bg-color: var(--study-red);
   --el-button-border-color: var(--study-red);
   --el-button-text-color: #ffffff;
-  --el-button-hover-bg-color: #7e2219;
-  --el-button-hover-border-color: #7e2219;
+  --el-button-hover-bg-color: #854135;
+  --el-button-hover-border-color: #854135;
   --el-button-hover-text-color: #ffffff;
   background: var(--study-red);
   border-color: var(--study-red);
@@ -12080,8 +12088,8 @@ small,
   --el-button-bg-color: var(--study-gold);
   --el-button-border-color: var(--study-gold);
   --el-button-text-color: #ffffff;
-  --el-button-hover-bg-color: #7b4f00;
-  --el-button-hover-border-color: #7b4f00;
+  --el-button-hover-bg-color: #7a5511;
+  --el-button-hover-border-color: #7a5511;
   --el-button-hover-text-color: #ffffff;
   background: var(--study-gold);
   border-color: var(--study-gold);
@@ -12090,9 +12098,9 @@ small,
 
 .el-button--info,
 .el-button--info.is-plain {
-  background: #33423b;
-  border-color: #33423b;
-  color: #ffffff !important;
+  background: #c4daeb;
+  border-color: #c4daeb;
+  color: #342d28 !important;
 }
 
 .el-button.is-disabled,
@@ -12100,7 +12108,7 @@ small,
 .el-button.is-disabled:focus {
   background: #eeeae1 !important;
   border-color: var(--study-rule) !important;
-  color: #66716b !important;
+  color: #8b7466 !important;
   opacity: 1;
 }
 
@@ -12484,7 +12492,7 @@ button:focus-visible,
 .auth-panel {
   border: 1px solid var(--study-rule);
   border-radius: 18px;
-  background: #ffffff;
+  background: var(--study-surface);
 }
 
 .todo-work-card {

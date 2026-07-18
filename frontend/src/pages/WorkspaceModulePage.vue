@@ -2,13 +2,14 @@
   <div class="page workspace-module-page">
     <section class="workspace-hero">
       <div>
+        <span>{{ currentMeta.eyebrow }}</span>
         <h2>{{ currentMeta.title }}</h2>
         <p>{{ currentMeta.description }}</p>
       </div>
-      <el-button :loading="loading" @click="loadOverview">鍒锋柊鏁版嵁</el-button>
+      <el-button :loading="loading" @click="loadOverview">刷新数据</el-button>
     </section>
 
-    <section v-if="loading" class="panel-like workspace-loading">姝ｅ湪鍔犺浇妯″潡鏁版嵁...</section>
+    <section v-if="loading" class="panel-like workspace-loading">正在加载模块数据...</section>
 
     <template v-else>
       <section v-if="metrics.length" class="workspace-metrics compact-stat-row">
@@ -22,17 +23,17 @@
       <section v-if="mode === 'profile'" class="workspace-grid two">
         <article class="panel-like workspace-panel wide">
           <header>
-            <strong>褰撳墠鐢诲儚鏉＄洰</strong>
-            <el-button size="small" @click="openProfileEntry()">鏂板鏉＄洰</el-button>
+            <strong>当前画像条目</strong>
+            <el-button size="small" @click="openProfileEntry()">新增条目</el-button>
           </header>
           <div v-if="profileEntries.length" class="profile-entry-grid editable">
             <div v-for="entry in profileEntries" :key="entry.key" :class="{ muted: !entry.is_enabled }">
               <span>{{ entry.label }}</span>
               <strong>{{ asText(entry.value) }}</strong>
-              <small>{{ entry.source }} 路 缃俊搴?{{ entry.confidence }}% 路 {{ entry.is_enabled ? '鍙備笌鎺ㄨ崘' : '宸插仠鐢? }}</small>
+              <small>{{ entry.source }} · 置信度 {{ entry.confidence }}% · {{ entry.is_enabled ? '参与推荐' : '已停用' }}</small>
               <div class="profile-entry-actions">
-                <el-button size="small" @click="openProfileEntry(entry)">缂栬緫</el-button>
-                <el-button size="small" type="danger" plain @click="handleDeleteProfileEntry(entry)">鍒犻櫎</el-button>
+                <el-button size="small" @click="openProfileEntry(entry)">编辑</el-button>
+                <el-button size="small" type="danger" plain @click="handleDeleteProfileEntry(entry)">删除</el-button>
               </div>
             </div>
           </div>
@@ -42,37 +43,37 @@
 
       <section v-else-if="mode === 'resources'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
-          <header><strong>鏁版嵁搴撴矇娣€</strong><span>Knowledge Deposit</span></header>
+          <header><strong>数据库沉淀</strong><span>Knowledge Deposit</span></header>
           <div class="deposit-summary">
             <div>
               <strong>{{ overview?.resources.length || 0 }}</strong>
-              <span>鐢熸垚璧勬簮</span>
+              <span>生成资源</span>
             </div>
             <div>
               <strong>{{ overview?.literature.length || 0 }}</strong>
-              <span>鏂囩尞绗旇</span>
+              <span>文献笔记</span>
             </div>
             <div>
               <strong>{{ knowledgePoints.length }}</strong>
-              <span>鐭ヨ瘑鐐?/span>
+              <span>知识点</span>
             </div>
           </div>
           <div class="deposit-upload-redirect">
-            <strong>璧勬枡涓婁紶宸茬Щ鍒扮嫭绔嬮〉闈?/strong>
-            <small>涓婁紶銆佽В鏋愯褰曞拰鏂囨。鍒犻櫎绠＄悊缁熶竴鍦ㄧ煡璇嗗簱涓婁紶椤甸潰瀹屾垚銆?/small>
-            <el-button type="primary" @click="router.push({ name: 'knowledge-upload' })">鎵撳紑鐭ヨ瘑搴撲笂浼?/el-button>
+            <strong>资料上传已移到独立页面</strong>
+            <small>上传、解析记录和文档删除管理统一在知识库上传页面完成。</small>
+            <el-button type="primary" @click="router.push({ name: 'knowledge-upload' })">打开知识库上传</el-button>
           </div>
           <div class="knowledge-search-row">
             <el-input v-model="knowledgeQuery" placeholder="搜索知识点、实验、资料来源" @keyup.enter="handleSearchKnowledge" />
             <el-button type="primary" :loading="searchingKnowledge" :disabled="!knowledgeQuery.trim()" @click="handleSearchKnowledge">
-              妫€绱?
+              检索
             </el-button>
           </div>
           <div class="knowledge-hit-list">
             <div v-for="hit in knowledgeHits" :key="`${hit.document_title}-${hit.content.slice(0, 16)}`">
-              <strong>{{ hit.knowledge_point }} 路 {{ hit.document_title }}</strong>
+              <strong>{{ hit.knowledge_point }} · {{ hit.document_title }}</strong>
               <p>{{ hit.content }}</p>
-              <small>{{ hit.document_type }} 路 {{ hit.source_uri }}</small>
+              <small>{{ hit.document_type }} · {{ hit.source_uri }}</small>
             </div>
             <el-empty v-if="knowledgeQuery && !knowledgeHits.length && !searchingKnowledge" description="没有检索到资料片段，请换一个知识点或关键词。" />
           </div>
@@ -88,10 +89,11 @@
           @search="handleSearchKnowledge"
           @select-node="selectKnowledgeNode"
         />
+
         <article class="panel-like workspace-panel">
-          <header><strong>鏁版嵁搴?RAG 闂瓟</strong><span>Retrieval QA</span></header>
+          <header><strong>数据库 RAG 问答</strong><span>Retrieval QA</span></header>
           <div class="rag-scope-row">
-            <el-select v-model="ragProjectId" clearable placeholder="鍏ㄩ儴椤圭洰璧勬枡">
+            <el-select v-model="ragProjectId" clearable placeholder="全部项目资料">
               <el-option
                 v-for="project in overview?.projects || []"
                 :key="project.id"
@@ -111,11 +113,11 @@
           />
           <div class="classroom-action-row">
             <el-button type="primary" :loading="generatingRag" :disabled="!ragQuestion.trim()" @click="handleRagAsk">
-              鍩轰簬鏁版嵁搴撳洖绛?
+              基于数据库回答
             </el-button>
           </div>
           <div v-if="ragAnswer" class="rag-answer">
-            <strong>鍥炵瓟</strong>
+            <strong>回答</strong>
             <p>{{ ragAnswer }}</p>
             <div v-if="ragResponse?.related_points.length" class="rag-tags">
               <el-tag v-for="point in ragResponse.related_points" :key="point" size="small" @click="searchByPoint(point)">
@@ -124,17 +126,17 @@
             </div>
             <small>
               {{ ragResponse?.used_llm ? '由后端 RAG 结合大模型生成' : '由后端 RAG 检索结果生成' }}
-              路 缃俊搴?{{ ragResponse?.confidence || 'medium' }}
+              · 置信度 {{ ragResponse?.confidence || 'medium' }}
             </small>
             <div v-if="ragResponse?.citations.length" class="citation-list">
               <div v-for="(citation, index) in ragResponse.citations" :key="citation.id" class="citation-card">
-                <span>鏉ユ簮 {{ index + 1 }} 路 {{ citation.source_type }}</span>
+                <span>来源 {{ index + 1 }} · {{ citation.source_type }}</span>
                 <strong>{{ citation.title }}</strong>
                 <p>{{ citation.content }}</p>
                 <small>{{ renderCitationMeta(citation) }}</small>
                 <div class="citation-actions">
-                  <el-button size="small" @click="locateCitation(citation)">瀹氫綅鐗囨</el-button>
-                  <el-button v-if="citation.review_url" size="small" @click="openCitationReview(citation)">鍥炵湅鏉愭枡</el-button>
+                  <el-button size="small" @click="locateCitation(citation)">定位片段</el-button>
+                  <el-button v-if="citation.review_url" size="small" @click="openCitationReview(citation)">回看材料</el-button>
                 </div>
               </div>
             </div>
@@ -147,7 +149,7 @@
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>娌夋穩鍐呭</strong><span>{{ overview?.resources.length || 0 }} items</span></header>
+          <header><strong>沉淀内容</strong><span>{{ overview?.resources.length || 0 }} items</span></header>
           <div class="resource-list">
             <div v-for="resource in overview?.resources || []" :key="resource.id" class="resource-card">
               <span>{{ resource.resource_type }}</span>
@@ -164,7 +166,7 @@
           <div class="knowledge-point-scroll compact">
             <button v-for="point in knowledgePoints" :key="point.id" type="button" @click="searchByPoint(point.name)">
               <strong>{{ point.name }}</strong>
-              <span>{{ point.chapter }} 路 {{ point.difficulty }}</span>
+              <span>{{ point.chapter }} · {{ point.difficulty }}</span>
               <small>{{ point.description }}</small>
             </button>
           </div>
@@ -174,48 +176,48 @@
       <section v-else-if="mode === 'literature'" class="workspace-grid two">
         <article class="panel-like workspace-panel">
           <header>
-            <strong>鏂板鏂囩尞</strong>
+            <strong>新增文献</strong>
             <span>Personal Library</span>
           </header>
           <el-form label-position="top" class="compact-form">
-            <el-form-item label="鏍囬">
+            <el-form-item label="标题">
               <el-input v-model="literatureForm.title" placeholder="论文或资料标题" />
             </el-form-item>
             <el-form-item label="作者">
-              <el-input v-model="literatureForm.authors" placeholder="澶氫釜浣滆€呯敤閫楀彿鍒嗛殧" />
+              <el-input v-model="literatureForm.authors" placeholder="多个作者用逗号分隔" />
             </el-form-item>
             <div class="form-row">
-              <el-form-item label="鏉ユ簮">
+              <el-form-item label="来源">
                 <el-input v-model="literatureForm.venue" placeholder="期刊、会议、课程资料" />
               </el-form-item>
-              <el-form-item label="骞翠唤">
+              <el-form-item label="年份">
                 <el-input v-model="literatureForm.year" placeholder="2026" />
               </el-form-item>
             </div>
-            <el-form-item label="鎽樿 / 绗旇">
+            <el-form-item label="摘要 / 笔记">
               <el-input v-model="literatureForm.abstract" type="textarea" :rows="5" />
             </el-form-item>
             <el-button type="primary" :loading="savingLiterature" :disabled="!literatureForm.title.trim()" @click="handleCreateLiterature">
-              淇濆瓨鏂囩尞
+              保存文献
             </el-button>
           </el-form>
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>鏂囩尞鍒楄〃</strong><span>{{ overview?.literature.length || 0 }} items</span></header>
+          <header><strong>文献列表</strong><span>{{ overview?.literature.length || 0 }} items</span></header>
           <div class="literature-list">
             <div v-for="paper in overview?.literature || []" :key="paper.id">
               <strong>{{ paper.title }}</strong>
               <p>{{ paper.abstract || paper.citation_text }}</p>
-              <small>{{ readingStatusLabel(paper.reading_status) }} 路 {{ paper.source_uri || paper.citation_text }}</small>
+              <small>{{ readingStatusLabel(paper.reading_status) }} · {{ paper.source_uri || paper.citation_text }}</small>
               <div class="literature-actions">
                 <el-select :model-value="paper.reading_status" size="small" @change="(status: string) => handleUpdateLiteratureStatus(paper.id, status)">
-                  <el-option label="鏈" value="unread" />
+                  <el-option label="未读" value="unread" />
                   <el-option label="精读中" value="reading" />
-                  <el-option label="宸茶" value="read" />
+                  <el-option label="已读" value="read" />
                   <el-option label="已引用" value="cited" />
                 </el-select>
-                <el-button size="small" @click="usePaperForTool(paper)">鐢ㄤ簬绮捐</el-button>
+                <el-button size="small" @click="usePaperForTool(paper)">用于精读</el-button>
               </div>
             </div>
           </div>
@@ -238,27 +240,27 @@
         </article>
 
         <article class="panel-like workspace-panel research-tool-runner">
-          <header><strong>{{ selectedTool?.label || '绉戠爺宸ュ叿' }}</strong><span>{{ selectedTool?.agent || 'ResearchToolAgent' }}</span></header>
+          <header><strong>{{ selectedTool?.label || '科研工具' }}</strong><span>{{ selectedTool?.agent || 'ResearchToolAgent' }}</span></header>
           <el-form label-position="top" class="compact-form">
-            <el-form-item label="杈撳叆鍐呭">
-              <el-input v-model="toolForm.input_text" type="textarea" :rows="8" :placeholder="selectedTool?.placeholder || '绮樿创璁烘枃娈佃惤銆佸疄楠屾柟妗堛€佺患杩版彁绾叉垨寮曠敤淇℃伅'" />
+            <el-form-item label="输入内容">
+              <el-input v-model="toolForm.input_text" type="textarea" :rows="8" :placeholder="selectedTool?.placeholder || '粘贴论文段落、实验方案、综述提纲或引用信息'" />
             </el-form-item>
-            <el-form-item label="琛ュ厖瑕佹眰">
+            <el-form-item label="补充要求">
               <el-input v-model="toolForm.extra_requirement" placeholder="例如：围绕我的研究方向，输出可直接用于课程论文的结构化结果" />
             </el-form-item>
             <el-button type="primary" :loading="runningTool" :disabled="!toolForm.input_text.trim()" @click="handleRunTool">
-              杩愯绉戠爺宸ュ叿
+              运行科研工具
             </el-button>
           </el-form>
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>鏈€杩戠粨鏋?/strong><span>History</span></header>
+          <header><strong>最近结果</strong><span>History</span></header>
           <div class="tool-run-list">
             <div v-for="run in visibleToolRuns" :key="run.id">
               <strong>{{ run.title }}</strong>
               <el-collapse>
-                <el-collapse-item title="鏌ョ湅鐢熸垚缁撴灉" :name="String(run.id)">
+                <el-collapse-item title="查看生成结果" :name="String(run.id)">
                   <p v-if="run.output_data.revised_text">{{ run.output_data.revised_text }}</p>
                   <p v-if="run.output_data.final_topic"><strong>最终选题：</strong>{{ run.output_data.final_topic }}</p>
                   <ul>
@@ -277,28 +279,28 @@
       </section>
     </template>
 
-    <el-drawer v-model="profileDrawerVisible" title="缂栬緫鐢诲儚鏉＄洰" size="420px">
+    <el-drawer v-model="profileDrawerVisible" title="编辑画像条目" size="420px">
       <el-form label-position="top" class="compact-form">
-        <el-form-item label="鐢诲儚缁村害">
+        <el-form-item label="画像维度">
           <el-select v-model="profileEntryForm.key" filterable :disabled="Boolean(profileEntryForm.editingKey)">
             <el-option v-for="entry in profileEntryOptions" :key="entry.key" :label="entry.label" :value="entry.key" />
           </el-select>
         </el-form-item>
-        <el-form-item label="鏉＄洰鍐呭">
+        <el-form-item label="条目内容">
           <el-input v-model="profileEntryForm.value" type="textarea" :rows="5" placeholder="例如：更适合图解 + 代码案例；薄弱点是矩阵运算和实验评价。" />
         </el-form-item>
         <el-form-item label="置信度">
           <el-slider v-model="profileEntryForm.confidence" :min="0" :max="100" />
         </el-form-item>
-        <el-form-item label="鏄惁褰卞搷涓€у寲鎺ㄨ崘">
-          <el-switch v-model="profileEntryForm.is_enabled" active-text="鍚敤" inactive-text="鍋滅敤" />
+        <el-form-item label="是否影响个性化推荐">
+          <el-switch v-model="profileEntryForm.is_enabled" active-text="启用" inactive-text="停用" />
         </el-form-item>
-        <el-form-item label="鏇存柊鍘熷洜">
+        <el-form-item label="更新原因">
           <el-input v-model="profileEntryForm.update_reason" />
         </el-form-item>
         <div class="drawer-actions">
-          <el-button @click="profileDrawerVisible = false">鍙栨秷</el-button>
-          <el-button type="primary" :loading="savingProfileEntry" @click="handleSaveProfileEntry">淇濆瓨鏉＄洰</el-button>
+          <el-button @click="profileDrawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="savingProfileEntry" @click="handleSaveProfileEntry">保存条目</el-button>
         </div>
       </el-form>
     </el-drawer>
@@ -368,7 +370,7 @@ const profileEntryForm = reactive({
   value: '',
   confidence: 90,
   is_enabled: true,
-  update_reason: '鐢ㄦ埛鎵嬪姩缂栬緫鐢诲儚鏉＄洰'
+  update_reason: '用户手动编辑画像条目'
 })
 
 const metaMap: Record<Mode, { eyebrow: string; title: string; description: string }> = {
@@ -385,26 +387,10 @@ const metrics = computed<WorkspaceMetric[]>(() => {
   const data = overview.value?.metrics || {}
   if (props.mode === 'profile') {
     return [
-      {
-        label: '画像完整度',
-        value: `${enabledProfileEntries.value.length}/${profileEntryOptions.length}`,
-        hint: '已启用画像维度'
-      },
-      {
-        label: '画像条目',
-        value: profileEntries.value.length,
-        hint: '可人工修正'
-      },
-      {
-        label: '平均置信度',
-        value: `${profileConfidenceAverage.value}%`,
-        hint: '低置信条目需复盘'
-      },
-      {
-        label: '当前版本',
-        value: `v${overview.value?.profile.current_revision || 0}`,
-        hint: '学习记录驱动更新'
-      }
+      { label: '画像完整度', value: `${enabledProfileEntries.value.length}/${profileEntryOptions.length}`, hint: '已启用画像维度' },
+      { label: '画像条目', value: profileEntries.value.length, hint: '可人工修正' },
+      { label: '平均置信度', value: `${profileConfidenceAverage.value}%`, hint: '低置信条目需复盘' },
+      { label: '当前版本', value: `v${overview.value?.profile.current_revision || 0}`, hint: '学习记录驱动更新' }
     ]
   }
   if (props.mode === 'resources') {
@@ -458,7 +444,7 @@ const toolOptions = [
   { label: '论文复现', value: 'reproduce' as ToolType, agent: 'ReproduceAgent', description: '拆解复现步骤、代码骨架、数据准备和验收证据。', placeholder: '输入论文或开源项目链接，生成复现计划。' },
   { label: '模拟答辩', value: 'defense' as ToolType, agent: 'DefenseAgent', description: '生成开题、中期、答辩问题、追问、评分和修改建议。', placeholder: '粘贴你的题目、摘要或论文初稿，生成模拟答辩。' }
 ]
-const toolTitle = computed(() => props.mode === 'methods' ? '绉戠爺鏂规硶宸ュ叿' : '璁烘枃鍐欎綔宸ュ叿')
+const toolTitle = computed(() => props.mode === 'methods' ? '科研方法工具' : '论文写作工具')
 const visibleToolOptions = computed(() => {
   if (props.mode === 'methods') return toolOptions.filter((item) => ['method', 'experiment', 'reproduce', 'defense'].includes(item.value))
   return toolOptions.filter((item) => ['topic', 'paper_reading', 'review', 'polish', 'format', 'citation', 'defense'].includes(item.value))
@@ -478,19 +464,19 @@ function literatureStatusCount(status: string) {
 }
 
 const profileEntryOptions = [
-  { key: 'knowledge_base', label: '鐭ヨ瘑鍩虹' },
-  { key: 'learning_goal', label: '瀛︿範鐩爣' },
-  { key: 'cognitive_style', label: '璁ょ煡椋庢牸' },
+  { key: 'knowledge_base', label: '知识基础' },
+  { key: 'learning_goal', label: '学习目标' },
+  { key: 'cognitive_style', label: '认知风格' },
   { key: 'weak_points', label: '易错点' },
-  { key: 'practice_level', label: '瀹炶返鑳藉姏' },
-  { key: 'resource_preference', label: '璧勬簮鍋忓ソ' },
-  { key: 'learning_pace', label: '瀛︿範鑺傚' },
-  { key: 'interest_direction', label: '鍏磋叮鏂瑰悜' },
-  { key: 'current_research_direction', label: '褰撳墠绉戠爺鏂瑰悜' },
-  { key: 'academic_writing', label: '瀛︽湳鍐欎綔鑳藉姏' },
-  { key: 'literature_reading', label: '鏂囩尞闃呰鑳藉姏' },
-  { key: 'coding_practice', label: '浠ｇ爜瀹炶返鑳藉姏' },
-  { key: 'experiment_design', label: '瀹為獙璁捐鑳藉姏' }
+  { key: 'practice_level', label: '实践能力' },
+  { key: 'resource_preference', label: '资源偏好' },
+  { key: 'learning_pace', label: '学习节奏' },
+  { key: 'interest_direction', label: '兴趣方向' },
+  { key: 'current_research_direction', label: '当前科研方向' },
+  { key: 'academic_writing', label: '学术写作能力' },
+  { key: 'literature_reading', label: '文献阅读能力' },
+  { key: 'coding_practice', label: '代码实践能力' },
+  { key: 'experiment_design', label: '实验设计能力' }
 ]
 
 onMounted(async () => {
@@ -597,7 +583,7 @@ async function handleCreateLiterature() {
 
 async function handleUpdateLiteratureStatus(paperId: number, status: string) {
   await updateLiterature(paperId, { reading_status: status })
-  ElMessage.success('鏂囩尞闃呰鐘舵€佸凡鏇存柊')
+  ElMessage.success('文献阅读状态已更新')
   await loadOverview()
 }
 
@@ -606,7 +592,7 @@ function usePaperForTool(paper: LiteraturePaperRead) {
     tool_type: 'paper_reading' as ToolType,
     input_text: [
       `标题：${paper.title}`,
-      `浣滆€咃細${paper.authors.join(', ')}`,
+      `作者：${paper.authors.join(', ')}`,
       `来源：${paper.venue} ${paper.year}`,
       `链接/来源：${paper.source_uri}`,
       `摘要：${paper.abstract}`,
@@ -651,8 +637,8 @@ async function handleSaveProfileEntry() {
 
 async function handleDeleteProfileEntry(entry: ProfileEntryRead) {
   await ElMessageBox.confirm(`删除「${entry.label}」后，它不会再参与项目规划和课堂生成。`, '删除画像条目', {
-    confirmButtonText: '鍒犻櫎',
-    cancelButtonText: '鍙栨秷',
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
     type: 'warning'
   })
   const { data } = await deleteProfileEntry(entry.key)
@@ -719,7 +705,7 @@ async function handleRunTool() {
       input_text: toolForm.input_text,
       extra_requirement: toolForm.extra_requirement
     })
-    ElMessage.success(`宸茬敓鎴愶細${data.title}`)
+    ElMessage.success(`已生成：${data.title}`)
     toolForm.input_text = ''
     toolForm.extra_requirement = ''
     await loadOverview()
@@ -745,9 +731,9 @@ function normalizeProfileEntryValue(key: string, value: string) {
 
 function readingStatusLabel(status: string) {
   const labels: Record<string, string> = {
-    unread: '鏈',
+    unread: '未读',
     reading: '精读中',
-    read: '宸茶',
+    read: '已读',
     cited: '已引用'
   }
   return labels[status] || status
@@ -781,7 +767,7 @@ function compactOutput(data: Record<string, any>) {
 }
 
 function renderDefenseQuestion(value: Record<string, any>) {
-  const stage = value.stage || value.type || '绛旇京'
+  const stage = value.stage || value.type || '答辩'
   const question = value.question || value.prompt || JSON.stringify(value)
   const followUp = value.follow_up || value.followup || value.follow_up_question
   return followUp ? `${stage}：${question} 追问：${followUp}` : `${stage}：${question}`
