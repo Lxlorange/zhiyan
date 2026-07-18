@@ -45,11 +45,11 @@
           :auto-upload="false"
           :show-file-list="true"
           :limit="1"
-          :file-list="selectedUploadFiles"
+          v-model:file-list="selectedUploadFiles"
           :disabled="uploading"
           :on-change="handleUploadSelect"
+          :on-exceed="handleUploadExceed"
           :on-remove="handleUploadRemove"
-          :before-upload="validateUploadFile"
         >
           <div class="knowledge-upload-drop-inner">
             <strong>{{ selectedUploadFile ? selectedUploadFile.name : '拖拽或点击选择资料包' }}</strong>
@@ -343,9 +343,29 @@ function handleUploadSelect(uploadFile: UploadFile, uploadFiles: UploadUserFile[
   selectedUploadFiles.value = uploadFiles.slice(-1)
 }
 
+function handleUploadExceed(files: File[]) {
+  const raw = files[0]
+  if (!raw) return
+  if (!validateUploadFile(raw)) {
+    clearSelectedUpload()
+    return
+  }
+  selectedUploadFile.value = raw
+  selectedUploadFiles.value = [
+    {
+      name: raw.name,
+      percentage: 0,
+      raw,
+      size: raw.size,
+      status: 'ready',
+      uid: Date.now()
+    } as UploadUserFile
+  ]
+}
+
 function handleUploadRemove(_uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
   selectedUploadFiles.value = uploadFiles
-  selectedUploadFile.value = null
+  selectedUploadFile.value = (uploadFiles[0]?.raw as File | undefined) || null
 }
 
 function clearSelectedUpload() {
@@ -354,8 +374,11 @@ function clearSelectedUpload() {
 }
 
 async function handleUploadConfirm() {
-  const raw = selectedUploadFile.value
-  if (!raw) return
+  const raw = selectedUploadFile.value || (selectedUploadFiles.value[0]?.raw as File | undefined) || null
+  if (!raw) {
+    ElMessage.warning('请先选择一个需要分析的资料文件。')
+    return
+  }
   if (!validateUploadFile(raw)) return
   uploading.value = true
   try {

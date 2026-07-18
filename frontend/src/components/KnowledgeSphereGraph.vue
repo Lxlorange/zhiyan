@@ -242,7 +242,7 @@ const FOV = 1400
 const WORLD_HEIGHT = 980
 const SPIN_SPEED = 0.00018
 const MAX_DRAW_EDGES = 900
-const palette = ['#dc8b5e', '#c4daeb', '#cadab2', '#fadfa7', '#f0cebb', '#9ebecf', '#c9a06e', '#b97b74']
+const palette = ['#dc8b5e', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#a05a34', '#4f8b78']
 
 const canvasHost = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -545,8 +545,8 @@ function positionForNode(
   const baseAngle = (localIndex / count) * Math.PI * 2
   const categoryOffset = (hashString(categoryKey(node)) % 360) / 360 * Math.PI * 2
   const angle = baseAngle + categoryOffset * 0.33 + (hashString(node.id) % 17) * 0.018
-  const funnelRadius = 120 + (1 - yNorm) * 360
-  const jitter = (hashString(`${node.id}:r`) % 72) - 36
+  const funnelRadius = 72 + (1 - yNorm) * 438
+  const jitter = (hashString(`${node.id}:r`) % 44) - 22
   const radius = funnelRadius + jitter
   return {
     x: Math.cos(angle) * radius,
@@ -561,7 +561,7 @@ function pathPosition(node: KnowledgeLinkNode, path: Record<string, unknown>): V
   const t = total <= 1 ? 0.5 : (order - 1) / Math.max(1, total - 1)
   const y = (0.12 + t * 0.78) * WORLD_HEIGHT
   const angle = order * 1.22 + (hashString(node.id) % 19) * 0.03
-  const radius = 52 + (order % 4) * 16
+  const radius = 28 + (order % 4) * 9 + (1 - t) * 88
   return {
     x: Math.cos(angle) * radius,
     y,
@@ -571,7 +571,7 @@ function pathPosition(node: KnowledgeLinkNode, path: Record<string, unknown>): V
 
 function evidencePosition(node: KnowledgeLinkNode, index: number): Vec3 {
   const angle = index * 2.399 + (hashString(node.id) % 91) * 0.01
-  const radius = 365 + (hashString(`${node.id}:doc`) % 90)
+  const radius = 395 + (hashString(`${node.id}:doc`) % 78)
   return {
     x: Math.cos(angle) * radius,
     y: WORLD_HEIGHT * (0.04 + (index % 4) * 0.025),
@@ -592,9 +592,9 @@ function targetPosition(node: KnowledgeLinkNode, index: number): Vec3 {
 function isolatedPosition(node: KnowledgeLinkNode, isolatedNodes: KnowledgeLinkNode[]): Vec3 {
   const localIndex = Math.max(0, isolatedNodes.findIndex((item) => item.id === node.id))
   const angle = localIndex * 2.399963 + (hashString(node.id) % 37) * 0.04
-  const ring = 125 + (localIndex % 5) * 34
+  const ring = 96 + (localIndex % 5) * 26
   return {
-    x: 575 + Math.cos(angle) * ring * 0.75,
+    x: 600 + Math.cos(angle) * ring * 0.72,
     y: WORLD_HEIGHT * (0.18 + ((localIndex * 7) % 61) / 100),
     z: Math.sin(angle) * ring
   }
@@ -675,14 +675,14 @@ function drawFunnelGuides(ctx: CanvasRenderingContext2D) {
   const levels = [0.1, 0.32, 0.54, 0.76, 0.94]
   levels.forEach((level, index) => {
     const y = level * WORLD_HEIGHT
-    const radius = 120 + (1 - level) * 360
+    const radius = 72 + (1 - level) * 438
     const points: Array<{ x: number; y: number }> = []
     for (let i = 0; i <= 96; i += 1) {
       const angle = (i / 96) * Math.PI * 2
       const projected = projectPoint({ x: Math.cos(angle) * radius, y, z: Math.sin(angle) * radius })
       points.push({ x: projected.sx, y: projected.sy })
     }
-    ctx.strokeStyle = index === levels.length - 1 ? 'rgba(220,139,94,0.24)' : 'rgba(151,122,98,0.12)'
+    ctx.strokeStyle = index === levels.length - 1 ? 'rgba(220,139,94,0.3)' : 'rgba(92,92,92,0.16)'
     ctx.beginPath()
     points.forEach((point, pointIndex) => {
       if (pointIndex === 0) ctx.moveTo(point.x, point.y)
@@ -730,7 +730,7 @@ function drawEdges(ctx: CanvasRenderingContext2D) {
     const depth = Math.max(0.35, Math.min(1.15, (source.pf + target.pf) / 2))
 
     ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha * depth})`
-    ctx.lineWidth = inLineage || worldEdge.path ? 1.7 : worldEdge.edge.relation === 'prerequisite' ? 1.05 : 0.85
+    ctx.lineWidth = inLineage || worldEdge.path ? 1.35 : worldEdge.edge.relation === 'prerequisite' ? 0.85 : 0.62
     ctx.beginPath()
     ctx.moveTo(source.sx, source.sy)
     ctx.lineTo(target.sx, target.sy)
@@ -765,45 +765,27 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     if (viewMode.value === 'path' && !path && !selected) dim *= node.layer === 'project' ? 0.35 : 0.22
     if (viewMode.value === 'evidence' && !['document', 'knowledge_base'].includes(node.layer) && !path) dim *= 0.22
 
-    const r = projected.radius * (selected ? 1.62 : hovered ? 1.42 : path ? 1.18 : 1)
-    const alpha = dim * (0.52 + 0.48 * Math.min(1, projected.pf * projected.pf))
+    const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : path ? 1.18 : 1)
+    const alpha = Math.min(1, dim * (0.62 + 0.38 * Math.min(1, projected.pf * projected.pf)))
     const [red, green, blue] = worldNode.rgb
 
-    if (selected || hovered || lineage || path) {
-      ctx.shadowColor = `rgba(${red}, ${green}, ${blue}, ${selected || hovered ? 0.54 : 0.32})`
-      ctx.shadowBlur = selected || hovered ? 18 : 8
-    } else {
-      ctx.shadowBlur = 0
-    }
-
-    const fill = ctx.createRadialGradient(
-      projected.sx - r * 0.36,
-      projected.sy - r * 0.42,
-      Math.max(1, r * 0.08),
-      projected.sx,
-      projected.sy,
-      r
-    )
-    fill.addColorStop(0, `rgba(255, 255, 255, ${0.92 * alpha})`)
-    fill.addColorStop(0.34, `rgba(${red}, ${green}, ${blue}, ${0.88 * alpha})`)
-    fill.addColorStop(1, `rgba(${Math.max(0, red - 48)}, ${Math.max(0, green - 48)}, ${Math.max(0, blue - 48)}, ${alpha})`)
-    ctx.fillStyle = fill
+    ctx.shadowBlur = 0
+    ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.shadowBlur = 0
-    ctx.strokeStyle = `rgba(65, 54, 46, ${0.28 * dim})`
-    ctx.lineWidth = Math.max(0.8, projected.pf)
+    ctx.strokeStyle = selected || hovered || lineage || path ? '#172033' : `rgba(23, 32, 51, ${0.22 * dim})`
+    ctx.lineWidth = selected || hovered ? 1.3 : lineage || path ? 0.95 : 0.55
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
     ctx.stroke()
 
     if (selected || hovered) {
       ctx.strokeStyle = selected ? '#dc8b5e' : '#172033'
-      ctx.lineWidth = 1.8
+      ctx.lineWidth = 1.15
       ctx.beginPath()
-      ctx.arc(projected.sx, projected.sy, r + 4, 0, Math.PI * 2)
+      ctx.arc(projected.sx, projected.sy, r + 2.8, 0, Math.PI * 2)
       ctx.stroke()
     }
 
@@ -815,7 +797,7 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
 function drawPathOrder(ctx: CanvasRenderingContext2D, node: KnowledgeLinkNode, projected: ProjectedNode, radius: number) {
   const order = Number(node.meta?.path?.order || 0)
   if (!order) return
-  const badgeRadius = Math.max(8, Math.min(13, radius * 0.62))
+  const badgeRadius = Math.max(5.5, Math.min(8.5, radius * 0.72))
   const x = projected.sx + radius * 0.6
   const y = projected.sy - radius * 0.7
   ctx.fillStyle = '#172033'
@@ -838,7 +820,7 @@ function drawArrow(ctx: CanvasRenderingContext2D, source: ProjectedNode, target:
   const uy = dy / length
   const endX = target.sx - ux * Math.max(8, target.radius * 1.15)
   const endY = target.sy - uy * Math.max(8, target.radius * 1.15)
-  const size = Math.max(4.6, Math.min(8, target.radius * 0.68))
+  const size = Math.max(3.2, Math.min(5.2, target.radius * 0.78))
   ctx.fillStyle = color
   ctx.beginPath()
   ctx.moveTo(endX, endY)
@@ -851,13 +833,13 @@ function drawArrow(ctx: CanvasRenderingContext2D, source: ProjectedNode, target:
 function projectNodes() {
   worldNodes.forEach((node) => {
     const projected = projectPoint(node)
-    const scaleBoost = Math.min(1.6, Math.max(0.86, zoom))
-    const radius = (2.2 + Math.sqrt(node.countWeight) * node.radius) * projected.pf * scaleBoost
+    const scaleBoost = Math.min(1.24, Math.max(0.8, zoom))
+    const radius = (0.9 + Math.sqrt(node.countWeight) * node.radius * 0.22) * projected.pf * scaleBoost
     projectedNodes[node.index] = {
       sx: projected.sx,
       sy: projected.sy,
       pf: projected.pf,
-      radius: Math.max(3.2, Math.min(28, radius)),
+      radius: Math.max(1.5, Math.min(5.2, radius)),
       visible: node.appear <= grow || reduceMotion
     }
   })
@@ -903,7 +885,7 @@ function edgeAlpha(edge: WorldEdge, hasSelection: boolean, inLineage: boolean) {
 
 function pickNode(x: number, y: number) {
   let best = -1
-  let bestDistance = 24 * 24
+  let bestDistance = 18 * 18
   for (let index = 0; index < worldNodes.length; index += 1) {
     const node = worldNodes[index]
     const projected = projectedNodes[index]
@@ -911,7 +893,7 @@ function pickNode(x: number, y: number) {
     const dx = projected.sx - x
     const dy = projected.sy - y
     const distance = dx * dx + dy * dy
-    const threshold = Math.max(12, projected.radius + 7)
+    const threshold = Math.max(8, projected.radius + 6)
     if (distance < threshold * threshold && distance < bestDistance) {
       best = index
       bestDistance = distance
@@ -1140,19 +1122,19 @@ function resizeCanvas() {
 
 function nodeRadius(node: KnowledgeLinkNode) {
   const weight = Math.max(1, Number(node.weight || 1))
-  const pathBoost = pathNodeIds.value.has(node.id) ? 1.5 : 0
-  if (node.layer === 'project') return 5.4 + pathBoost
-  if (node.layer === 'document') return 3.4 + Math.min(3.2, Math.log(weight + 1) * 0.72)
-  if (node.layer === 'platform') return 3.1 + pathBoost
-  if (node.layer === 'knowledge_base') return 3.0 + Math.min(3.8, Math.log(weight + 1) * 0.82) + pathBoost
-  return 2.8 + Math.min(3.5, Math.log(weight + 1) * 0.8)
+  const pathBoost = pathNodeIds.value.has(node.id) ? 0.8 : 0
+  if (node.layer === 'project') return 2.8 + pathBoost
+  if (node.layer === 'document') return 1.8 + Math.min(1.1, Math.log(weight + 1) * 0.24)
+  if (node.layer === 'platform') return 1.8 + pathBoost
+  if (node.layer === 'knowledge_base') return 2.1 + Math.min(1.4, Math.log(weight + 1) * 0.28) + pathBoost
+  return 1.7 + Math.min(1.2, Math.log(weight + 1) * 0.26)
 }
 
 function nodeColor(node: KnowledgeLinkNode) {
   if (pathNodeIds.value.has(node.id)) return '#dc8b5e'
   if (node.layer === 'project') return '#dc8b5e'
-  if (node.layer === 'document') return '#fadfa7'
-  if (node.layer === 'platform') return '#cadab2'
+  if (node.layer === 'document') return '#b99126'
+  if (node.layer === 'platform') return '#6f8f49'
   return categoryColor(categoryKey(node))
 }
 
@@ -1166,17 +1148,17 @@ function categoryLabel(key: string) {
 }
 
 function categoryColor(key: string) {
-  if (key === '平台功能介绍') return '#cadab2'
-  if (key.includes('文献') || key.includes('论文')) return '#c4daeb'
+  if (key === '平台功能介绍') return '#6f8f49'
+  if (key.includes('文献') || key.includes('论文')) return '#2f7fa3'
   if (key.includes('项目')) return '#dc8b5e'
-  if (key.includes('资料') || key.includes('pdf') || key.includes('document')) return '#fadfa7'
+  if (key.includes('资料') || key.includes('pdf') || key.includes('document')) return '#b99126'
   return palette[hashString(key) % palette.length]
 }
 
 function edgeRgb(edge: KnowledgeLinkEdge): [number, number, number] {
-  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? [220, 139, 94] : [196, 149, 93]
-  if (edge.relation === 'evidence') return [141, 169, 190]
-  return [126, 148, 105]
+  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? [154, 85, 43] : [104, 104, 104]
+  if (edge.relation === 'evidence') return [93, 121, 141]
+  return [103, 127, 74]
 }
 
 function nodeSubtitle(node: KnowledgeLinkNode) {
@@ -1322,7 +1304,7 @@ function normalizedAngle(value: number) {
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 24px 70px rgba(86, 62, 46, 0.12);
+  box-shadow: 0 20px 54px rgba(60, 48, 42, 0.1);
   cursor: grab;
   touch-action: none;
 }
@@ -1347,9 +1329,9 @@ function normalizedAngle(value: number) {
 .knowledge-sphere-actions,
 .knowledge-sphere-tooltip,
 .knowledge-sphere-categories {
-  border: 1px solid rgba(220, 139, 94, 0.16);
-  background: rgba(255, 253, 249, 0.86);
-  box-shadow: 0 14px 34px rgba(86, 62, 46, 0.12);
+  border: 1px solid rgba(70, 74, 82, 0.12);
+  background: rgba(255, 253, 249, 0.9);
+  box-shadow: 0 12px 28px rgba(58, 54, 49, 0.1);
   backdrop-filter: blur(14px);
 }
 
@@ -1445,8 +1427,8 @@ function normalizedAngle(value: number) {
   align-items: center;
   gap: 7px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #4c4139;
+  background: rgba(255, 255, 255, 0.76);
+  color: #383c44;
 }
 
 .knowledge-sphere-categories button.off {
@@ -1454,9 +1436,10 @@ function normalizedAngle(value: number) {
 }
 
 .knowledge-sphere-categories i {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(23, 32, 51, 0.16);
 }
 
 .knowledge-sphere-categories b {

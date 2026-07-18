@@ -7,6 +7,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models.learning import (
+    Course,
     CourseChapter,
     DocumentChunk,
     KnowledgeDocument,
@@ -187,6 +188,8 @@ def _load_database_points(
             KnowledgePoint.difficulty.label("difficulty"),
             CourseChapter.id.label("chapter_id"),
             CourseChapter.title.label("chapter"),
+            Course.title.label("course_title"),
+            KnowledgeDocument.course_code.label("course_code"),
             func.count(DocumentChunk.id).label("chunk_count"),
             func.count(func.distinct(KnowledgeDocument.id)).label("document_count"),
             func.array_agg(func.distinct(KnowledgeDocument.title)).label("document_titles"),
@@ -194,6 +197,7 @@ def _load_database_points(
             func.array_agg(func.distinct(DocumentChunk.section_title)).label("section_titles"),
         )
         .join(CourseChapter, KnowledgePoint.chapter_id == CourseChapter.id)
+        .join(Course, Course.id == CourseChapter.course_id)
         .join(DocumentChunk, DocumentChunk.knowledge_point_id == KnowledgePoint.id)
         .join(KnowledgeDocument, KnowledgeDocument.id == DocumentChunk.document_id)
         .where(KnowledgeDocument.id.in_(document_ids))
@@ -206,6 +210,8 @@ def _load_database_points(
             KnowledgePoint.difficulty,
             CourseChapter.id,
             CourseChapter.title,
+            Course.title,
+            KnowledgeDocument.course_code,
         )
     )
 
@@ -215,6 +221,7 @@ def _load_database_points(
             KnowledgePoint.name.ilike(like)
             | KnowledgePoint.description.ilike(like)
             | CourseChapter.title.ilike(like)
+            | Course.title.ilike(like)
             | KnowledgeDocument.title.ilike(like)
             | DocumentChunk.content.ilike(like)
         )
@@ -272,7 +279,26 @@ def _load_profile_data(db: Session, user: User) -> dict[str, Any]:
 def _clean_point_row(row: dict[str, Any]) -> dict[str, Any]:
     for key in ["document_titles", "document_types", "section_titles"]:
         row[key] = [str(item) for item in (row.get(key) or []) if item]
+    row["course_title"] = str(row.get("course_title") or row.get("chapter") or "知识库")
+    row["course_code"] = str(row.get("course_code") or "")
     return row
+
+
+def _point_category(row: dict[str, Any]) -> str:
+    course_title = str(row.get("course_title") or "").strip()
+    if course_title and course_title not in {"个人知识库", "导入课件资料"}:
+        return course_title
+    tags = [str(item).strip() for item in row.get("tags") or [] if str(item).strip()]
+    for tag in tags:
+        if tag not in {"imported", "courseware", "知识库", "个人知识库"}:
+            return tag
+    chapter = str(row.get("chapter") or "").strip()
+    if chapter and chapter != "导入课件资料":
+        return chapter
+    titles = [str(item).strip() for item in row.get("document_titles") or [] if str(item).strip()]
+    if titles:
+        return titles[0][:80]
+    return "知识点"
 
 
 def _add_project_nodes(nodes: dict[str, KnowledgeLinkNode], projects: list[LearningProject]) -> list[KnowledgeLinkNode]:
@@ -340,17 +366,21 @@ def _add_knowledge_base_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[di
     result: list[KnowledgeLinkNode] = []
     for row in rows:
         point_name = str(row["name"])
+        category = _point_category(row)
         node = KnowledgeLinkNode(
             id=f"kb:{row['point_id']}",
             label=point_name,
             layer="knowledge_base",
-            category=str(row.get("chapter") or "知识点"),
+            category=category,
             description=str(row.get("description") or ""),
             weight=max(1, int(row.get("chunk_count") or 1)),
             meta={
                 "point_id": row.get("point_id"),
                 "chapter_id": row.get("chapter_id"),
                 "chapter": row.get("chapter", ""),
+                "course_title": row.get("course_title", ""),
+                "course_code": row.get("course_code", ""),
+                "category": category,
                 "chunk_count": int(row.get("chunk_count") or 0),
                 "document_count": int(row.get("document_count") or 0),
                 "document_titles": row.get("document_titles") or [],
@@ -501,12 +531,17 @@ def _link_document_sequence_edges(
     if not document_ids or not by_id:
         return []
     chunks = db.execute(
-        select(DocumentChunk.document_id, DocumentChunk.knowledge_point_id, DocumentChunk.chunk_index)
+        select(
+            DocumentChunk.document_id,
+            DocumentChunk.knowledge_point_id,
+            DocumentChunk.chunk_index,
+            DocumentChunk.section_title,
+        )
         .where(DocumentChunk.document_id.in_(document_ids), DocumentChunk.knowledge_point_id.is_not(None))
         .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
     ).all()
     points_by_doc: dict[int, list[str]] = defaultdict(list)
-    for document_id, point_id, _chunk_index in chunks:
+    for document_id, point_id, _chunk_index, _section_title in chunks:
         point_key = str(point_id)
         if point_key in by_id:
             points_by_doc[int(document_id)].append(point_key)
@@ -532,7 +567,7 @@ def _link_document_sequence_edges(
                 source=left_node.id,
                 target=right_node.id,
                 relation="prerequisite",
-                strength="soft",
+                strength="hard" if count >= 2 else "soft",
                 reason=f"按上传资料中的出现顺序推断：前者应先理解，再进入后者（出现 {count} 次）。",
             )
         )
@@ -561,7 +596,10 @@ def _enforce_dag_edges(
         result.append(edge)
         if edge.relation == "prerequisite":
             graph[edge.source].add(edge.target)
-    return result[:620]
+    prerequisite_edges = [edge for edge in result if edge.relation == "prerequisite"]
+    evidence_edges = [edge for edge in result if edge.relation == "evidence"]
+    focus_edges = [edge for edge in result if edge.relation == "focuses"]
+    return [*prerequisite_edges[:420], *focus_edges[:90], *evidence_edges[:140]][:620]
 
 
 def _has_path(graph: dict[str, set[str]], start: str, target: str) -> bool:
@@ -582,12 +620,15 @@ def _annotate_graph_topology(nodes: dict[str, KnowledgeLinkNode], edges: list[Kn
     prerequisite_edges = [edge for edge in edges if edge.relation == "prerequisite"]
     incoming: dict[str, int] = {node_id: 0 for node_id in nodes}
     outgoing: dict[str, int] = {node_id: 0 for node_id in nodes}
+    prereq_degree: dict[str, int] = {node_id: 0 for node_id in nodes}
     children: dict[str, list[str]] = defaultdict(list)
     for edge in edges:
         outgoing[edge.source] = outgoing.get(edge.source, 0) + 1
         incoming[edge.target] = incoming.get(edge.target, 0) + 1
         if edge.relation == "prerequisite":
             children[edge.source].append(edge.target)
+            prereq_degree[edge.source] = prereq_degree.get(edge.source, 0) + 1
+            prereq_degree[edge.target] = prereq_degree.get(edge.target, 0) + 1
 
     prereq_incoming: dict[str, int] = {node_id: 0 for node_id in nodes}
     for edge in prerequisite_edges:
@@ -608,8 +649,9 @@ def _annotate_graph_topology(nodes: dict[str, KnowledgeLinkNode], edges: list[Kn
         node.meta["in_degree"] = incoming.get(node_id, 0)
         node.meta["out_degree"] = outgoing.get(node_id, 0)
         node.meta["degree"] = degree
+        node.meta["prerequisite_degree"] = prereq_degree.get(node_id, 0)
         node.meta["dag_level"] = levels.get(node_id, 0)
-        node.meta["is_isolated"] = degree == 0
+        node.meta["is_isolated"] = prereq_degree.get(node_id, 0) == 0 and node.layer == "knowledge_base"
 
 
 def _build_path_suggestions(

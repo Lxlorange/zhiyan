@@ -317,13 +317,16 @@ async def import_knowledge_upload(
         job.total_files = len(parsed_files)
         db.commit()
         db.refresh(job)
+        course = _ensure_course(db, course_code, course_title)
+        chapter = _ensure_import_chapter(db, course)
+        point_cache = _load_point_cache(db, chapter.id)
         for parsed in parsed_files:
             try:
                 if rebuild_course and total_chunks == 0 and job.parsed_files == 0 and job.failed_files == 0:
                     _clear_course_imports(db, course_code)
-                course = _ensure_course(db, course_code, course_title)
-                chapter = _ensure_import_chapter(db, course)
-                point_cache = _load_point_cache(db)
+                    course = _ensure_course(db, course_code, course_title)
+                    chapter = _ensure_import_chapter(db, course)
+                    point_cache = _load_point_cache(db, chapter.id)
                 chunks = _persist_parsed_file(db, course, chapter, point_cache, parsed)
                 total_chunks += chunks
                 job.parsed_files += 1
@@ -658,14 +661,23 @@ def _ensure_import_chapter(db: Session, course: Course) -> CourseChapter:
         select(CourseChapter).where(CourseChapter.course_id == course.id, CourseChapter.order_index == 999)
     )
     if chapter is None:
-        chapter = CourseChapter(course_id=course.id, order_index=999, title="导入课件资料", summary="由教师课件、习题和解析自动导入的资料。")
+        chapter = CourseChapter(
+            course_id=course.id,
+            order_index=999,
+            title=course.title,
+            summary="由用户上传资料自动提取、去重并归并的知识点。",
+        )
         db.add(chapter)
         db.flush()
+    else:
+        chapter.title = course.title
+        chapter.summary = "由用户上传资料自动提取、去重并归并的知识点。"
     return chapter
 
 
-def _load_point_cache(db: Session) -> dict[str, KnowledgePoint]:
-    return {point.name: point for point in db.scalars(select(KnowledgePoint)).all()}
+def _load_point_cache(db: Session, chapter_id: int) -> dict[str, KnowledgePoint]:
+    points = db.scalars(select(KnowledgePoint).where(KnowledgePoint.chapter_id == chapter_id)).all()
+    return {_point_cache_key(point.name): point for point in points}
 
 
 def _clear_course_imports(db: Session, course_code: str) -> None:
@@ -721,9 +733,9 @@ def _persist_parsed_file(
 
     chunks = list(_chunk_sections(parsed.sections))
     for index, section in enumerate(chunks, start=1):
-        point_name = _infer_point_name(title, section.text)
-        point = _ensure_point(db, chapter, point_cache, point_name, section.text)
         safe_content = _clean_text(section.text)
+        point_name = _infer_point_name(title, section)
+        point = _ensure_point(db, chapter, point_cache, point_name, safe_content, title)
         db.add(
             DocumentChunk(
                 document_id=document.id,
@@ -750,22 +762,34 @@ def _ensure_point(
     point_cache: dict[str, KnowledgePoint],
     name: str,
     text_value: str,
+    source_title: str,
 ) -> KnowledgePoint:
-    safe_name = _clean_text(name)[:128] or "导入知识点"
-    point = point_cache.get(safe_name)
+    safe_name = _normalize_point_name(name)[:128] or _normalize_point_name(source_title)[:128] or "导入知识点"
+    cache_key = _point_cache_key(safe_name)
+    point = point_cache.get(cache_key)
     if point is None:
         safe_description = _clean_text(text_value)[:300]
+        source_category = _clean_text(chapter.title)[:80] or "知识库"
         point = KnowledgePoint(
             chapter_id=chapter.id,
             name=safe_name,
             description=safe_description,
             prerequisites=[],
-            tags=["imported", "courseware"],
-            difficulty="medium",
+            tags=["imported", source_category, _clean_text(source_title)[:80]],
+            difficulty=_infer_difficulty(safe_name, text_value),
         )
         db.add(point)
         db.flush()
-        point_cache[safe_name] = point
+        point_cache[cache_key] = point
+    else:
+        if len(point.description or "") < 80:
+            point.description = _clean_text(text_value)[:300]
+        source_category = _clean_text(chapter.title)[:80] or "知识库"
+        tags = [str(item) for item in (point.tags or []) if item]
+        for item in ["imported", source_category, _clean_text(source_title)[:80]]:
+            if item and item not in tags:
+                tags.append(item)
+        point.tags = tags[:12]
     return point
 
 
@@ -906,13 +930,58 @@ def embed_text(text_value: str) -> list[float]:
     return vector
 
 
-def _infer_point_name(title: str, text_value: str) -> str:
-    candidates = [line.strip("# ：:") for line in text_value.splitlines() if line.strip()]
-    if candidates:
-        candidate = candidates[0]
-        if 2 <= len(candidate) <= 40:
-            return candidate[:128]
-    return title[:128] or "导入知识点"
+def _infer_point_name(title: str, section: ParsedSection) -> str:
+    section_title = _normalize_point_name(section.section_title)
+    if section_title and not _is_generic_section_title(section_title):
+        return section_title
+    for line in section.text.splitlines()[:8]:
+        candidate = _normalize_point_name(line)
+        if candidate:
+            return candidate
+    return _normalize_point_name(title) or "导入知识点"
+
+
+def _normalize_point_name(value: object) -> str:
+    text_value = _clean_text(value)
+    text_value = re.sub(r"^第?\s*\d+\s*[章节讲页幻灯片、.\-_\s]*", "", text_value, flags=re.IGNORECASE)
+    text_value = re.sub(r"^(chapter|section|slide|page)\s*\d*[:：.\-\s]*", "", text_value, flags=re.IGNORECASE)
+    text_value = re.sub(r"^[#*\-\s·•]+", "", text_value)
+    text_value = re.sub(r"\s+", " ", text_value).strip(" ：:;；，,。.")
+    if not text_value:
+        return ""
+    if len(text_value) > 48:
+        sentence = re.split(r"[。！？!?；;：:\n]", text_value, maxsplit=1)[0].strip()
+        if 2 <= len(sentence) <= 48:
+            text_value = sentence
+    if len(text_value) > 48:
+        keywords = _extract_keywords("", text_value)
+        if keywords:
+            text_value = " / ".join(keywords[:3])
+    return text_value[:48]
+
+
+def _point_cache_key(value: object) -> str:
+    text_value = _normalize_point_name(value).lower()
+    return re.sub(r"[\s\-_:：/\\（）()【】\[\]·•]+", "", text_value)
+
+
+def _is_generic_section_title(value: str) -> bool:
+    text_value = _clean_text(value).lower()
+    if not text_value:
+        return True
+    return bool(
+        re.fullmatch(r"(第\s*)?\d+\s*(页|頁|幻灯片|slide|page|ocr)?", text_value, flags=re.IGNORECASE)
+        or re.fullmatch(r"(slide|page)\s*\d+", text_value, flags=re.IGNORECASE)
+    )
+
+
+def _infer_difficulty(name: str, text_value: str) -> str:
+    raw = f"{name} {text_value[:420]}".lower()
+    if any(term in raw for term in ["证明", "推导", "复杂", "高级", "优化", "hard", "advanced"]):
+        return "hard"
+    if any(term in raw for term in ["定义", "概念", "基础", "入门", "介绍", "basic", "intro"]):
+        return "easy"
+    return "medium"
 
 
 def _extract_keywords(title: str, text_value: str) -> list[str]:
