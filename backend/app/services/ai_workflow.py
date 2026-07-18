@@ -24,7 +24,6 @@ from app.schemas import (
     TutorResponse,
     WorkflowState,
 )
-from app.services.learning_workflow import COURSE_CHAPTERS, KNOWLEDGE_POINTS
 from app.services.llm_client import qwen_chat_json
 
 
@@ -103,18 +102,17 @@ store = WorkflowStore()
 
 
 SYSTEM_PROMPT = """
-你是“智研星链”A3 个性化学习多智能体系统中的专业 Agent。
+你是“智研星链”个性化学习多智能体系统中的专业 Agent。
 必须只返回合法 JSON，不要 Markdown，不要代码块，不要解释 JSON 之外的内容。
-所有内容必须围绕高校课程《人工智能与 AI4S 实践》和学生输入生成，禁止使用固定模板答案。
+所有内容必须围绕学生输入、用户上传资料、项目知识库和可追溯来源生成，禁止使用固定模板答案。
 必须体现来源意识、防幻觉和高校学习边界：不要代写作业结论，不编造论文或实验结果。
 """
 
 
 def _course_context() -> str:
     return (
-        f"课程章节：{COURSE_CHAPTERS}\n"
-        f"核心知识点：{KNOWLEDGE_POINTS}\n"
-        "示例场景必须由用户输入、课程资料或知识库检索结果动态决定，不得使用代码内固定研究方向。"
+        "知识上下文必须由用户输入、上传资料、项目知识库或检索结果动态决定。\n"
+        "如果当前请求没有提供足够资料，必须在输出中标注资料缺口，不得补写固定课程章节或固定研究方向。"
     )
 
 
@@ -480,7 +478,7 @@ def build_teacher_dashboard() -> TeacherDashboardResponse:
     return TeacherDashboardResponse(
         metrics=[
             DashboardMetric(label="活跃学习会话", value=str(len(sessions)), trend="来自真实 AI 链路会话"),
-            DashboardMetric(label="课程知识点", value=str(len(KNOWLEDGE_POINTS)), trend="课程知识库约束生成"),
+            DashboardMetric(label="画像短板", value=str(len(weak_point_distribution)), trend="来自学生会话沉淀"),
             DashboardMetric(label="资源类型", value=str(len(resource_type_distribution)), trend="由 ResourceAgentGroup 动态生成"),
             DashboardMetric(label="Agent 节点", value="7", trend="画像/诊断/规划/资源/题目/辅导/评估"),
         ],

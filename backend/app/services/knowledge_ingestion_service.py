@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,7 +16,7 @@ from typing import Iterable, Optional
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -28,6 +29,7 @@ from app.models.learning import (
     KnowledgePoint,
 )
 from app.models.user import User
+from app.schemas import KnowledgeChunkRead, KnowledgeDocumentRead
 from app.services.llm_client import LLMResponseError, validate_qwen_config
 
 
@@ -100,6 +102,122 @@ def get_import_job(db: Session, user: User, job_id: int) -> KnowledgeImportJobRe
     if job is None or job.user_id != user.id:
         raise KnowledgeIngestionError("知识库导入任务不存在", 404)
     return KnowledgeImportJobRead.model_validate(job)
+
+
+def delete_import_job(db: Session, user: User, job_id: int) -> None:
+    job = db.get(KnowledgeImportJob, job_id)
+    if job is None or job.user_id != user.id:
+        raise KnowledgeIngestionError("知识库导入任务不存在", 404)
+    db.delete(job)
+    db.commit()
+
+
+def list_knowledge_documents(
+    db: Session,
+    user: User,
+    *,
+    course_code: Optional[str] = None,
+    query: str = "",
+    limit: int = 50,
+) -> list[KnowledgeDocumentRead]:
+    limit = max(1, min(limit, 200))
+    statement = (
+        select(KnowledgeDocument, func.count(DocumentChunk.id).label("chunk_count"))
+        .outerjoin(DocumentChunk, DocumentChunk.document_id == KnowledgeDocument.id)
+        .group_by(KnowledgeDocument.id)
+        .order_by(KnowledgeDocument.created_at.desc(), KnowledgeDocument.id.desc())
+        .limit(limit)
+    )
+    if course_code:
+        statement = statement.where(KnowledgeDocument.course_code == course_code)
+    if query:
+        like = f"%{query.strip()}%"
+        statement = statement.where(
+            (KnowledgeDocument.title.ilike(like))
+            | (KnowledgeDocument.file_name.ilike(like))
+            | (KnowledgeDocument.summary.ilike(like))
+            | (KnowledgeDocument.course_code.ilike(like))
+        )
+    rows = db.execute(statement).all()
+    return [
+        _document_read(document, chunk_count)
+        for document, chunk_count in rows
+        if _user_can_manage_document(db, user, document)
+    ]
+
+
+def list_document_chunks(db: Session, user: User, document_id: int, *, limit: int = 100) -> list[KnowledgeChunkRead]:
+    document = _get_manageable_document(db, user, document_id)
+    limit = max(1, min(limit, 300))
+    chunks = db.execute(
+        select(DocumentChunk, KnowledgePoint.name)
+        .join(KnowledgePoint, KnowledgePoint.id == DocumentChunk.knowledge_point_id, isouter=True)
+        .where(DocumentChunk.document_id == document.id)
+        .order_by(DocumentChunk.chunk_index)
+        .limit(limit)
+    ).all()
+    return [
+        KnowledgeChunkRead(
+            id=chunk.id,
+            document_id=chunk.document_id,
+            chunk_index=chunk.chunk_index,
+            content=chunk.content,
+            keywords=list(chunk.keywords or []),
+            knowledge_point=point_name or "课程资料",
+            page_no=chunk.page_no,
+            slide_no=chunk.slide_no,
+            section_title=chunk.section_title,
+            token_count=chunk.token_count,
+        )
+        for chunk, point_name in chunks
+    ]
+
+
+def delete_knowledge_document(db: Session, user: User, document_id: int) -> None:
+    document = _get_manageable_document(db, user, document_id)
+    db.delete(document)
+    db.commit()
+
+
+def _document_read(document: KnowledgeDocument, chunk_count: int) -> KnowledgeDocumentRead:
+    return KnowledgeDocumentRead(
+        id=document.id,
+        title=document.title,
+        doc_type=document.doc_type,
+        source_uri=document.source_uri,
+        summary=document.summary,
+        file_name=document.file_name,
+        file_hash=document.file_hash,
+        course_code=document.course_code,
+        parse_status=document.parse_status,
+        parse_meta=document.parse_meta or {},
+        chunk_count=int(chunk_count or 0),
+        created_at=document.created_at,
+    )
+
+
+def _get_manageable_document(db: Session, user: User, document_id: int) -> KnowledgeDocument:
+    document = db.get(KnowledgeDocument, document_id)
+    if document is None:
+        raise KnowledgeIngestionError("知识库文档不存在", 404)
+    if not _user_can_manage_document(db, user, document):
+        raise KnowledgeIngestionError("没有权限管理该知识库文档", 403)
+    return document
+
+
+def _user_can_manage_document(db: Session, user: User, document: KnowledgeDocument) -> bool:
+    job_id = _job_id_from_document_path(document.file_path)
+    if job_id is None:
+        return False
+    job = db.get(KnowledgeImportJob, job_id)
+    return bool(job and job.user_id == user.id)
+
+
+def _job_id_from_document_path(value: str) -> Optional[int]:
+    match = re.search(r"(?:^|[\\/])job-(\d+)(?:[\\/]|$)", value or "")
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 async def import_knowledge_upload(

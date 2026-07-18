@@ -39,7 +39,6 @@ from app.schemas import (
 )
 from app.services.ai_workflow import build_profile_with_summary
 from app.services.knowledge_ingestion_service import search_knowledge_enhanced
-from app.services.knowledge_service import COURSE_CODE
 from app.services.llm_client import qwen_chat_json
 from app.services.persistence_service import upsert_profile_from_dialogue
 
@@ -235,6 +234,19 @@ def _knowledge_context(db: Session, project: LearningProject) -> list[dict]:
     return search_knowledge_enhanced(db, query, limit=10)
 
 
+def _knowledge_base_version(knowledge: list[dict]) -> str:
+    sources: list[str] = []
+    for hit in knowledge:
+        source = str(hit.get("source_uri") or hit.get("document_title") or "").strip()
+        if source and source not in sources:
+            sources.append(source)
+        if len(sources) >= 3:
+            break
+    if not sources:
+        return "未命中知识库资料"
+    return ("知识库：" + " / ".join(sources))[:128]
+
+
 def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:
     if profile is None:
         return {}
@@ -298,6 +310,7 @@ def generate_syllabus(
         _project_prompt(project, profile, knowledge)
         + f"\n本次额外生成目标：{request.generation_goal or '按项目目标完整生成'}",
         _GeneratedSyllabus,
+        user=user,
     )
     latency_ms = int((time.perf_counter() - started_at) * 1000)
 
@@ -317,7 +330,7 @@ def generate_syllabus(
         generation_method="ai",
         generation_reason=result.generation_reason,
         profile_revision=profile.current_revision if profile else None,
-        knowledge_base_version=COURSE_CODE,
+        knowledge_base_version=_knowledge_base_version(knowledge),
         is_current=True,
         agent_summary={
             "SyllabusAgent": result.syllabus_agent_summary,
@@ -918,6 +931,7 @@ def regenerate_stage(
         "你是 PathPlannerAgent。请只输出当前阶段的替换学习项 JSON。",
         prompt,
         _GeneratedAdaptation,
+        user=user,
     )
     new_version = copy_syllabus_version(db, user, source.id)
     for item in new_version.items:
@@ -959,6 +973,7 @@ def adapt_syllabus(
         "你是 AdaptationAgent。请根据学习行为反馈动态调整路径，输出严格 JSON。",
         prompt,
         _GeneratedAdaptation,
+        user=user,
     )
     new_version = copy_syllabus_version(db, user, source.id)
     max_order = max([item.user_order for item in new_version.items] or [0])
@@ -1314,6 +1329,7 @@ def _daily_plan_coach_result(
         "你是严谨的 AI 学习计划教练，只输出符合要求的 JSON。",
         prompt,
         _DailyPlanCoachLLMResult,
+        user=user,
     )
     return result
 

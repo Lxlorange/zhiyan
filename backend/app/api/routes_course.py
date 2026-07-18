@@ -1,16 +1,22 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.schemas import CourseMapResponse, KnowledgePointRead, KnowledgeSearchHit, KnowledgeSearchRequest
+from app.schemas import CourseMapResponse, KnowledgeChunkRead, KnowledgeDocumentRead, KnowledgePointRead, KnowledgeSearchHit, KnowledgeSearchRequest
 from app.models.user import User
 from app.services.knowledge_ingestion_service import (
     KnowledgeImportJobRead,
     KnowledgeIngestionError,
+    delete_import_job,
+    delete_knowledge_document,
     get_import_job,
     import_knowledge_upload,
+    list_document_chunks,
     list_import_jobs,
+    list_knowledge_documents,
     rebuild_missing_embeddings,
     search_knowledge_enhanced,
 )
@@ -80,6 +86,54 @@ def knowledge_import_job(
 ) -> KnowledgeImportJobRead:
     try:
         return get_import_job(db, user, job_id)
+    except KnowledgeIngestionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.delete("/knowledge/import-jobs/{job_id}", status_code=204)
+def knowledge_import_job_delete(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        delete_import_job(db, user, job_id)
+    except KnowledgeIngestionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/knowledge/documents", response_model=list[KnowledgeDocumentRead])
+def knowledge_documents(
+    course_code: Optional[str] = Query(default=None),
+    query: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[KnowledgeDocumentRead]:
+    return list_knowledge_documents(db, user, course_code=course_code, query=query, limit=limit)
+
+
+@router.get("/knowledge/documents/{document_id}/chunks", response_model=list[KnowledgeChunkRead])
+def knowledge_document_chunks(
+    document_id: int,
+    limit: int = Query(default=100, ge=1, le=300),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[KnowledgeChunkRead]:
+    try:
+        return list_document_chunks(db, user, document_id, limit=limit)
+    except KnowledgeIngestionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.delete("/knowledge/documents/{document_id}", status_code=204)
+def knowledge_document_delete(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        delete_knowledge_document(db, user, document_id)
     except KnowledgeIngestionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

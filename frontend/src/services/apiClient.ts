@@ -53,6 +53,11 @@ export interface User {
   bio: string
   role: string
   is_active: boolean
+  llm_provider: string
+  llm_model: string
+  llm_base_url: string
+  llm_api_key_configured: boolean
+  llm_api_key_tail: string
 }
 
 export interface TokenResponse {
@@ -344,14 +349,6 @@ export interface ProfileEntryRead {
   updated_at?: string | null
 }
 
-export interface ProfileDialogueResponse {
-  profile_id: number
-  profile: Record<string, any>
-  update_reason: string
-  extracted_features: Record<string, any>
-  revision: number
-}
-
 export interface LiteraturePaperRead {
   id: number
   project_id?: number | null
@@ -381,9 +378,45 @@ export interface ResearchToolRunRead {
   created_at: string
 }
 
-export interface PracticeQuestionRead {
+export interface PracticeKnowledgeNodeRead {
   id: string
-  type: 'choice' | 'judgement' | 'short' | string
+  label: string
+  layer: string
+  category: string
+  description: string
+  knowledge_point: string
+  source_title: string
+  selected: boolean
+}
+
+export interface ModelProviderOption {
+  id: string
+  name: string
+  base_url: string
+  models: string[]
+  description: string
+}
+
+export interface UserModelSettingsRead {
+  provider: string
+  model: string
+  base_url: string
+  api_key_configured: boolean
+  api_key_tail: string
+  provider_options: ModelProviderOption[]
+}
+
+export interface UserModelSettingsUpdate {
+  provider: string
+  model: string
+  base_url: string
+  api_key?: string | null
+}
+
+export interface PracticePaperQuestionRead {
+  id: number
+  question_id: string
+  type: string
   point: string
   prompt: string
   options: string[]
@@ -392,12 +425,58 @@ export interface PracticeQuestionRead {
   source_title: string
   source_excerpt: string
   difficulty: string
+  order_index: number
 }
 
-export interface PracticeGenerateResponse {
-  questions: PracticeQuestionRead[]
-  used_llm: boolean
-  source_summary: string
+export interface PracticePaperAttemptResult {
+  question_id: string
+  question_db_id: number
+  point: string
+  user_answer: any
+  correct_answer: string
+  is_correct: boolean
+  explanation: string
+  remediation: string
+}
+
+export interface PracticePaperAttemptRead {
+  id: number
+  paper_id: number
+  answers: Record<string, any>
+  results: PracticePaperAttemptResult[]
+  score: number
+  correct_count: number
+  total_count: number
+  wrong_points: string[]
+  summary: string
+  created_at: string
+}
+
+export interface PracticePaperRead {
+  id: number
+  project_id?: number | null
+  title: string
+  description: string
+  source: string
+  difficulty: string
+  question_types: string[]
+  selected_nodes: Record<string, any>[]
+  knowledge_points: string[]
+  status: string
+  total_questions: number
+  last_score: number
+  best_score: number
+  attempt_count: number
+  generation_trace: Record<string, any>[]
+  created_at: string
+  updated_at: string
+  questions: PracticePaperQuestionRead[]
+  attempts: PracticePaperAttemptRead[]
+}
+
+export interface PracticePaperSubmitResponse {
+  paper: PracticePaperRead
+  attempt: PracticePaperAttemptRead
 }
 
 export interface AgentTraceRead {
@@ -417,25 +496,6 @@ export interface WorkspaceOverviewResponse {
   literature: LiteraturePaperRead[]
   tool_runs: ResearchToolRunRead[]
   metrics: Record<string, number>
-}
-
-export interface DashboardMetric {
-  label: string
-  value: string
-  trend: string
-}
-
-export interface TeacherDashboardResponse {
-  metrics: DashboardMetric[]
-  weak_point_distribution: Record<string, number>
-  resource_type_distribution: Record<string, number>
-  at_risk_students: Array<{
-    session_id: string
-    title: string
-    profile_revision: number
-    weak_points: string[]
-  }>
-  teaching_suggestions: string[]
 }
 
 export interface KnowledgePointRead {
@@ -479,6 +539,34 @@ export interface KnowledgeImportJobRead {
   updated_at: string
 }
 
+export interface KnowledgeDocumentRead {
+  id: number
+  title: string
+  doc_type: string
+  source_uri: string
+  summary: string
+  file_name: string
+  file_hash: string
+  course_code: string
+  parse_status: string
+  parse_meta: Record<string, any>
+  chunk_count: number
+  created_at: string
+}
+
+export interface KnowledgeChunkRead {
+  id: number
+  document_id: number
+  chunk_index: number
+  content: string
+  keywords: string[]
+  knowledge_point: string
+  page_no?: number | null
+  slide_no?: number | null
+  section_title: string
+  token_count: number
+}
+
 export interface DatabaseCitation {
   id: string
   source_type: string
@@ -520,6 +608,51 @@ export interface DatabaseGraphEdge {
 export interface DatabaseGraphResponse {
   nodes: DatabaseGraphNode[]
   edges: DatabaseGraphEdge[]
+}
+
+export interface KnowledgeLinkNode {
+  id: string
+  label: string
+  layer: 'project' | 'knowledge_base' | 'taxonomy' | string
+  category: string
+  description: string
+  meta: Record<string, any>
+  weight: number
+}
+
+export interface KnowledgeLinkEdge {
+  source: string
+  target: string
+  relation: string
+  strength: string
+  reason: string
+}
+
+export interface KnowledgePathSuggestionStep {
+  id: string
+  label: string
+  layer: 'project' | 'knowledge_base' | 'taxonomy' | string
+  reason: string
+  order?: number
+  phase?: string
+  estimated_minutes?: number
+  evidence?: string[]
+}
+
+export interface KnowledgePathSuggestion {
+  project_id?: number | null
+  project_title: string
+  strategy?: string
+  dynamic_signals?: string[]
+  steps: KnowledgePathSuggestionStep[]
+}
+
+export interface KnowledgeLinkGraphResponse {
+  nodes: KnowledgeLinkNode[]
+  edges: KnowledgeLinkEdge[]
+  path_suggestions: KnowledgePathSuggestion[]
+  attribution: string
+  meta: Record<string, any>
 }
 
 export interface DatabaseNodeDetailResponse {
@@ -923,12 +1056,6 @@ export function getProfileCenter() {
   return api.get<ProfileCenterResponse>('/workspace/profile')
 }
 
-export function updateProfileByDialogue(message: string) {
-  return api.post<ProfileDialogueResponse>('/profile/dialogue', { message }, {
-    timeout: GENERATION_TIMEOUT_MS
-  })
-}
-
 export function updateProfileEntry(payload: {
   key: string
   value: any
@@ -940,6 +1067,10 @@ export function updateProfileEntry(payload: {
   update_reason?: string
 }) {
   return api.patch<ProfileCenterResponse>('/workspace/profile/entries', payload)
+}
+
+export function deleteProfileEntry(key: string) {
+  return api.delete<ProfileCenterResponse>(`/workspace/profile/entries/${encodeURIComponent(key)}`)
 }
 
 export function listLiterature() {
@@ -990,16 +1121,48 @@ export function runResearchTool(payload: {
   })
 }
 
-export function generatePracticeQuestions(payload: {
-  weak_points: string[]
-  question_types: string[]
+export function listPracticePapers() {
+  return api.get<PracticePaperRead[]>('/practice-papers')
+}
+
+export function listPracticeKnowledgeNodes(payload: {
   project_id?: number | null
-  difficulty?: 'easy' | 'medium' | 'hard'
-  count_per_point?: number
+  query?: string
+  limit?: number
+} = {}) {
+  return api.get<PracticeKnowledgeNodeRead[]>('/practice-papers/knowledge-nodes', {
+    params: {
+      project_id: payload.project_id || undefined,
+      query: payload.query || undefined,
+      limit: payload.limit || 120
+    }
+  })
+}
+
+export function createPracticePaper(payload: {
+  title: string
+  description?: string
+  project_id?: number | null
+  selected_nodes: Record<string, any>[]
+  question_types: string[]
+  difficulty: 'easy' | 'medium' | 'hard'
+  question_count: number
 }) {
-  return api.post<PracticeGenerateResponse>('/workspace/practice/generate', payload, {
+  return api.post<PracticePaperRead>('/practice-papers', payload, {
     timeout: GENERATION_TIMEOUT_MS
   })
+}
+
+export function getPracticePaper(paperId: number) {
+  return api.get<PracticePaperRead>(`/practice-papers/${paperId}`)
+}
+
+export function submitPracticePaper(paperId: number, answers: Record<string, any>) {
+  return api.post<PracticePaperSubmitResponse>(`/practice-papers/${paperId}/submit`, { answers })
+}
+
+export function deletePracticePaper(paperId: number) {
+  return api.delete<void>(`/practice-papers/${paperId}`)
 }
 
 export function listKnowledgePoints() {
@@ -1033,6 +1196,20 @@ export function getDatabaseGraph(payload: {
 } = {}) {
   return api.get<DatabaseGraphResponse>('/database/graph', {
     params: payload
+  })
+}
+
+export function getKnowledgeLinkGraph(payload: {
+  project_id?: number | null
+  query?: string
+  limit?: number
+} = {}) {
+  return api.get<KnowledgeLinkGraphResponse>('/database/knowledge-links', {
+    params: {
+      project_id: payload.project_id || undefined,
+      query: payload.query || undefined,
+      limit: payload.limit || 140
+    }
   })
 }
 
@@ -1071,6 +1248,34 @@ export function getKnowledgeImportJob(jobId: number) {
   return api.get<KnowledgeImportJobRead>(`/course/knowledge/import-jobs/${jobId}`)
 }
 
+export function deleteKnowledgeImportJob(jobId: number) {
+  return api.delete<void>(`/course/knowledge/import-jobs/${jobId}`)
+}
+
+export function listKnowledgeDocuments(payload: {
+  course_code?: string
+  query?: string
+  limit?: number
+} = {}) {
+  return api.get<KnowledgeDocumentRead[]>('/course/knowledge/documents', {
+    params: {
+      course_code: payload.course_code || undefined,
+      query: payload.query || undefined,
+      limit: payload.limit || 50
+    }
+  })
+}
+
+export function listKnowledgeDocumentChunks(documentId: number, limit = 100) {
+  return api.get<KnowledgeChunkRead[]>(`/course/knowledge/documents/${documentId}/chunks`, {
+    params: { limit }
+  })
+}
+
+export function deleteKnowledgeDocument(documentId: number) {
+  return api.delete<void>(`/course/knowledge/documents/${documentId}`)
+}
+
 export function rebuildKnowledgeEmbeddings(limit = 200) {
   return api.post<{ rebuilt: number }>('/course/knowledge/embeddings/rebuild', null, {
     params: { limit },
@@ -1078,6 +1283,14 @@ export function rebuildKnowledgeEmbeddings(limit = 200) {
   })
 }
 
-export function getTeacherDashboard() {
-  return api.get<TeacherDashboardResponse>('/teacher/dashboard')
+export function getModelSettings() {
+  return api.get<UserModelSettingsRead>('/system/model-settings')
+}
+
+export function updateModelSettings(payload: UserModelSettingsUpdate) {
+  return api.put<UserModelSettingsRead>('/system/model-settings', payload)
+}
+
+export function verifyModelSettings() {
+  return api.post<{ ok: boolean; provider: string; model: string; message: string }>('/system/model-settings/verify')
 }

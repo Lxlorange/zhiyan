@@ -7,9 +7,17 @@ from collections.abc import Iterator
 from typing import Optional
 
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.models.learning import AgentTaskRecord, LearningProject, LearningProjectEvent, ProjectPlanSession, ResearchDirection
+from app.models.learning import (
+    AgentTaskRecord,
+    LearningProject,
+    LearningProjectEvent,
+    ProjectPlanSession,
+    ResearchDirection,
+    StudentProfileRecord,
+)
 from app.models.user import User
 from app.schemas import (
     LearningProjectRead,
@@ -20,7 +28,6 @@ from app.schemas import (
 )
 from app.services.direction_service import ProjectSuggestion
 from app.services.knowledge_ingestion_service import build_rag_context
-from app.services.knowledge_service import COURSE_TITLE
 from app.services.llm_client import LLMResponseError, qwen_chat_json, qwen_chat_stream_text
 from app.services.scholarly_search_service import ScholarlySearchError, verify_candidate_resource_url
 
@@ -93,8 +100,43 @@ def _knowledge_context(db: Session, query: str) -> str:
     return build_rag_context(db, query, limit=8)
 
 
+def _profile_context(db: Session, user: User) -> str:
+    record = db.scalar(
+        select(StudentProfileRecord)
+        .where(StudentProfileRecord.user_id == user.id)
+        .order_by(desc(StudentProfileRecord.current_revision), desc(StudentProfileRecord.updated_at))
+    )
+    if record is None:
+        return "[]"
+
+    profile_data = dict(record.profile_data or {})
+    meta = dict(profile_data.get("_entry_meta") or {})
+    entries: list[dict[str, object]] = []
+    for key, value in profile_data.items():
+        if key == "_entry_meta" or value in (None, "", [], {}):
+            continue
+        entry_meta = dict(meta.get(key) or {})
+        if entry_meta.get("is_enabled", True) is False:
+            continue
+        entries.append(
+            {
+                "key": key,
+                "value": value,
+                "confidence": entry_meta.get("confidence", 70),
+                "source": entry_meta.get("source", "memory"),
+                "agent": entry_meta.get("agent", "MemoryAgent"),
+            }
+        )
+
+    return json.dumps(
+        {"revision": record.current_revision, "enabled_entries": entries},
+        ensure_ascii=False,
+    )
+
+
 def _run_project_plan_agent(
     db: Session,
+    user: User,
     learning_type: str,
     learning_goal: str,
     extra_requirements: str,
@@ -102,18 +144,21 @@ def _run_project_plan_agent(
     current_plan: Optional[dict] = None,
 ) -> ProjectPlanAgentResult:
     knowledge_context = _knowledge_context(db, f"{learning_goal}\n{extra_requirements}")
+    profile_context = _profile_context(db, user)
     prompt = _build_project_plan_prompt(
         learning_type,
         learning_goal,
         extra_requirements,
         messages,
         knowledge_context,
+        profile_context,
         current_plan,
     )
     result = qwen_chat_json(
         "你是严谨的高校学习项目规划智能体，只返回合法 JSON。",
         prompt,
         ProjectPlanAgentResult,
+        user=user,
     )
     result = _verify_recommended_resources(result, learning_goal)
     return _verify_research_training(result, learning_type, learning_goal)
@@ -125,6 +170,7 @@ def _build_project_plan_prompt(
     extra_requirements: str,
     messages: list[dict],
     knowledge_context: str,
+    profile_context: str,
     current_plan: Optional[dict] = None,
 ) -> str:
     return f"""
@@ -141,11 +187,22 @@ def _build_project_plan_prompt(
 补充要求：
 {extra_requirements or "无"}
 
-当前课程知识库：
-{COURSE_TITLE}
+当前知识来源约束：
+仅允许使用用户本次输入、上传附件、已入库知识库和检索到的真实来源；如果资料不足，必须写入 risk_notes 或 next_questions，不得补写固定课程内容。
 
 可引用知识来源：
 {knowledge_context}
+
+用户学习画像上下文：
+{profile_context}
+
+画像使用约束：
+1. 画像只作为个性化生成依据，不要在 assistant_message、summary、recommended_resources 或前台可见内容中展示“用户画像上下文”原文。
+2. 根据 learning_pace、practice_level、daily_minutes 等条目调整阶段粒度、每日学习压力和复盘频率。
+3. 根据 resource_preference、cognitive_style 调整 PPT、例题、可视化、实操、论文阅读、互动提问的比例。
+4. 根据 weak_points、mastery、question_habit 增加必要前置补课、错题复练和检查点。
+5. 根据 output_goal、academic_writing、literature_reading、coding_practice、experiment_design 调整最终产出和验收标准。
+6. 只使用已启用画像条目；不要推断或编造画像中没有的稳定习惯。
 
 知识库使用约束：
 1. 涉及课程内容、实验方法、论文写作规范、习题解析时，优先引用上方知识库来源。
@@ -202,6 +259,7 @@ def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) ->
     started = time.perf_counter()
     result = _run_project_plan_agent(
         db,
+        user,
         request.learning_type,
         request.learning_goal,
         request.extra_requirements,
@@ -240,19 +298,21 @@ def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) ->
 def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequest) -> Iterator[dict]:
     messages = [_message("user", request.learning_goal)]
     knowledge_context = _knowledge_context(db, f"{request.learning_goal}\n{request.extra_requirements}")
+    profile_context = _profile_context(db, user)
     json_prompt = _build_project_plan_prompt(
         request.learning_type,
         request.learning_goal,
         request.extra_requirements,
         messages,
         knowledge_context,
+        profile_context,
     )
     stream_prompt = _stream_prompt_from_json_prompt(json_prompt)
     started = time.perf_counter()
     streamed_text = ""
 
     yield {"event": "start", "data": {"message": "开始生成项目计划"}}
-    for token in qwen_chat_stream_text("你是高校学习项目规划智能体。", stream_prompt):
+    for token in qwen_chat_stream_text("你是高校学习项目规划智能体。", stream_prompt, user=user):
         streamed_text += token
         yield {"event": "token", "data": {"content": token}}
 
@@ -260,6 +320,7 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
         "你是严谨的高校学习项目规划智能体，只返回合法 JSON。",
         json_prompt,
         ProjectPlanAgentResult,
+        user=user,
     )
     result = _verify_recommended_resources(result, request.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -315,6 +376,7 @@ def adjust_project_plan(
     started = time.perf_counter()
     result = _run_project_plan_agent(
         db,
+        user,
         session.learning_type,
         session.learning_goal,
         session.extra_requirements,
@@ -357,12 +419,14 @@ def stream_adjust_project_plan(
     messages = [*session.messages, _message("user", display_message)]
     model_messages = [*session.messages, _message("user", model_message)]
     knowledge_context = _knowledge_context(db, f"{session.learning_goal}\n{session.extra_requirements}\n{model_message}")
+    profile_context = _profile_context(db, user)
     json_prompt = _build_project_plan_prompt(
         session.learning_type,
         session.learning_goal,
         session.extra_requirements,
         model_messages,
         knowledge_context,
+        profile_context,
         session.plan_data,
     )
     stream_prompt = _stream_prompt_from_json_prompt(json_prompt)
@@ -370,7 +434,7 @@ def stream_adjust_project_plan(
     streamed_text = ""
 
     yield {"event": "start", "data": {"message": "开始调整项目计划"}}
-    for token in qwen_chat_stream_text("你是高校学习项目规划智能体。", stream_prompt):
+    for token in qwen_chat_stream_text("你是高校学习项目规划智能体。", stream_prompt, user=user):
         streamed_text += token
         yield {"event": "token", "data": {"content": token}}
 
@@ -378,6 +442,7 @@ def stream_adjust_project_plan(
         "你是严谨的高校学习项目规划智能体，只返回合法 JSON。",
         json_prompt,
         ProjectPlanAgentResult,
+        user=user,
     )
     result = _verify_recommended_resources(result, session.learning_goal)
     latency_ms = int((time.perf_counter() - started) * 1000)

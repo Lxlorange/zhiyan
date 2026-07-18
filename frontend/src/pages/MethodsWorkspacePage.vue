@@ -66,7 +66,7 @@
         <section class="methods-panel methods-panel-hero panel-like">
           <div class="methods-panel-head methods-workbench-head">
             <div>
-              <span>A3 SMART WORKBENCH</span>
+              <span>SMART WORKBENCH</span>
               <strong>方法台</strong>
             </div>
             <span class="methods-panel-caption">把研究问题拆成方法、材料、验证和产出</span>

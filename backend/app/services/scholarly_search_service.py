@@ -326,7 +326,7 @@ def _get_json(url: str) -> dict[str, Any]:
         url,
         headers={
             "Accept": "application/json",
-            "User-Agent": "zhiyan-a3-learning-platform/0.1 (mailto:dev@example.com)",
+            "User-Agent": "zhiyan-xinglian-learning-platform/0.1 (mailto:dev@example.com)",
         },
         method="GET",
     )
@@ -349,7 +349,7 @@ def _get_text(url: str) -> str:
         url,
         headers={
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "User-Agent": "Mozilla/5.0 (compatible; zhiyan-a3-learning-platform/0.1)",
+            "User-Agent": "Mozilla/5.0 (compatible; zhiyan-xinglian-learning-platform/0.1)",
         },
         method="GET",
     )
@@ -371,7 +371,7 @@ def _reachable_page_title(url: str) -> Optional[str]:
             url,
             headers={
                 "Accept": "text/html,application/xhtml+xml,application/pdf,*/*;q=0.8",
-                "User-Agent": "Mozilla/5.0 (compatible; zhiyan-a3-learning-platform/0.1)",
+                "User-Agent": "Mozilla/5.0 (compatible; zhiyan-xinglian-learning-platform/0.1)",
             },
             method="HEAD",
         )

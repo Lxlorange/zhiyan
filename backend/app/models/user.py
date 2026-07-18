@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -18,6 +18,14 @@ class User(Base):
     major: Mapped[str] = mapped_column(String(128), default="", nullable=False)
     bio: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     role: Mapped[str] = mapped_column(String(24), default="student", nullable=False)
+    llm_provider: Mapped[str] = mapped_column(String(32), default="qwen", nullable=False)
+    llm_model: Mapped[str] = mapped_column(String(128), default="qwen-plus", nullable=False)
+    llm_base_url: Mapped[str] = mapped_column(
+        String(512),
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        nullable=False,
+    )
+    llm_api_key: Mapped[str] = mapped_column(Text, default="", nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class UserCreate(BaseModel):
@@ -28,8 +28,65 @@ class UserRead(BaseModel):
     bio: str = ""
     role: str
     is_active: bool
+    llm_provider: str = "qwen"
+    llm_model: str = "qwen-plus"
+    llm_base_url: str = ""
+    llm_api_key_configured: bool = False
+    llm_api_key_tail: str = ""
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_llm_key_state(cls, value):
+        if isinstance(value, dict):
+            api_key = str(value.get("llm_api_key") or "")
+            value = dict(value)
+            value["llm_api_key_configured"] = bool(api_key.strip())
+            value["llm_api_key_tail"] = api_key[-4:] if api_key else ""
+            return value
+        api_key = str(getattr(value, "llm_api_key", "") or "")
+        return {
+            "id": getattr(value, "id"),
+            "username": getattr(value, "username"),
+            "email": getattr(value, "email"),
+            "full_name": getattr(value, "full_name", ""),
+            "avatar_url": getattr(value, "avatar_url", ""),
+            "school": getattr(value, "school", ""),
+            "major": getattr(value, "major", ""),
+            "bio": getattr(value, "bio", ""),
+            "role": getattr(value, "role", "student"),
+            "is_active": getattr(value, "is_active", True),
+            "llm_provider": getattr(value, "llm_provider", "qwen"),
+            "llm_model": getattr(value, "llm_model", "qwen-plus"),
+            "llm_base_url": getattr(value, "llm_base_url", ""),
+            "llm_api_key_configured": bool(api_key.strip()),
+            "llm_api_key_tail": api_key[-4:] if api_key else "",
+        }
+
+
+class ModelProviderOption(BaseModel):
+    id: str
+    name: str
+    base_url: str
+    models: List[str]
+    description: str = ""
+
+
+class UserModelSettingsRead(BaseModel):
+    provider: str
+    model: str
+    base_url: str
+    api_key_configured: bool
+    api_key_tail: str = ""
+    provider_options: List[ModelProviderOption]
+
+
+class UserModelSettingsUpdate(BaseModel):
+    provider: str = Field(..., min_length=1, max_length=32)
+    model: str = Field(..., min_length=1, max_length=128)
+    base_url: str = Field(..., min_length=1, max_length=512)
+    api_key: Optional[str] = Field(default=None, max_length=4096)
 
 
 class UserUpdate(BaseModel):
@@ -193,6 +250,36 @@ class KnowledgeSearchHit(BaseModel):
     section_title: str = ""
     distance: Optional[float] = None
     keyword_hit: Optional[int] = None
+
+
+class KnowledgeDocumentRead(BaseModel):
+    id: int
+    title: str
+    doc_type: str
+    source_uri: str
+    summary: str
+    file_name: str
+    file_hash: str
+    course_code: str
+    parse_status: str
+    parse_meta: dict = Field(default_factory=dict)
+    chunk_count: int = 0
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeChunkRead(BaseModel):
+    id: int
+    document_id: int
+    chunk_index: int
+    content: str
+    keywords: List[str] = Field(default_factory=list)
+    knowledge_point: str = ""
+    page_no: Optional[int] = None
+    slide_no: Optional[int] = None
+    section_title: str = ""
+    token_count: int = 0
 
 
 class SessionSummary(BaseModel):
@@ -876,8 +963,20 @@ class ResearchToolRunRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PracticeQuestionRead(BaseModel):
+class PracticeKnowledgeNodeRead(BaseModel):
     id: str
+    label: str
+    layer: str
+    category: str = ""
+    description: str = ""
+    knowledge_point: str = ""
+    source_title: str = ""
+    selected: bool = False
+
+
+class PracticePaperQuestionRead(BaseModel):
+    id: int
+    question_id: str
     type: str
     point: str
     prompt: str
@@ -887,20 +986,78 @@ class PracticeQuestionRead(BaseModel):
     source_title: str = ""
     source_excerpt: str = ""
     difficulty: str = "medium"
+    order_index: int = 1
+
+    model_config = {"from_attributes": True}
 
 
-class PracticeGenerateRequest(BaseModel):
-    weak_points: List[str] = Field(default_factory=list, max_length=12)
-    question_types: List[str] = Field(default_factory=lambda: ["choice", "judgement"], max_length=3)
+class PracticePaperAttemptResult(BaseModel):
+    question_id: str
+    question_db_id: int
+    point: str
+    user_answer: Any = None
+    correct_answer: str
+    is_correct: bool
+    explanation: str = ""
+    remediation: str = ""
+
+
+class PracticePaperAttemptRead(BaseModel):
+    id: int
+    paper_id: int
+    answers: Dict[str, Any]
+    results: List[PracticePaperAttemptResult] = Field(default_factory=list)
+    score: int
+    correct_count: int
+    total_count: int
+    wrong_points: List[str] = Field(default_factory=list)
+    summary: str = ""
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PracticePaperRead(BaseModel):
+    id: int
     project_id: Optional[int] = None
+    title: str
+    description: str = ""
+    source: str = "knowledge_graph"
+    difficulty: str = "medium"
+    question_types: List[str] = Field(default_factory=list)
+    selected_nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    knowledge_points: List[str] = Field(default_factory=list)
+    status: str = "draft"
+    total_questions: int = 0
+    last_score: int = 0
+    best_score: int = 0
+    attempt_count: int = 0
+    generation_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+    questions: List[PracticePaperQuestionRead] = Field(default_factory=list)
+    attempts: List[PracticePaperAttemptRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class PracticePaperCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=2000)
+    project_id: Optional[int] = None
+    selected_nodes: List[Dict[str, Any]] = Field(default_factory=list, min_length=1, max_length=20)
+    question_types: List[str] = Field(default_factory=lambda: ["choice"], max_length=4)
     difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
-    count_per_point: int = Field(default=1, ge=1, le=3)
+    question_count: int = Field(default=8, ge=1, le=30)
 
 
-class PracticeGenerateResponse(BaseModel):
-    questions: List[PracticeQuestionRead]
-    used_llm: bool = False
-    source_summary: str = ""
+class PracticePaperSubmitRequest(BaseModel):
+    answers: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PracticePaperSubmitResponse(BaseModel):
+    paper: PracticePaperRead
+    attempt: PracticePaperAttemptRead
 
 
 class WorkspaceOverviewResponse(BaseModel):
@@ -962,6 +1119,32 @@ class DatabaseGraphEdge(BaseModel):
 class DatabaseGraphResponse(BaseModel):
     nodes: List[DatabaseGraphNode] = Field(default_factory=list)
     edges: List[DatabaseGraphEdge] = Field(default_factory=list)
+
+
+class KnowledgeLinkNode(BaseModel):
+    id: str
+    label: str
+    layer: str
+    category: str = ""
+    description: str = ""
+    meta: Dict[str, Any] = Field(default_factory=dict)
+    weight: int = 1
+
+
+class KnowledgeLinkEdge(BaseModel):
+    source: str
+    target: str
+    relation: str
+    strength: str = ""
+    reason: str = ""
+
+
+class KnowledgeLinkGraphResponse(BaseModel):
+    nodes: List[KnowledgeLinkNode] = Field(default_factory=list)
+    edges: List[KnowledgeLinkEdge] = Field(default_factory=list)
+    path_suggestions: List[Dict[str, Any]] = Field(default_factory=list)
+    attribution: str = ""
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
 
 class DatabaseNodeDetailResponse(BaseModel):

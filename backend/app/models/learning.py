@@ -211,6 +211,80 @@ class AnswerRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class PracticePaper(Base):
+    __tablename__ = "practice_papers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    project_id: Mapped[Optional[int]] = mapped_column(ForeignKey("learning_projects.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="knowledge_graph", nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(32), default="medium", nullable=False)
+    question_types: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    selected_nodes: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    knowledge_points: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft", index=True, nullable=False)
+    total_questions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    best_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    generation_trace: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    questions: Mapped[list["PracticePaperQuestion"]] = relationship(
+        back_populates="paper",
+        cascade="all, delete-orphan",
+        order_by="PracticePaperQuestion.order_index",
+    )
+    attempts: Mapped[list["PracticePaperAttempt"]] = relationship(
+        back_populates="paper",
+        cascade="all, delete-orphan",
+        order_by="PracticePaperAttempt.created_at",
+    )
+
+
+class PracticePaperQuestion(Base):
+    __tablename__ = "practice_paper_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("practice_papers.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    question_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    question_type: Mapped[str] = mapped_column(String(32), default="choice", nullable=False)
+    point: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source_title: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    source_excerpt: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(32), default="medium", nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    paper: Mapped[PracticePaper] = relationship(back_populates="questions")
+
+
+class PracticePaperAttempt(Base):
+    __tablename__ = "practice_paper_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("practice_papers.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    answers: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    results: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    wrong_points: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    paper: Mapped[PracticePaper] = relationship(back_populates="attempts")
+
+
 class ResearchDirectionTemplate(Base):
     __tablename__ = "research_direction_templates"
 
@@ -350,7 +424,7 @@ class LearningSyllabusVersion(Base):
     generation_method: Mapped[str] = mapped_column(String(64), default="ai", nullable=False)
     generation_reason: Mapped[str] = mapped_column(Text, nullable=False)
     profile_revision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    knowledge_base_version: Mapped[str] = mapped_column(String(128), default="AI4S-PRACTICE", nullable=False)
+    knowledge_base_version: Mapped[str] = mapped_column(String(128), default="未命中知识库资料", nullable=False)
     user_adjustments: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)

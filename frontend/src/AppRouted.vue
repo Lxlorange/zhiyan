@@ -59,9 +59,6 @@ const routeProps = computed(() => {
   if (['profile', 'resources', 'assessment', 'literature', 'writing', 'methods'].includes(currentPage.value)) {
     return { mode: currentPage.value }
   }
-  if (currentPage.value === 'agents') {
-    return { mode: currentPage.value }
-  }
   return {}
 })
 

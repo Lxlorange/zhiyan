@@ -4,7 +4,7 @@
       <div class="brand-mark">AI</div>
       <div class="brand-copy">
         <h1>智研星链</h1>
-        <p>A3 多智能体学习平台</p>
+        <p>多智能体学习平台</p>
       </div>
       <button
         class="sidebar-collapse-btn"
@@ -40,8 +40,9 @@
           <span class="nav-label">学习过程</span>
         </template>
         <el-menu-item index="profile">学习画像</el-menu-item>
+        <el-menu-item index="knowledge-upload">知识库上传</el-menu-item>
         <el-menu-item index="resources">数据库</el-menu-item>
-        <el-menu-item index="assessment">练习题目生成</el-menu-item>
+        <el-menu-item index="assessment">练习试卷</el-menu-item>
       </el-sub-menu>
 
       <el-sub-menu index="research">
@@ -60,8 +61,7 @@
           <span class="nav-label">系统</span>
         </template>
         <el-menu-item index="agents">任务中心</el-menu-item>
-        <el-menu-item index="teacher">教师看板</el-menu-item>
-        <el-menu-item index="settings">账号设置</el-menu-item>
+        <el-menu-item index="settings">系统设置</el-menu-item>
       </el-sub-menu>
     </el-menu>
   </aside>

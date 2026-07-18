@@ -4,8 +4,12 @@ import ClassroomUnifiedPlayerPage from './pages/ClassroomUnifiedPlayerPage.vue'
 import DailyPlanPage from './pages/DailyPlanPage.vue'
 import DashboardModulePage from './pages/DashboardModulePage.vue'
 import DirectionPlanner from './pages/DirectionPlanner.vue'
+import KnowledgeUploadPage from './pages/KnowledgeUploadPage.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
 import MethodsWorkspacePage from './pages/MethodsWorkspacePage.vue'
+import PracticePaperCreatePage from './pages/PracticePaperCreatePage.vue'
+import PracticePaperDetailPage from './pages/PracticePaperDetailPage.vue'
+import PracticePaperListPage from './pages/PracticePaperListPage.vue'
 import SigninRoute from './pages/SigninRoute.vue'
 import SyllabusPage from './pages/SyllabusPage.vue'
 import WorkspaceModulePage from './pages/WorkspaceModulePage.vue'
@@ -66,11 +70,17 @@ export const pageMeta: Record<string, PageMeta> = {
     description: '这里集中管理用户上传资料、课堂生成资源、学习笔记和知识点关系，并提供基于资料库的 RAG 问答。',
     highlights: ['资料沉淀', '3D知识图谱', 'RAG问答']
   },
+  'knowledge-upload': {
+    title: '知识库上传',
+    subtitle: '上传、解析和管理课程资料',
+    description: '这里只负责知识库资料上传、解析记录、文档内容列表和删除管理，不触发学习内容生成。',
+    highlights: ['资料上传', '导入记录', '内容管理']
+  },
   assessment: {
-    title: '练习题目生成',
-    subtitle: '按薄弱点智能生成选择、判断和简答题',
-    description: '这里根据学习画像和薄弱知识点生成针对性练习题，支持学生自选薄弱点和题型。',
-    highlights: ['薄弱点出题', '选择判断', '针对练习']
+    title: '练习试卷',
+    subtitle: '从知识图谱节点生成、保存和作答试卷',
+    description: '这里展示历史试卷。新建试卷时从知识点池勾选节点，AI 根据节点生成题目，提交后保存作答、解析和错题。',
+    highlights: ['历史试卷', '知识节点出题', '作答解析']
   },
   literature: {
     title: '文献知识库',
@@ -96,17 +106,11 @@ export const pageMeta: Record<string, PageMeta> = {
     description: '集中展示 DirectionAgent、SyllabusAgent、ClassroomAgent、VisualizationAgent、EvaluationAgent 等执行轨迹。',
     highlights: ['Agent轨迹', '任务状态', '编排流程']
   },
-  teacher: {
-    title: '教师驾驶舱',
-    subtitle: '查看班级短板、资源使用和教学建议',
-    description: '为教师或课程管理员提供方向分布、短板聚合、资源统计和高风险学生提示。',
-    highlights: ['班级短板', '资源统计', '教学建议']
-  },
   settings: {
-    title: '账号设置',
-    subtitle: '管理头像、姓名、学校专业和简介',
-    description: '这里维护学生基础信息，供顶栏展示和后续个性化画像使用。',
-    highlights: ['基础信息', '头像资料', '身份上下文']
+    title: '系统设置',
+    subtitle: '配置模型、API Key、账号资料和系统入口',
+    description: '这里维护学生基础信息和当前账号使用的模型服务。模型配置保存后会影响项目规划、课堂生成、RAG 问答和科研工具。',
+    highlights: ['模型切换', 'API Key', '账号资料']
   }
 }
 
@@ -116,6 +120,7 @@ export const pageRouteNames: Record<string, string> = {
   'daily-plan': 'daily-plan',
   profile: 'profile',
   resources: 'resources',
+  'knowledge-upload': 'knowledge-upload',
   assessment: 'assessment',
   literature: 'literature',
   writing: 'writing',
@@ -136,12 +141,15 @@ export const routes: RouteRecordRaw[] = [
   { path: '/projects/:projectId(\\d+)/daily-plan', name: 'project-daily-plan', component: DailyPlanPage, meta: { page: 'daily-plan' } },
   { path: '/profile', name: 'profile', component: WorkspaceModulePage, props: { mode: 'profile' }, meta: { page: 'profile' } },
   { path: '/resources', name: 'resources', component: WorkspaceModulePage, props: { mode: 'resources' }, meta: { page: 'resources' } },
-  { path: '/assessment', name: 'assessment', component: WorkspaceModulePage, props: { mode: 'assessment' }, meta: { page: 'assessment' } },
+  { path: '/knowledge-upload', name: 'knowledge-upload', component: KnowledgeUploadPage, meta: { page: 'knowledge-upload' } },
+  { path: '/assessment', name: 'assessment', component: PracticePaperListPage, meta: { page: 'assessment' } },
+  { path: '/assessment/new', name: 'practice-paper-create', component: PracticePaperCreatePage, meta: { page: 'assessment' } },
+  { path: '/assessment/:paperId(\\d+)', name: 'practice-paper-detail', component: PracticePaperDetailPage, meta: { page: 'assessment' } },
   { path: '/literature', name: 'literature', component: WorkspaceModulePage, props: { mode: 'literature' }, meta: { page: 'literature' } },
   { path: '/writing', name: 'writing', component: WorkspaceModulePage, props: { mode: 'writing' }, meta: { page: 'writing' } },
   { path: '/methods', name: 'methods', component: MethodsWorkspacePage, meta: { page: 'methods' } },
-  { path: '/agents', name: 'agents', component: DashboardModulePage, props: { mode: 'agents' }, meta: { page: 'agents' } },
-  { path: '/teacher', redirect: '/agents' },
+  { path: '/agents', name: 'agents', component: DashboardModulePage, meta: { page: 'agents' } },
+  { path: '/teacher', redirect: '/settings' },
   { path: '/settings', name: 'settings', component: AccountSettings, meta: { page: 'settings' } },
   { path: '/:pathMatch(.*)*', redirect: '/directions' }
 ]

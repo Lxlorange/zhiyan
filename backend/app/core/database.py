@@ -43,7 +43,7 @@ def _postgres_connect_help() -> str:
         f"当前 DATABASE_URL={_safe_database_url()}。"
         "请确认 PostgreSQL/pgvector 已启动，且用户、密码、端口、数据库名一致。"
         "本地开发可在项目根目录执行：docker compose -f docker-compose.dev.yml up -d postgres；"
-        "然后进入 backend 执行 python run.py。当前项目不会回退到 SQLite。"
+        "然后进入 backend 执行 python run.py。当前项目只使用 PostgreSQL。"
     )
 
 
@@ -66,6 +66,10 @@ def _apply_lightweight_migrations() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS school VARCHAR(128) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS major VARCHAR(128) NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(512) NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_provider VARCHAR(32) NOT NULL DEFAULT 'qwen'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128) NOT NULL DEFAULT 'qwen-plus'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_base_url VARCHAR(512) NOT NULL DEFAULT 'https://dashscope.aliyuncs.com/compatible-mode/v1'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_api_key TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slides_completed BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS slide_progress JSONB NOT NULL DEFAULT '{}'",
         "ALTER TABLE classroom_sessions ADD COLUMN IF NOT EXISTS generation_started_at TIMESTAMP NULL",
@@ -145,6 +149,69 @@ def _apply_lightweight_migrations() -> None:
         "CREATE INDEX IF NOT EXISTS ix_knowledge_import_jobs_user_id ON knowledge_import_jobs(user_id)",
         "CREATE INDEX IF NOT EXISTS ix_knowledge_import_jobs_course_code ON knowledge_import_jobs(course_code)",
         "CREATE INDEX IF NOT EXISTS ix_knowledge_import_jobs_status ON knowledge_import_jobs(status)",
+        """
+        CREATE TABLE IF NOT EXISTS practice_papers (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            project_id INTEGER NULL REFERENCES learning_projects(id),
+            title VARCHAR(255) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            source VARCHAR(64) NOT NULL DEFAULT 'knowledge_graph',
+            difficulty VARCHAR(32) NOT NULL DEFAULT 'medium',
+            question_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+            selected_nodes JSONB NOT NULL DEFAULT '[]'::jsonb,
+            knowledge_points JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(32) NOT NULL DEFAULT 'draft',
+            total_questions INTEGER NOT NULL DEFAULT 0,
+            last_score INTEGER NOT NULL DEFAULT 0,
+            best_score INTEGER NOT NULL DEFAULT 0,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            generation_trace JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            updated_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_practice_papers_user_id ON practice_papers(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_practice_papers_status ON practice_papers(status)",
+        """
+        CREATE TABLE IF NOT EXISTS practice_paper_questions (
+            id SERIAL PRIMARY KEY,
+            paper_id INTEGER NOT NULL REFERENCES practice_papers(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            question_id VARCHAR(64) NOT NULL,
+            question_type VARCHAR(32) NOT NULL DEFAULT 'choice',
+            point VARCHAR(255) NOT NULL,
+            prompt TEXT NOT NULL,
+            options JSONB NOT NULL DEFAULT '[]'::jsonb,
+            answer TEXT NOT NULL,
+            explanation TEXT NOT NULL DEFAULT '',
+            source_title VARCHAR(255) NOT NULL DEFAULT '',
+            source_excerpt TEXT NOT NULL DEFAULT '',
+            difficulty VARCHAR(32) NOT NULL DEFAULT 'medium',
+            order_index INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_practice_paper_questions_paper_id ON practice_paper_questions(paper_id)",
+        "CREATE INDEX IF NOT EXISTS ix_practice_paper_questions_user_id ON practice_paper_questions(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_practice_paper_questions_point ON practice_paper_questions(point)",
+        """
+        CREATE TABLE IF NOT EXISTS practice_paper_attempts (
+            id SERIAL PRIMARY KEY,
+            paper_id INTEGER NOT NULL REFERENCES practice_papers(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            answers JSONB NOT NULL DEFAULT '{}'::jsonb,
+            results JSONB NOT NULL DEFAULT '[]'::jsonb,
+            score INTEGER NOT NULL DEFAULT 0,
+            correct_count INTEGER NOT NULL DEFAULT 0,
+            total_count INTEGER NOT NULL DEFAULT 0,
+            wrong_points JSONB NOT NULL DEFAULT '[]'::jsonb,
+            summary TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_practice_paper_attempts_paper_id ON practice_paper_attempts(paper_id)",
+        "CREATE INDEX IF NOT EXISTS ix_practice_paper_attempts_user_id ON practice_paper_attempts(user_id)",
     ]
     with engine.begin() as connection:
         for statement in statements:
@@ -188,8 +255,6 @@ def init_db() -> None:
     import app.models.learning  # noqa: F401
     import app.models.user  # noqa: F401
     from app.services.auth_service import seed_demo_users
-    from app.services.direction_service import seed_direction_templates
-    from app.services.knowledge_service import seed_course_knowledge
 
     _ensure_postgres_extensions()
     _register_pgvector_adapter()
@@ -198,7 +263,5 @@ def init_db() -> None:
     db = SessionLocal()
     try:
         seed_demo_users(db)
-        seed_course_knowledge(db)
-        seed_direction_templates(db)
     finally:
         db.close()

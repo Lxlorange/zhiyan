@@ -2,14 +2,15 @@
   <div class="page dashboard-module-page">
     <section class="workspace-hero">
       <div>
-        <h2>{{ mode === 'agents' ? '多智能体任务中心' : '教师驾驶舱' }}</h2>
+        <h2>多智能体任务中心</h2>
+        <p>这里用于查看项目规划、学习清单、课堂资源、可视化和评估任务的执行轨迹，便于定位生成失败或排队状态。</p>
       </div>
       <el-button :loading="loading" @click="loadData">刷新</el-button>
     </section>
 
     <section v-if="loading" class="panel-like workspace-loading">正在加载数据...</section>
 
-    <template v-else-if="mode === 'agents'">
+    <template v-else>
       <section class="agent-pipeline panel-like">
         <article v-for="agent in agentCatalog" :key="agent.name">
           <span>{{ agent.phase }}</span>
@@ -44,72 +45,18 @@
         </article>
       </section>
     </template>
-
-    <template v-else>
-      <section class="workspace-metrics">
-        <article v-for="metric in teacher?.metrics || []" :key="metric.label" class="metric-card">
-          <span>{{ metric.label }}</span>
-          <strong>{{ metric.value }}</strong>
-          <small>{{ metric.trend }}</small>
-        </article>
-      </section>
-
-      <section class="workspace-grid two">
-        <article class="panel-like workspace-panel">
-          <header><strong>高频知识短板</strong><span>Weak Points</span></header>
-          <div class="distribution-list">
-            <div v-for="(value, key) in teacher?.weak_point_distribution || {}" :key="key">
-              <span>{{ key }}</span>
-              <el-progress :percentage="Math.min(100, value * 10)" :stroke-width="8" />
-            </div>
-          </div>
-        </article>
-
-        <article class="panel-like workspace-panel">
-          <header><strong>资源使用统计</strong><span>Resources</span></header>
-          <div class="distribution-list">
-            <div v-for="(value, key) in teacher?.resource_type_distribution || {}" :key="key">
-              <span>{{ key }}</span>
-              <el-progress :percentage="Math.min(100, value * 10)" :stroke-width="8" />
-            </div>
-          </div>
-        </article>
-
-        <article class="panel-like workspace-panel">
-          <header><strong>高风险学生</strong><span>Risk</span></header>
-          <div class="workspace-list">
-            <p v-for="student in teacher?.at_risk_students || []" :key="student.session_id">
-              {{ student.title }} · Revision {{ student.profile_revision }} · {{ student.weak_points.join(' / ') }}
-            </p>
-          </div>
-        </article>
-
-        <article class="panel-like workspace-panel">
-          <header><strong>教学建议</strong><span>Action</span></header>
-          <div class="workspace-list">
-            <p v-for="item in teacher?.teaching_suggestions || []" :key="item">{{ item }}</p>
-          </div>
-        </article>
-      </section>
-    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import {
-  getTeacherDashboard,
   getWorkspaceOverview,
-  type TeacherDashboardResponse,
   type WorkspaceOverviewResponse
 } from '../services/apiClient'
 
-type Mode = 'agents' | 'teacher'
-
-const props = defineProps<{ mode: Mode }>()
 const loading = ref(false)
 const overview = ref<WorkspaceOverviewResponse | null>(null)
-const teacher = ref<TeacherDashboardResponse | null>(null)
 
 const agentCatalog = [
   { phase: '方向', name: 'DirectionAgent', role: '识别科研方向、目标类型和澄清问题。' },
@@ -124,18 +71,12 @@ const agentCatalog = [
 ]
 
 onMounted(loadData)
-watch(() => props.mode, loadData)
 
 async function loadData() {
   loading.value = true
   try {
-    if (props.mode === 'agents') {
-      const { data } = await getWorkspaceOverview()
-      overview.value = data
-    } else {
-      const { data } = await getTeacherDashboard()
-      teacher.value = data
-    }
+    const { data } = await getWorkspaceOverview()
+    overview.value = data
   } finally {
     loading.value = false
   }

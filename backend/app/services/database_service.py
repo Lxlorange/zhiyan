@@ -55,25 +55,15 @@ def ask_database(db: Session, user: User, request: DatabaseAskRequest) -> Databa
             used_llm=False,
         )
 
-    try:
-        result = _generate_llm_answer(request.question, citations)
-        return DatabaseAskResponse(
-            answer=result.answer,
-            citations=citations,
-            related_points=result.related_points or _related_points(citations),
-            follow_up_questions=result.follow_up_questions or _fallback_questions(request.question, citations),
-            confidence=result.confidence or "medium",
-            used_llm=True,
-        )
-    except (LLMConfigurationError, LLMResponseError):
-        return DatabaseAskResponse(
-            answer=_fallback_answer(request.question, citations),
-            citations=citations,
-            related_points=_related_points(citations),
-            follow_up_questions=_fallback_questions(request.question, citations),
-            confidence="medium",
-            used_llm=False,
-        )
+    result = _generate_llm_answer(request.question, citations)
+    return DatabaseAskResponse(
+        answer=result.answer,
+        citations=citations,
+        related_points=result.related_points or _related_points(citations),
+        follow_up_questions=result.follow_up_questions,
+        confidence=result.confidence or "medium",
+        used_llm=True,
+    )
 
 
 def build_database_graph(db: Session, user: User, project_id: Optional[int] = None, scope: str = "all") -> DatabaseGraphResponse:
@@ -128,7 +118,7 @@ def get_database_node_detail(db: Session, user: User, name: str, project_id: Opt
         description=point.description if point else "",
         citations=citations,
         related_points=_related_points(citations),
-        suggested_questions=_fallback_questions(name, citations),
+        suggested_questions=[],
     )
 
 
@@ -205,10 +195,7 @@ def _get_user_project(db: Session, user: User, project_id: int) -> LearningProje
 
 
 def _retrieve_hits(db: Session, query: str, limit: int) -> list[dict[str, Any]]:
-    try:
-        return search_knowledge_enhanced(db, query, limit=limit)
-    except (KnowledgeIngestionError, LLMConfigurationError, LLMResponseError):
-        return [hit.model_dump(mode="json") for hit in search_knowledge(db, query, limit=limit)]
+    return search_knowledge_enhanced(db, query, limit=limit)
 
 
 def _project_sources(db: Session, user: User, project_id: Optional[int], query: str) -> list[DatabaseCitation]:
@@ -314,23 +301,8 @@ def _generate_llm_answer(question: str, citations: list[DatabaseCitation]) -> _R
         "你是高校个性化学习平台的 RAG 问答 Agent，必须保证回答可回溯到资料来源。",
         prompt,
         _RagAnswerLLM,
+        user=user,
     )
-
-
-def _fallback_answer(question: str, citations: list[DatabaseCitation]) -> str:
-    lines = [f"基于当前数据库检索结果，问题“{question}”可以先从以下资料复习："]
-    for index, citation in enumerate(citations[:4], start=1):
-        excerpt = citation.content[:180].replace("\n", " ")
-        lines.append(f"[{index}] {citation.title}：{excerpt}")
-    lines.append("当前未启用大模型生成，因此这里返回可回溯的检索式答案。配置 QWEN_API_KEY 后会生成完整 RAG 回答。")
-    return "\n".join(lines)
-
-
-def _fallback_questions(question: str, citations: list[DatabaseCitation]) -> list[str]:
-    points = _related_points(citations)
-    if points:
-        return [f"{point} 和当前问题有什么关系？" for point in points[:3]]
-    return ["这段资料的核心概念是什么？", "有哪些容易混淆的点？", "我应该继续复习哪份材料？"]
 
 
 def _related_points(citations: list[DatabaseCitation]) -> list[str]:

@@ -19,7 +19,7 @@
         </button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="settings">账号设置</el-dropdown-item>
+            <el-dropdown-item command="settings">系统设置</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>

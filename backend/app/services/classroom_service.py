@@ -43,7 +43,7 @@ from app.schemas import (
 from app.core.config import get_settings
 from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.json_repair_service import LLMJsonParseError, parse_llm_json
-from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, validate_qwen_config
+from app.services.llm_client import LLMConfigurationError, LLMResponseError, qwen_chat_json, resolve_chat_config, validate_qwen_config
 from app.services.syllabus_service import update_syllabus_item_status
 from app.services.adaptive_visualization_renderer import render_adaptive_visualization_html
 from app.services.visualization_3d_renderer import render_three_physics_html
@@ -496,7 +496,7 @@ def generate_classroom_ppt(
     session.progress_state = _build_generation_progress_state("generating", "正在生成课堂课件、例题、实操和复盘任务")
     db.commit()
 
-    package = _generate_classroom_package(project, item, instruction)
+    package = _generate_classroom_package(project, item, instruction, user=user)
     ppt_path = _write_pptx_file(session.id, item, package)
 
     resource = ClassroomResource(
@@ -668,7 +668,7 @@ def send_classroom_dialogue(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     package = _classroom_package_or_error(session)
-    response = _generate_dialogue_response(project, item, session, package, request)
+    response = _generate_dialogue_response(project, item, session, package, request, user=user)
 
     _add_submission(
         db,
@@ -858,6 +858,7 @@ def submit_practice(
             '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
         ),
         _PracticeEvaluation,
+        user=user,
     )
     _add_submission(
         db,
@@ -887,7 +888,7 @@ def submit_reflection(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     if _is_research_reflection(project, item):
-        research_evaluation = _evaluate_research_reflection(project, item, request)
+        research_evaluation = _evaluate_research_reflection(project, item, request, user=user)
         evaluation = _ReflectionEvaluation(
             score=research_evaluation.score,
             passed=research_evaluation.passed,
@@ -918,6 +919,7 @@ def submit_reflection(
                 '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
             ),
             _ReflectionEvaluation,
+            user=user,
         )
         content = request.model_dump()
     _add_submission(
@@ -978,6 +980,8 @@ def _evaluate_research_reflection(
     project: LearningProject,
     item: LearningSyllabusItem,
     request: ClassroomReflectionSubmitRequest,
+    *,
+    user: User | None = None,
 ) -> _ResearchReflectionEvaluation:
     paper_context = _paper_focus_context(item)
     return qwen_chat_json(
@@ -1002,6 +1006,7 @@ def _evaluate_research_reflection(
             "score, passed, feedback, strengths, improvement_suggestions, next_plan_suggestions。"
         ),
         _ResearchReflectionEvaluation,
+        user=user,
     )
 
 
@@ -1440,6 +1445,8 @@ def _generate_dialogue_response(
     session: ClassroomSession,
     package: _ClassroomPackage,
     request: ClassroomDialogueRequest,
+    *,
+    user: User | None = None,
 ) -> _DialogueAgentResponse:
     knowledge_context = build_rag_context_for_classroom(project, item, request.message)
     history = [
@@ -1469,6 +1476,7 @@ def _generate_dialogue_response(
             "cards 每项包含 card_type, title, content, metadata；card_type 可为 concept, example, code, quiz, diagram, next_step。"
         ),
         _DialogueAgentResponse,
+        user=user,
     )
 
 
@@ -1699,7 +1707,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
     return path
 
 
-def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str) -> _ClassroomPackage:
+def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str, *, user: User | None = None) -> _ClassroomPackage:
     mode_hint = _classroom_mode_hint(project, item)
     paper_focus = _paper_focus_context(item)
     knowledge_context = _truncate_for_prompt(build_rag_context_for_classroom(project, item, instruction), 4500)
@@ -1767,7 +1775,13 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         f"mode_hint：{mode_hint}\n"
         f"补充要求：{instruction}\n"
     )
-    raw = _qwen_chat_raw_json(system_prompt, user_prompt, max_tokens=CLASSROOM_PACKAGE_MAX_TOKENS, timeout_seconds=get_settings().qwen_classroom_timeout_seconds)
+    raw = _qwen_chat_raw_json(
+        system_prompt,
+        user_prompt,
+        max_tokens=CLASSROOM_PACKAGE_MAX_TOKENS,
+        timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
+        user=user,
+    )
     try:
         return _validate_classroom_package(raw, project, item)
     except LLMResponseError as first_error:
@@ -1776,6 +1790,7 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
             original_prompt=user_prompt,
             raw=raw,
             validation_error=str(first_error),
+            user=user,
         )
         try:
             return _validate_classroom_package(repaired, project, item)
@@ -1858,6 +1873,7 @@ def _repair_classroom_package_json(
     original_prompt: str,
     raw: Any,
     validation_error: str,
+    user: User | None = None,
 ) -> Any:
     repair_prompt = (
         "你刚才输出的课堂包 JSON 未通过系统结构校验。请只返回修复后的完整 JSON 对象，不要 Markdown，不要解释。\n"
@@ -1882,6 +1898,7 @@ def _repair_classroom_package_json(
         max_tokens=CLASSROOM_REPAIR_MAX_TOKENS,
         temperature=0.1,
         timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
+        user=user,
     )
 
 
@@ -1892,11 +1909,13 @@ def _qwen_chat_raw_json(
     max_tokens: int = 9000,
     temperature: float = 0.2,
     timeout_seconds: Optional[int] = None,
+    user: User | None = None,
 ) -> Any:
     settings = get_settings()
-    validate_qwen_config()
+    config = resolve_chat_config(user, timeout_seconds=timeout_seconds or settings.qwen_timeout_seconds)
+    validate_qwen_config(user)
     payload = {
-        "model": settings.qwen_model,
+        "model": config.model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -1907,26 +1926,26 @@ def _qwen_chat_raw_json(
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        f"{settings.qwen_base_url.rstrip('/')}/chat/completions",
+        f"{config.base_url}/chat/completions",
         data=data,
-        headers={"Authorization": f"Bearer {settings.qwen_api_key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
         method="POST",
     )
     try:
-        timeout = timeout_seconds or settings.qwen_timeout_seconds
+        timeout = config.timeout_seconds
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
     except (TimeoutError, socket.timeout) as exc:
-        raise LLMResponseError(f"千问接口请求超时：{timeout_seconds or settings.qwen_timeout_seconds} 秒内未返回") from exc
+        raise LLMResponseError(f"{config.provider} 接口请求超时：{timeout} 秒内未返回") from exc
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
-        raise LLMResponseError(f"千问接口返回错误：{exc.code} {detail}") from exc
+        raise LLMResponseError(f"{config.provider} 接口返回错误：{exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
-        raise LLMResponseError(f"无法连接千问接口：{exc.reason}") from exc
+        raise LLMResponseError(f"无法连接 {config.provider} 接口：{exc.reason}") from exc
     try:
         content = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise LLMResponseError("千问接口响应缺少 choices[0].message.content") from exc
+        raise LLMResponseError(f"{config.provider} 接口响应缺少 choices[0].message.content") from exc
     return _extract_raw_json(content)
 
 
@@ -2351,7 +2370,7 @@ def generate_classroom_visualization(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     package = _classroom_package_or_error(session)
-    demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind)
+    demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind, user=user)
     html_path = _write_visualization_html(session.id, item, demo)
 
     resource = ClassroomResource(
@@ -2396,6 +2415,8 @@ def _generate_visualization_demo(
     package: _ClassroomPackage,
     instruction: str,
     preferred_kind: str = "auto",
+    *,
+    user: User | None = None,
 ) -> _VisualizationDemo:
     widget_preference = _normalize_widget_type(preferred_kind, allow_auto=True)
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
@@ -2438,6 +2459,7 @@ def _generate_visualization_demo(
             f"课程知识库来源：\n{knowledge_context}\n"
             f"当前页/用户要求：{instruction}\n"
         ),
+        user=user,
     )
     normalized = _normalize_visualization_demo(raw, widget_preference)
     try:
