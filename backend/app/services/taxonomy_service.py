@@ -20,7 +20,7 @@ from app.schemas import KnowledgeLinkEdge, KnowledgeLinkGraphResponse, Knowledge
 from app.services.knowledge_ingestion_service import _job_id_from_document_path
 
 
-GRAPH_ATTRIBUTION = "知识星图由当前用户上传知识库、项目知识点与学习画像动态聚合生成。"
+GRAPH_ATTRIBUTION = "知识漏斗由当前用户上传知识库、项目知识点与学习画像动态聚合生成。"
 
 
 def build_knowledge_link_graph(

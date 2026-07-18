@@ -66,10 +66,10 @@ export const pageMeta: Record<string, PageMeta> = {
     highlights: ['画像条目', '知识短板', '版本追踪']
   },
   resources: {
-    title: '知识星图',
-    subtitle: '基于用户知识库动态生成可旋转知识星图',
-    description: '这里只展示知识星图。节点来自用户上传知识库、项目知识点和学习画像的动态聚合，用于规划科学、动态的个性化学习路径。',
-    highlights: ['3D知识星图', '动态路径', '节点交互']
+    title: '知识漏斗',
+    subtitle: '基于用户知识库动态生成可旋转知识漏斗',
+    description: '这里只展示知识漏斗。节点来自用户上传知识库、项目知识点和学习画像的动态聚合，用于把资料证据筛分、收束成科学动态的个性化学习路径。',
+    highlights: ['3D知识漏斗', '动态路径', '节点交互']
   },
   'knowledge-upload': {
     title: '知识库',

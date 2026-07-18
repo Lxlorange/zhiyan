@@ -41,7 +41,7 @@
         </template>
         <el-menu-item index="profile">学习画像</el-menu-item>
         <el-menu-item index="knowledge-upload">知识库</el-menu-item>
-        <el-menu-item index="resources">知识星图</el-menu-item>
+        <el-menu-item index="resources">知识漏斗</el-menu-item>
         <el-menu-item index="assessment">练习试卷</el-menu-item>
       </el-sub-menu>
 

@@ -2,7 +2,7 @@
   <section class="knowledge-sphere-panel">
     <header class="knowledge-sphere-toolbar">
       <div class="knowledge-sphere-toolbar__title">
-        <strong>知识星图</strong>
+        <strong>知识漏斗</strong>
         <span>{{ graphStats }}</span>
       </div>
       <div class="knowledge-sphere-toolbar__controls">
@@ -28,7 +28,7 @@
           @update:model-value="updateQuery"
           @keyup.enter="emit('search')"
         />
-        <div class="knowledge-sphere-segments" role="group" aria-label="图谱视图">
+        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗视图">
           <button
             v-for="option in viewOptions"
             :key="option.value"
@@ -39,7 +39,7 @@
             {{ option.label }}
           </button>
         </div>
-        <el-button :loading="loading" type="primary" @click="emit('search')">刷新图谱</el-button>
+        <el-button :loading="loading" type="primary" @click="emit('search')">刷新漏斗</el-button>
       </div>
     </header>
 
@@ -49,14 +49,14 @@
 
         <div class="knowledge-sphere-overlay">
           <div class="knowledge-sphere-badge">
-            <strong>知识库动态星图</strong>
-            <span>按资料来源、知识点证据量、先修关系和学习路径构建 3D 可旋转知识图谱</span>
+            <strong>知识漏斗</strong>
+            <span>把上传资料、项目目标和练习证据汇入上层，沿先修关系筛分并收束为下一步学习路径</span>
           </div>
 
           <div class="knowledge-sphere-rulers" aria-hidden="true">
-            <span>迁移应用</span>
-            <span>概念连接</span>
-            <span>资料证据</span>
+            <span>资料汇入</span>
+            <span>概念筛分</span>
+            <span>路径收束</span>
           </div>
 
           <div v-if="hoveredNode" class="knowledge-sphere-tooltip" :style="tooltipStyle">
@@ -66,10 +66,10 @@
           </div>
 
           <div class="knowledge-sphere-legend">
-            <span><i class="project" />项目知识</span>
+            <span><i class="project" />项目目标</span>
             <span><i class="document" />上传资料</span>
             <span><i class="knowledge_base" />知识点</span>
-            <span><i class="path" />个性化路径</span>
+            <span><i class="path" />漏斗输出</span>
           </div>
 
           <div class="knowledge-sphere-actions">
@@ -103,13 +103,13 @@
             <el-button size="small" @click="clearSelection">取消选择</el-button>
           </template>
           <template v-else>
-            <span>点击球体中的节点，可查看来源、前置关系、掌握证据和它在学习路径中的位置。</span>
+            <span>点击漏斗中的节点，可查看来源、前置关系、掌握证据和它在学习路径中的位置。</span>
           </template>
         </div>
 
         <div class="knowledge-sphere-card">
           <div class="knowledge-sphere-card-head">
-            <strong>个性化学习路径</strong>
+            <strong>漏斗输出：个性化学习路径</strong>
             <span>{{ activeSuggestion?.project_title || '全部知识库' }}</span>
           </div>
           <p v-if="activeSuggestion?.strategy" class="knowledge-sphere-strategy">
@@ -139,7 +139,7 @@
         </div>
 
         <div class="knowledge-sphere-card knowledge-sphere-map">
-          <strong>图谱范围</strong>
+          <strong>漏斗范围</strong>
           <div class="knowledge-sphere-stat-grid">
             <span><b>{{ graph?.nodes.length || 0 }}</b>节点</span>
             <span><b>{{ graph?.edges.length || 0 }}</b>关系</span>
@@ -155,7 +155,7 @@
               {{ item.subject }} {{ item.count }}
             </span>
           </div>
-          <p>{{ graph?.attribution || '图谱由当前用户上传知识库、项目知识点与学习画像动态聚合生成。' }}</p>
+          <p>{{ graph?.attribution || '知识漏斗由当前用户上传知识库、项目知识点与学习画像动态聚合生成。' }}</p>
         </div>
       </aside>
     </div>
@@ -224,6 +224,7 @@ let nodeLayer: any = null
 let linkLayer: any = null
 let pathLayer: any = null
 let orbitLayer: any = null
+let funnelLayer: any = null
 let animationFrame = 0
 let pathTimer = 0
 let raycaster: any = null
@@ -245,7 +246,7 @@ const graphStats = computed(() => {
   const edges = props.graph?.edges.length || 0
   const documents = props.graph?.meta?.document_count || 0
   const points = props.graph?.meta?.knowledge_point_count || 0
-  return `${nodes} nodes · ${edges} links · ${documents} docs · ${points} points`
+  return `${nodes} 节点 · ${edges} 关系 · ${documents} 资料 · ${points} 知识点`
 })
 
 const chapterStats = computed(() => {
@@ -356,10 +357,10 @@ function initScene() {
   if (!host) return
 
   scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(0x4c4139, 520, 1200)
+  scene.fog = new THREE.Fog(0x060a14, 620, 1500)
 
   camera = new THREE.PerspectiveCamera(42, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 4000)
-  camera.position.set(0, 130, 780)
+  camera.position.set(0, 150, 900)
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
@@ -377,10 +378,10 @@ function initScene() {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.enablePan = false
-  controls.minDistance = 300
-  controls.maxDistance = 980
+  controls.minDistance = 360
+  controls.maxDistance = 1180
   controls.autoRotate = autoRotate.value
-  controls.autoRotateSpeed = 0.55
+  controls.autoRotateSpeed = 0.42
 
   const ambient = new THREE.AmbientLight(0xffffff, 1.35)
   const key = new THREE.DirectionalLight(0xffefd6, 2.2)
@@ -394,7 +395,8 @@ function initScene() {
   linkLayer = new THREE.Group()
   pathLayer = new THREE.Group()
   orbitLayer = new THREE.Group()
-  rootLayer.add(orbitLayer, linkLayer, pathLayer, nodeLayer)
+  funnelLayer = new THREE.Group()
+  rootLayer.add(funnelLayer, orbitLayer, linkLayer, pathLayer, nodeLayer)
   scene.add(rootLayer)
   raycaster = new THREE.Raycaster()
 
@@ -409,35 +411,119 @@ function initScene() {
 
 function addCoreObjects() {
   if (!scene) return
-  const core = new THREE.Mesh(
-    new THREE.SphereGeometry(56, 48, 24),
-    new THREE.MeshStandardMaterial({
-      color: 0xdc8b5e,
-      emissive: 0x6f3a26,
-      emissiveIntensity: 0.85,
-      roughness: 0.36,
-      metalness: 0.18,
-      transparent: true,
-      opacity: 0.76
-    })
-  )
-  scene.add(core)
+  buildFunnelFrame()
+}
 
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(360, 64, 32),
+function buildFunnelFrame() {
+  if (!funnelLayer) return
+  disposeGroup(funnelLayer)
+
+  const topY = 270
+  const midY = 20
+  const bottomY = -270
+  const topRadius = 300
+  const midRadius = 176
+  const bottomRadius = 58
+
+  const wallMaterial = new THREE.MeshBasicMaterial({
+    color: 0xc4daeb,
+    transparent: true,
+    opacity: 0.045,
+    side: THREE.DoubleSide,
+    wireframe: true
+  })
+  const upperWall = new THREE.Mesh(
+    new THREE.CylinderGeometry(topRadius, midRadius, topY - midY, 96, 8, true),
+    wallMaterial
+  )
+  upperWall.position.y = (topY + midY) / 2
+  const lowerWall = new THREE.Mesh(
+    new THREE.CylinderGeometry(midRadius, bottomRadius, midY - bottomY, 96, 8, true),
+    wallMaterial.clone()
+  )
+  lowerWall.position.y = (midY + bottomY) / 2
+  funnelLayer.add(upperWall, lowerWall)
+
+  addFunnelRing(topY, topRadius, 0xffefd6, 0.58)
+  addFunnelRing(midY, midRadius, 0xcadab2, 0.36)
+  addFunnelRing(bottomY, bottomRadius, 0xdc8b5e, 0.72)
+
+  for (let index = 0; index < 24; index += 1) {
+    const angle = (index / 24) * Math.PI * 2
+    const top = polarPoint(topRadius, topY, angle)
+    const mid = polarPoint(midRadius, midY, angle + 0.08)
+    const bottom = polarPoint(bottomRadius, bottomY, angle + 0.14)
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([top, mid, bottom]),
+      new THREE.LineBasicMaterial({
+        color: index % 3 === 0 ? 0xf0cebb : 0x9fb4c5,
+        transparent: true,
+        opacity: index % 3 === 0 ? 0.22 : 0.12
+      })
+    )
+    funnelLayer.add(line)
+  }
+
+  ;[-160, -70, 70, 170].forEach((y, index) => {
+    const radius = funnelRadiusAtY(y)
+    const geometry = new THREE.BufferGeometry().setFromPoints(
+      Array.from({ length: 144 }, (_, pointIndex) => {
+        const angle = (pointIndex / 143) * Math.PI * 2
+        const wobble = Math.sin(angle * 4 + index) * 6
+        return polarPoint(radius + wobble, y, angle)
+      })
+    )
+    const ring = new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.1
+      })
+    )
+    funnelLayer.add(ring)
+  })
+
+  const outputGlow = new THREE.Mesh(
+    new THREE.TorusGeometry(bottomRadius + 14, 5, 12, 96),
     new THREE.MeshBasicMaterial({
-      color: 0xc4daeb,
-      wireframe: true,
+      color: 0xdc8b5e,
       transparent: true,
-      opacity: 0.045
+      opacity: 0.42
     })
   )
-  scene.add(shell)
+  outputGlow.position.y = bottomY - 2
+  outputGlow.rotation.x = Math.PI / 2
+  funnelLayer.add(outputGlow)
+}
+
+function addFunnelRing(y: number, radius: number, color: number, opacity: number) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, y < -200 ? 2.8 : 1.6, 10, 120),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity })
+  )
+  ring.position.y = y
+  ring.rotation.x = Math.PI / 2
+  funnelLayer?.add(ring)
+}
+
+function polarPoint(radius: number, y: number, angle: number) {
+  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
+}
+
+function funnelRadiusAtY(y: number) {
+  const topY = 270
+  const bottomY = -270
+  const topRadius = 300
+  const bottomRadius = 58
+  const t = Math.max(0, Math.min(1, (topY - y) / (topY - bottomY)))
+  return topRadius + (bottomRadius - topRadius) * Math.pow(t, 0.92)
 }
 
 function rebuildGraph() {
   if (!scene || !nodeLayer || !linkLayer || !orbitLayer || !props.graph) return
   disposeGraph()
+  buildFunnelFrame()
   drawAgeRings()
 
   const orderedNodes = [...props.graph.nodes].sort((left, right) => layerOrder(left.layer) - layerOrder(right.layer))
@@ -486,9 +572,13 @@ function rebuildGraph() {
 
 function drawAgeRings() {
   if (!orbitLayer) return
-  const levels = [-210, -70, 70, 210]
-  levels.forEach((y, index) => {
-    const radius = 210 + index * 46
+  const levels = [
+    { y: 226, radius: 282, opacity: 0.18 },
+    { y: 84, radius: 220, opacity: 0.12 },
+    { y: -72, radius: 146, opacity: 0.11 },
+    { y: -228, radius: 74, opacity: 0.18 }
+  ]
+  levels.forEach(({ y, radius, opacity }) => {
     const geometry = new THREE.BufferGeometry().setFromPoints(
       Array.from({ length: 160 }, (_, pointIndex) => {
         const angle = (pointIndex / 159) * Math.PI * 2
@@ -498,9 +588,9 @@ function drawAgeRings() {
     const line = new THREE.Line(
       geometry,
       new THREE.LineBasicMaterial({
-        color: 0x9ca3af,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.13
+        opacity
       })
     )
     orbitLayer.add(line)
@@ -533,22 +623,43 @@ function rebuildPathLayer() {
   disposeGroup(pathLayer)
   const steps = activeSuggestion.value?.steps || []
   const pathEntries = steps.map((step) => nodeMap.get(step.id)).filter(Boolean) as GraphEntry[]
-  if (pathEntries.length < 2) return
+  if (!pathEntries.length) return
 
-  for (let index = 0; index < pathEntries.length - 1; index += 1) {
-    const current = pathEntries[index]
-    const next = pathEntries[index + 1]
-    const curve = new THREE.CatmullRomCurve3(curvedPoints(current.position, next.position, 46))
+  const entryPoint = new THREE.Vector3(0, 286, 0)
+  const outputPoint = new THREE.Vector3(0, -318, 0)
+  const guidePoints = [
+    entryPoint,
+    ...pathEntries.map((entry) => entry.position),
+    outputPoint
+  ]
+
+  for (let index = 0; index < guidePoints.length - 1; index += 1) {
+    const current = guidePoints[index]
+    const next = guidePoints[index + 1]
+    const curve = new THREE.CatmullRomCurve3(curvedPoints(current, next, index === 0 ? 24 : 42))
     const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 36, 2.4, 8, false),
+      new THREE.TubeGeometry(curve, 42, index === guidePoints.length - 2 ? 3.8 : 2.4, 8, false),
       new THREE.MeshBasicMaterial({
-        color: 0xdc8b5e,
+        color: index === guidePoints.length - 2 ? 0xffefd6 : 0xdc8b5e,
         transparent: true,
-        opacity: viewMode.value === 'documents' ? 0.2 : 0.58
+        opacity: viewMode.value === 'documents' ? 0.18 : 0.62
       })
     )
     pathLayer.add(tube)
   }
+
+  const output = new THREE.Mesh(
+    new THREE.SphereGeometry(14, 28, 16),
+    new THREE.MeshStandardMaterial({
+      color: 0xffefd6,
+      emissive: 0xdc8b5e,
+      emissiveIntensity: 1.1,
+      transparent: true,
+      opacity: 0.92
+    })
+  )
+  output.position.copy(outputPoint)
+  pathLayer.add(output)
 }
 
 function disposeGraph() {
@@ -590,28 +701,39 @@ function positionForNode(node: KnowledgeLinkNode, index: number) {
 
 function projectPosition(node: KnowledgeLinkNode, index: number) {
   const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'project').length || 1)
-  const angle = (index / count) * Math.PI * 2
-  const radius = 74 + (hashString(node.id) % 20)
-  return new THREE.Vector3(Math.cos(angle) * radius, 6 + index * 8, Math.sin(angle) * radius)
+  const angle = (index / count) * Math.PI * 2 + 0.34
+  const radius = 190 + (hashString(node.id) % 70)
+  return new THREE.Vector3(Math.cos(angle) * radius, 218 + ((index % 3) - 1) * 24, Math.sin(angle) * radius)
 }
 
 function documentPosition(node: KnowledgeLinkNode, index: number) {
   const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'document').length || 1)
-  const angle = (index / count) * Math.PI * 2
   const hash = hashString(node.id)
-  const radius = 270 + (hash % 42)
-  const y = -150 + ((hash % 70) - 35)
+  const angle = (index / count) * Math.PI * 2 + ((hash % 17) / 17) * 0.2
+  const y = 124 + ((hash % 130) - 65)
+  const radius = funnelRadiusAtY(y) - 18 - (hash % 54)
   return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
 }
 
 function knowledgeBasePosition(node: KnowledgeLinkNode, index: number) {
   const hash = hashString(`${node.category}:${node.id}`)
   const categoryAngle = ((hashString(node.category || 'kb') % 360) / 360) * Math.PI * 2
-  const angle = categoryAngle + index * 0.18
+  const angle = categoryAngle + index * 0.23
   const difficulty = String(node.meta?.difficulty || '').toLowerCase()
-  const y = difficulty.includes('hard') || difficulty.includes('困难') ? 110 : difficulty.includes('easy') || difficulty.includes('基础') ? -110 : 0
-  const radius = 190 + (hash % 58)
-  return new THREE.Vector3(Math.cos(angle) * radius, y + ((hash % 60) - 30), Math.sin(angle) * radius)
+  const path = node.meta?.path as Record<string, unknown> | undefined
+  if (path?.order) {
+    const order = Math.max(1, Number(path.order || 1))
+    const steps = Math.max(1, activeSuggestion.value?.steps.length || 1)
+    const t = steps <= 1 ? 0.86 : Math.min(1, (order - 1) / Math.max(1, steps - 1))
+    const y = 120 - t * 360
+    const radius = Math.max(42, funnelRadiusAtY(y) * (0.62 - t * 0.28))
+    const pathAngle = categoryAngle + order * 0.62
+    return new THREE.Vector3(Math.cos(pathAngle) * radius, y, Math.sin(pathAngle) * radius)
+  }
+  const baseY = difficulty.includes('hard') || difficulty.includes('困难') ? -84 : difficulty.includes('easy') || difficulty.includes('基础') ? 82 : 0
+  const y = baseY + ((hash % 96) - 48)
+  const radius = Math.max(70, funnelRadiusAtY(y) - 50 - (hash % 78))
+  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
 }
 
 function nodeRadius(node: KnowledgeLinkNode) {
@@ -817,8 +939,8 @@ function focusNode(nodeId: string) {
 
 function resetCamera() {
   if (!camera || !controls) return
-  camera.position.set(0, 130, 780)
-  controls.target.set(0, 0, 0)
+  camera.position.set(0, 150, 900)
+  controls.target.set(0, 4, 0)
   controls.update()
 }
 
@@ -846,7 +968,7 @@ function playPath() {
 
 function curvedPoints(source: any, target: any, lift: number) {
   const middle = source.clone().lerp(target, 0.5)
-  const outward = middle.clone().normalize().multiplyScalar(lift)
+  const outward = new THREE.Vector3(middle.x, 0, middle.z).normalize().multiplyScalar(lift)
   return [source, source.clone().lerp(target, 0.35).add(outward), target.clone().lerp(source, 0.35).add(outward), target]
 }
 
@@ -916,8 +1038,9 @@ function formatMeta(value: unknown) {
 }
 
 .knowledge-sphere-toolbar__title strong {
-  font-size: 20px;
+  font-size: 28px;
   color: var(--study-ink);
+  letter-spacing: 0;
 }
 
 .knowledge-sphere-toolbar__title span {
@@ -970,20 +1093,21 @@ function formatMeta(value: unknown) {
 
 .knowledge-sphere-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(330px, 0.72fr);
+  grid-template-columns: minmax(0, 1.9fr) minmax(340px, 0.72fr);
   gap: 16px;
 }
 
 .knowledge-sphere-stage {
   position: relative;
-  min-height: 720px;
-  border: 1px solid rgba(33, 44, 56, 0.12);
-  border-radius: 18px;
+  min-height: 760px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 28% 18%, rgba(255, 239, 214, 0.96), rgba(196, 218, 235, 0.72) 28%, rgba(220, 139, 94, 0.18) 58%, rgba(76, 65, 57, 0.88)),
-    linear-gradient(135deg, #ffefd6 0%, #cadab2 42%, #4c4139 100%);
-  box-shadow: 0 28px 70px rgba(76, 65, 57, 0.18);
+    radial-gradient(circle at 52% 24%, rgba(196, 218, 235, 0.16), transparent 26%),
+    radial-gradient(circle at 53% 77%, rgba(220, 139, 94, 0.16), transparent 22%),
+    linear-gradient(135deg, #070a13 0%, #0b1020 54%, #060811 100%);
+  box-shadow: 0 32px 90px rgba(9, 12, 24, 0.28);
 }
 
 .knowledge-sphere-stage::after {
@@ -992,10 +1116,10 @@ function formatMeta(value: unknown) {
   pointer-events: none;
   content: '';
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: radial-gradient(circle at center, black 0%, transparent 74%);
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(ellipse at 54% 52%, black 0%, transparent 76%);
 }
 
 .knowledge-sphere-canvas {
@@ -1013,9 +1137,9 @@ function formatMeta(value: unknown) {
   display: block;
   max-width: 150px;
   padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(6, 10, 20, 0.82);
   color: #fff;
   font-size: 11px;
   line-height: 1.3;
@@ -1046,9 +1170,9 @@ function formatMeta(value: unknown) {
 .knowledge-sphere-legend,
 .knowledge-sphere-actions,
 .knowledge-sphere-tooltip {
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 12, 24, 0.78);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(14px);
 }
 
@@ -1057,16 +1181,16 @@ function formatMeta(value: unknown) {
   top: 16px;
   left: 16px;
   display: grid;
-  max-width: 380px;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  color: #1f2937;
+  max-width: 430px;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  color: #f8fafc;
   font-size: 12px;
 }
 
 .knowledge-sphere-badge strong {
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .knowledge-sphere-rulers {
@@ -1076,8 +1200,8 @@ function formatMeta(value: unknown) {
   left: 16px;
   display: grid;
   align-content: space-between;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
   pointer-events: none;
 }
 
@@ -1090,7 +1214,7 @@ function formatMeta(value: unknown) {
   gap: 3px;
   padding: 10px 12px;
   border-radius: 12px;
-  color: #172033;
+  color: #f8fafc;
 }
 
 .knowledge-sphere-tooltip strong,
@@ -1101,7 +1225,7 @@ function formatMeta(value: unknown) {
 
 .knowledge-sphere-tooltip span,
 .knowledge-sphere-tooltip small {
-  color: #5c6675;
+  color: #cbd5e1;
   font-size: 12px;
 }
 
@@ -1114,14 +1238,14 @@ function formatMeta(value: unknown) {
   flex-wrap: wrap;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 .knowledge-sphere-legend span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #4b5563;
+  color: #d7dde8;
   font-size: 12px;
 }
 
@@ -1155,7 +1279,7 @@ function formatMeta(value: unknown) {
   display: flex;
   gap: 6px;
   padding: 5px;
-  border-radius: 11px;
+  border-radius: 8px;
   pointer-events: auto;
 }
 
@@ -1164,8 +1288,8 @@ function formatMeta(value: unknown) {
 }
 
 .knowledge-sphere-actions button:hover {
-  background: rgba(31, 41, 55, 0.1);
-  color: #111827;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
   transform: translateY(-1px);
 }
 
