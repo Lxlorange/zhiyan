@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Dict, Union
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
@@ -33,7 +34,7 @@ def model_settings_update(
 
 
 @router.post("/model-settings/verify")
-def model_settings_verify(user: User = Depends(get_current_user)) -> dict[str, str | bool]:
+def model_settings_verify(user: User = Depends(get_current_user)) -> Dict[str, Union[str, bool]]:
     try:
         return verify_user_model_settings(user)
     except LLMConfigurationError as exc:

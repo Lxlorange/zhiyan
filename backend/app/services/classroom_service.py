@@ -981,7 +981,7 @@ def _evaluate_research_reflection(
     item: LearningSyllabusItem,
     request: ClassroomReflectionSubmitRequest,
     *,
-    user: User | None = None,
+    user: Optional[User] = None,
 ) -> _ResearchReflectionEvaluation:
     paper_context = _paper_focus_context(item)
     return qwen_chat_json(
@@ -1446,7 +1446,7 @@ def _generate_dialogue_response(
     package: _ClassroomPackage,
     request: ClassroomDialogueRequest,
     *,
-    user: User | None = None,
+    user: Optional[User] = None,
 ) -> _DialogueAgentResponse:
     knowledge_context = build_rag_context_for_classroom(project, item, request.message)
     history = [
@@ -1707,7 +1707,7 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
     return path
 
 
-def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str, *, user: User | None = None) -> _ClassroomPackage:
+def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str, *, user: Optional[User] = None) -> _ClassroomPackage:
     mode_hint = _classroom_mode_hint(project, item)
     paper_focus = _paper_focus_context(item)
     knowledge_context = _truncate_for_prompt(build_rag_context_for_classroom(project, item, instruction), 4500)
@@ -1873,7 +1873,7 @@ def _repair_classroom_package_json(
     original_prompt: str,
     raw: Any,
     validation_error: str,
-    user: User | None = None,
+    user: Optional[User] = None,
 ) -> Any:
     repair_prompt = (
         "你刚才输出的课堂包 JSON 未通过系统结构校验。请只返回修复后的完整 JSON 对象，不要 Markdown，不要解释。\n"
@@ -1909,7 +1909,7 @@ def _qwen_chat_raw_json(
     max_tokens: int = 9000,
     temperature: float = 0.2,
     timeout_seconds: Optional[int] = None,
-    user: User | None = None,
+    user: Optional[User] = None,
 ) -> Any:
     settings = get_settings()
     config = resolve_chat_config(user, timeout_seconds=timeout_seconds or settings.qwen_timeout_seconds)
@@ -2416,7 +2416,7 @@ def _generate_visualization_demo(
     instruction: str,
     preferred_kind: str = "auto",
     *,
-    user: User | None = None,
+    user: Optional[User] = None,
 ) -> _VisualizationDemo:
     widget_preference = _normalize_widget_type(preferred_kind, allow_auto=True)
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)

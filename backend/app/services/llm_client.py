@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -35,7 +35,7 @@ class ChatModelConfig:
     timeout_seconds: int
 
 
-def resolve_chat_config(user: User | None = None, *, timeout_seconds: int | None = None) -> ChatModelConfig:
+def resolve_chat_config(user: Optional[User] = None, *, timeout_seconds: Optional[int] = None) -> ChatModelConfig:
     settings = get_settings()
     provider = (getattr(user, "llm_provider", "") or settings.llm_provider or "qwen").strip()
     model = (getattr(user, "llm_model", "") or settings.qwen_model).strip()
@@ -50,7 +50,7 @@ def resolve_chat_config(user: User | None = None, *, timeout_seconds: int | None
     )
 
 
-def validate_qwen_config(user: User | None = None) -> None:
+def validate_qwen_config(user: Optional[User] = None) -> None:
     config = resolve_chat_config(user)
     if not config.api_key:
         raise LLMConfigurationError("缺少模型 API Key，请在系统设置中配置，或在 backend/.env 中配置管理员默认 Key。")
@@ -65,7 +65,7 @@ def _extract_json_object(text: str) -> Any:
         raise LLMResponseError(str(exc)) from exc
 
 
-def qwen_chat_json(system_prompt: str, user_prompt: str, schema_model: Type[T], user: User | None = None) -> T:
+def qwen_chat_json(system_prompt: str, user_prompt: str, schema_model: Type[T], user: Optional[User] = None) -> T:
     config = resolve_chat_config(user)
     validate_qwen_config(user)
 
@@ -112,7 +112,7 @@ def qwen_chat_json(system_prompt: str, user_prompt: str, schema_model: Type[T], 
         raise LLMResponseError(f"模型 JSON 未通过结构校验：{exc}") from exc
 
 
-def qwen_chat_stream_text(system_prompt: str, user_prompt: str, user: User | None = None) -> Iterator[str]:
+def qwen_chat_stream_text(system_prompt: str, user_prompt: str, user: Optional[User] = None) -> Iterator[str]:
     config = resolve_chat_config(user)
     validate_qwen_config(user)
 

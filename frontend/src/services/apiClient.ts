@@ -11,6 +11,64 @@ declare module 'axios' {
   }
 }
 
+type ApiErrorPayload = {
+  detail?: string | Record<string, unknown> | Array<Record<string, unknown>>
+  msg?: string
+  message?: string
+}
+
+function stringifyErrorDetail(raw: unknown): string {
+  if (typeof raw === 'string') return raw
+  if (raw === null || raw === undefined) return '未知错误'
+  try {
+    return JSON.stringify(raw, null, 2)
+  } catch {
+    return String(raw)
+  }
+}
+
+function extractErrorMsg(payload: ApiErrorPayload | undefined, fallback: string) {
+  return stringifyErrorDetail(payload?.detail || payload?.msg || payload?.message || fallback)
+}
+
+function userFacingErrorMessage(url: string, status: number | string, detail: string) {
+  const normalized = detail.toLowerCase()
+  if (url.includes('/auth/login') && status === 401) return '用户名或密码不正确，请检查后重新登录。'
+  if (status === 401) return '登录状态已失效，请重新登录。'
+  if (status === 403) return '当前账号没有权限执行这个操作。'
+  if (status === 404) return '没有找到对应的数据，请刷新后重试。'
+  if (status === 422) return '填写内容不完整或格式不正确，请检查后再提交。'
+  if (status === 'NETWORK') return '网络连接失败，请检查后端服务是否正在运行。'
+  if (normalized.includes('api key')) return '模型 API Key 未配置或不可用，请到系统设置检查。'
+  if (normalized.includes('timeout') || normalized.includes('timed out')) return '请求超时，请稍后重试。'
+  return `错误：${detail}，请您截图联系管理员处理`
+}
+
+async function showApiError(context: {
+  method: string
+  url: string
+  status: number | string
+  detail: string
+  source?: unknown
+}) {
+  console.error('[API Error]', {
+    method: context.method,
+    url: context.url,
+    status: context.status,
+    detail: context.detail,
+    source: context.source
+  })
+
+  await ElMessageBox.alert(
+    userFacingErrorMessage(context.url, context.status, context.detail),
+    '操作失败',
+    {
+      confirmButtonText: '知道了',
+      type: 'error'
+    }
+  )
+}
+
 export const api = axios.create({
   baseURL: '/api',
   timeout: 120000
@@ -24,19 +82,14 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<{ detail?: string | Record<string, unknown> }>) => {
+  async (error: AxiosError<ApiErrorPayload>) => {
     if (error.config?.skipErrorPopup) return Promise.reject(error)
 
     const method = error.config?.method?.toUpperCase() || 'GET'
     const url = error.config?.url || '-'
     const status = error.response?.status || 'NETWORK'
-    const rawDetail = error.response?.data?.detail || error.message || '未知错误'
-    const detail = typeof rawDetail === 'string' ? rawDetail : JSON.stringify(rawDetail, null, 2)
-
-    await ElMessageBox.alert(`${method} ${url}\n\n${status}: ${detail}`, '接口调用失败', {
-      confirmButtonText: '知道了',
-      type: 'error'
-    })
+    const detail = extractErrorMsg(error.response?.data, error.message || '未知错误')
+    await showApiError({ method, url, status, detail, source: error })
 
     return Promise.reject(error)
   }
@@ -759,10 +812,7 @@ async function requestProjectPlanStream(
     if (!response.ok || !response.body) {
       const detail = await response.text()
       errorShown = true
-      await ElMessageBox.alert(`POST ${path}\n\n${response.status}: ${detail}`, '接口调用失败', {
-        confirmButtonText: '知道了',
-        type: 'error'
-      })
+      await showApiError({ method: 'POST', url: path, status: response.status, detail })
       throw new Error(detail || `HTTP ${response.status}`)
     }
 
@@ -789,10 +839,8 @@ async function requestProjectPlanStream(
         if (event === 'done') handlers.onDone?.()
         if (event === 'error') {
           errorShown = true
-          await ElMessageBox.alert(`POST ${path}\n\n${data.status}: ${data.detail}`, '接口调用失败', {
-            confirmButtonText: '知道了',
-            type: 'error'
-          })
+          const detail = stringifyErrorDetail(data.detail || data.msg || data.message || '未知错误')
+          await showApiError({ method: 'POST', url: path, status: data.status || 'STREAM', detail, source: data })
           throw new Error(data.detail)
         }
       }
@@ -800,10 +848,7 @@ async function requestProjectPlanStream(
   } catch (error) {
     if (!errorShown) {
       const detail = error instanceof Error ? error.message : String(error)
-      await ElMessageBox.alert(`POST ${path}\n\nNETWORK: ${detail}`, '接口调用失败', {
-        confirmButtonText: '知道了',
-        type: 'error'
-      })
+      await showApiError({ method: 'POST', url: path, status: 'NETWORK', detail, source: error })
     }
     throw error
   }

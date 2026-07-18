@@ -8575,8 +8575,9 @@ button:focus-visible,
 /* Final contrast repair at EOF: no background grid, no dark text on solid action buttons. */
 body {
   background:
-    radial-gradient(circle at 12% 8%, rgba(154, 101, 0, 0.055), transparent 420px),
-    radial-gradient(circle at 92% 4%, rgba(7, 95, 86, 0.045), transparent 460px),
+    radial-gradient(circle at 12% 8%, rgba(196, 218, 235, 0.42), transparent 420px),
+    radial-gradient(circle at 92% 4%, rgba(202, 218, 178, 0.34), transparent 460px),
+    radial-gradient(circle at 48% 98%, rgba(240, 206, 187, 0.38), transparent 520px),
     var(--study-paper) !important;
 }
 
@@ -8589,10 +8590,6 @@ body::after {
 }
 
 .el-button--primary:not(.is-disabled),
-.el-button--success:not(.is-disabled),
-.el-button--warning:not(.is-disabled),
-.el-button--danger:not(.is-disabled),
-.el-button--info:not(.is-disabled),
 .project-next-actions .el-button--primary:not(.is-disabled),
 .project-card-actions .el-button--primary:not(.is-disabled),
 .todo-current-actions .el-button--primary:not(.is-disabled),
@@ -8607,10 +8604,6 @@ body::after {
 }
 
 .el-button--primary:not(.is-disabled) > span,
-.el-button--success:not(.is-disabled) > span,
-.el-button--warning:not(.is-disabled) > span,
-.el-button--danger:not(.is-disabled) > span,
-.el-button--info:not(.is-disabled) > span,
 .project-next-actions .el-button--primary:not(.is-disabled) > span,
 .project-card-actions .el-button--primary:not(.is-disabled) > span,
 .todo-current-actions .el-button--primary:not(.is-disabled) > span,
@@ -8619,6 +8612,26 @@ body::after {
 .classroom-action-row .el-button--primary:not(.is-disabled) > span,
 .module-action-strip .el-button--primary:not(.is-disabled) > span,
 .el-button--primary:not(.is-disabled) .el-icon,
+.project-next-actions .el-button--primary:not(.is-disabled) .el-icon,
+.project-card-actions .el-button--primary:not(.is-disabled) .el-icon,
+.todo-current-actions .el-button--primary:not(.is-disabled) .el-icon,
+.todo-work-actions .el-button--primary:not(.is-disabled) .el-icon,
+.syllabus-status-actions .el-button--primary:not(.is-disabled) .el-icon,
+.classroom-action-row .el-button--primary:not(.is-disabled) .el-icon,
+.module-action-strip .el-button--primary:not(.is-disabled) .el-icon {
+  color: #ffffff !important;
+  fill: currentColor !important;
+}
+
+.el-button--success:not(.is-disabled),
+.el-button--success:not(.is-disabled) > span,
+.el-button--success:not(.is-disabled) .el-icon {
+  background: var(--study-sage-strong) !important;
+  border-color: var(--study-sage-strong) !important;
+  color: #ffffff !important;
+  fill: currentColor !important;
+}
+
 .el-button--success:not(.is-disabled) .el-icon,
 .el-button--warning:not(.is-disabled) .el-icon,
 .el-button--danger:not(.is-disabled) .el-icon,
@@ -10595,6 +10608,11 @@ body::after {
   border-color: #07552d !important;
 }
 
+.el-button--success:not(.is-disabled):hover {
+  background: #5f724b !important;
+  border-color: #5f724b !important;
+}
+
 .el-button--warning:not(.is-disabled) {
   background: #8a5700 !important;
   border-color: #8a5700 !important;
@@ -11860,23 +11878,45 @@ button:focus-visible,
   --study-sky: #c4daeb;
   --study-sage: #cadab2;
   --study-coral: #dc8b5e;
-  --study-paper: #ffefd6;
+  --study-paper: #fff4e4;
   --study-surface: #fffaf2;
+  --study-panel: #fffdf8;
   --study-ink: #342d28;
   --study-muted: #6d5d53;
   --study-subtle: #8b7466;
+  --study-soft: #5f6861;
+  --study-soft-ink: #4e5b52;
+  --study-ink-soft: #5d524c;
   --study-rule: rgba(96, 73, 57, 0.16);
   --study-rule-strong: rgba(96, 73, 57, 0.3);
   --study-green: #dc8b5e;
   --study-green-2: #b96e45;
+  --study-blue: #5d91b8;
+  --study-blue-soft: #c4daeb;
+  --study-sage-strong: #71875a;
   --study-red: #a85443;
   --study-gold: #9b6c16;
+  --study-gold-soft: #fadfa7;
   --study-wash: rgba(220, 139, 94, 0.12);
   --study-note: #fadfa7;
   --study-shadow: 0 18px 44px rgba(96, 73, 57, 0.1);
   --study-serif: Fraunces, "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
   --study-sans: Aptos, "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --study-mono: "JetBrains Mono", Consolas, monospace;
+  --el-color-primary: #dc8b5e;
+  --el-color-primary-light-3: #e8aa88;
+  --el-color-primary-light-5: #f0cebb;
+  --el-color-primary-light-7: #fadfa7;
+  --el-color-primary-light-9: #ffefd6;
+  --el-color-primary-dark-2: #b96e45;
+  --el-color-success: #71875a;
+  --el-color-warning: #9b6c16;
+  --el-color-danger: #a85443;
+  --el-color-info: #5d91b8;
+  --el-text-color-primary: #342d28;
+  --el-text-color-regular: #6d5d53;
+  --el-border-color: rgba(96, 73, 57, 0.16);
+  --el-fill-color-blank: #fffdf8;
 }
 
 html,
@@ -11890,9 +11930,10 @@ body,
 body {
   color: var(--study-ink);
   background:
-    linear-gradient(90deg, rgba(220, 139, 94, 0.07) 1px, transparent 1px) 0 0 / 44px 44px,
-    radial-gradient(circle at 10% 8%, rgba(196, 218, 235, 0.45), transparent 420px),
-    radial-gradient(circle at 88% 18%, rgba(202, 218, 178, 0.34), transparent 420px),
+    linear-gradient(90deg, rgba(220, 139, 94, 0.055) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(circle at 10% 8%, rgba(196, 218, 235, 0.52), transparent 420px),
+    radial-gradient(circle at 88% 18%, rgba(202, 218, 178, 0.42), transparent 420px),
+    radial-gradient(circle at 62% 92%, rgba(250, 223, 167, 0.38), transparent 520px),
     var(--study-paper);
   font-family: var(--study-sans);
 }
@@ -11924,14 +11965,14 @@ body {
 .app-sidebar,
 .app-sidebar.is-collapsed {
   width: auto;
-  background: color-mix(in srgb, var(--study-paper) 94%, #ffffff);
+  background: linear-gradient(180deg, rgba(255, 239, 214, 0.94), rgba(255, 250, 242, 0.96));
   border-right: 1px solid var(--study-rule);
   box-shadow: none;
 }
 
 .app-topbar {
   height: 64px;
-  background: color-mix(in srgb, var(--study-paper) 90%, #ffffff);
+  background: color-mix(in srgb, var(--study-surface) 92%, var(--study-sky));
   border-bottom: 1px solid var(--study-rule);
   box-shadow: none;
 }
@@ -12098,8 +12139,8 @@ small,
 
 .el-button--info,
 .el-button--info.is-plain {
-  background: #c4daeb;
-  border-color: #c4daeb;
+  background: var(--study-blue-soft);
+  border-color: var(--study-blue-soft);
   color: #342d28 !important;
 }
 
@@ -12700,8 +12741,9 @@ button:focus-visible,
 /* EOF contrast lock: this must stay last. */
 body {
   background:
-    radial-gradient(circle at 12% 8%, rgba(154, 101, 0, 0.055), transparent 420px),
-    radial-gradient(circle at 92% 4%, rgba(7, 95, 86, 0.045), transparent 460px),
+    radial-gradient(circle at 12% 8%, rgba(196, 218, 235, 0.42), transparent 420px),
+    radial-gradient(circle at 92% 4%, rgba(202, 218, 178, 0.34), transparent 460px),
+    radial-gradient(circle at 48% 98%, rgba(240, 206, 187, 0.38), transparent 520px),
     var(--study-paper) !important;
 }
 
@@ -12714,10 +12756,6 @@ body::after {
 }
 
 .el-button--primary:not(.is-disabled),
-.el-button--success:not(.is-disabled),
-.el-button--warning:not(.is-disabled),
-.el-button--danger:not(.is-disabled),
-.el-button--info:not(.is-disabled),
 .project-next-actions .el-button--primary:not(.is-disabled),
 .project-card-actions .el-button--primary:not(.is-disabled),
 .todo-current-actions .el-button--primary:not(.is-disabled),
@@ -12725,35 +12763,13 @@ body::after {
 .syllabus-status-actions .el-button--primary:not(.is-disabled),
 .classroom-action-row .el-button--primary:not(.is-disabled),
 .module-action-strip .el-button--primary:not(.is-disabled) {
-  background: var(--study-green) !important;
-  border-color: var(--study-green) !important;
+  background: var(--study-coral) !important;
+  border-color: var(--study-coral) !important;
   color: #ffffff !important;
   text-shadow: none !important;
 }
 
-.el-button--primary:not(.is-disabled) > span,
-.el-button--success:not(.is-disabled) > span,
-.el-button--warning:not(.is-disabled) > span,
-.el-button--danger:not(.is-disabled) > span,
-.el-button--info:not(.is-disabled) > span,
-.project-next-actions .el-button--primary:not(.is-disabled) > span,
-.project-card-actions .el-button--primary:not(.is-disabled) > span,
-.todo-current-actions .el-button--primary:not(.is-disabled) > span,
-.todo-work-actions .el-button--primary:not(.is-disabled) > span,
-.syllabus-status-actions .el-button--primary:not(.is-disabled) > span,
-.classroom-action-row .el-button--primary:not(.is-disabled) > span,
-.module-action-strip .el-button--primary:not(.is-disabled) > span,
-.el-button--primary:not(.is-disabled) .el-icon,
-.el-button--success:not(.is-disabled) .el-icon,
-.el-button--warning:not(.is-disabled) .el-icon,
-.el-button--danger:not(.is-disabled) .el-icon,
-.el-button--info:not(.is-disabled) .el-icon {
-  color: #ffffff !important;
-  fill: currentColor !important;
-}
-
 .el-button--primary:not(.is-disabled):hover,
-.el-button--success:not(.is-disabled):hover,
 .project-next-actions .el-button--primary:not(.is-disabled):hover,
 .project-card-actions .el-button--primary:not(.is-disabled):hover,
 .todo-current-actions .el-button--primary:not(.is-disabled):hover,
@@ -12766,9 +12782,21 @@ body::after {
   color: #ffffff !important;
 }
 
+.el-button--success:not(.is-disabled) {
+  background: var(--study-sage-strong) !important;
+  border-color: var(--study-sage-strong) !important;
+  color: #ffffff !important;
+}
+
+.el-button--success:not(.is-disabled):hover {
+  background: #5f724b !important;
+  border-color: #5f724b !important;
+}
+
 .el-button--warning:not(.is-disabled) {
   background: #8a5700 !important;
   border-color: #8a5700 !important;
+  color: #ffffff !important;
 }
 
 .el-button--warning:not(.is-disabled):hover {
@@ -12779,6 +12807,7 @@ body::after {
 .el-button--danger:not(.is-disabled) {
   background: var(--study-red) !important;
   border-color: var(--study-red) !important;
+  color: #ffffff !important;
 }
 
 .el-button--danger:not(.is-disabled):hover {
@@ -12787,15 +12816,35 @@ body::after {
 }
 
 .el-button--info:not(.is-disabled) {
-  background: #33423b !important;
-  border-color: #33423b !important;
+  background: var(--study-blue) !important;
+  border-color: var(--study-blue) !important;
+  color: #ffffff !important;
+}
+
+.el-button--info:not(.is-disabled):hover {
+  background: #4f7d9e !important;
+  border-color: #4f7d9e !important;
+}
+
+.el-button--primary:not(.is-disabled) > span,
+.el-button--success:not(.is-disabled) > span,
+.el-button--warning:not(.is-disabled) > span,
+.el-button--danger:not(.is-disabled) > span,
+.el-button--info:not(.is-disabled) > span,
+.el-button--primary:not(.is-disabled) .el-icon,
+.el-button--success:not(.is-disabled) .el-icon,
+.el-button--warning:not(.is-disabled) .el-icon,
+.el-button--danger:not(.is-disabled) .el-icon,
+.el-button--info:not(.is-disabled) .el-icon {
+  color: #ffffff !important;
+  fill: currentColor !important;
 }
 
 .el-button.is-link:not(.is-disabled),
 .el-button--text:not(.is-disabled),
 .el-button.is-link:not(.is-disabled) > span,
 .el-button--text:not(.is-disabled) > span {
-  color: var(--study-green) !important;
+  color: var(--study-coral) !important;
 }
 
 .el-button.is-disabled,

@@ -5,6 +5,7 @@ import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Dict, Union
 
 from sqlalchemy.orm import Session
 
@@ -102,7 +103,7 @@ def update_user_model_settings(db: Session, user: User, request: UserModelSettin
     return get_user_model_settings(user)
 
 
-def verify_user_model_settings(user: User) -> dict[str, str | bool]:
+def verify_user_model_settings(user: User) -> Dict[str, Union[str, bool]]:
     config = resolve_chat_config(user)
     if not config.api_key:
         raise LLMConfigurationError("当前模型缺少 API Key，请先在系统设置中保存自己的 API Key。")
