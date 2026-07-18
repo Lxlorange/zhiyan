@@ -2,7 +2,7 @@
   <section class="knowledge-sphere-panel">
     <header class="knowledge-sphere-toolbar">
       <div class="knowledge-sphere-toolbar__title">
-        <strong>知识漏斗 DAG</strong>
+        <strong>知识漏斗</strong>
         <span>{{ graphStats }}</span>
       </div>
       <div class="knowledge-sphere-toolbar__controls">
@@ -28,7 +28,7 @@
           @update:model-value="updateQuery"
           @keyup.enter="emit('search')"
         />
-        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗 DAG 视图">
+        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗视图">
           <button
             v-for="option in viewOptions"
             :key="option.value"
@@ -44,67 +44,110 @@
     </header>
 
     <div class="knowledge-sphere-layout">
-      <div class="knowledge-sphere-stage">
-        <div ref="canvasHost" class="knowledge-sphere-canvas" @pointerleave="clearHover" />
+      <div
+        ref="canvasHost"
+        class="knowledge-sphere-stage"
+        @pointerdown="handlePointerDown"
+        @pointermove="handlePointerMove"
+        @pointerup="handlePointerUp"
+        @pointercancel="handlePointerCancel"
+        @pointerleave="handlePointerLeave"
+        @wheel="handleWheel"
+      >
+        <canvas ref="canvasRef" class="knowledge-sphere-canvas" />
 
         <div class="knowledge-sphere-overlay">
           <div class="knowledge-sphere-badge">
-            <strong>RAG 知识 DAG</strong>
-            <span>节点来自知识库与平台基础数据，边表示“先学什么再学什么”；孤立节点像 Obsidian 图谱一样分散在外围。</span>
+            <strong>RAG DAG</strong>
+            <span>拖拽旋转，点击节点查看它的先修链和后续知识。</span>
           </div>
 
           <div v-if="hoveredNode" class="knowledge-sphere-tooltip" :style="tooltipStyle">
             <strong>{{ hoveredNode.label }}</strong>
             <span>{{ nodeSubtitle(hoveredNode) }}</span>
-            <small v-if="hoveredNode.meta?.path">路径第 {{ hoveredNode.meta.path.order }} 步</small>
-          </div>
-
-          <div class="knowledge-sphere-legend">
-            <span><i class="project" />项目目标</span>
-            <span><i class="document" />上传资料</span>
-            <span><i class="knowledge_base" />RAG 知识点</span>
-            <span><i class="platform" />平台功能介绍</span>
-            <span><i class="path" />学习路径</span>
+            <small v-if="hoveredNode.meta?.path">第 {{ hoveredNode.meta.path.order }} 步</small>
           </div>
 
           <div class="knowledge-sphere-actions">
-            <button type="button" @click="toggleRotation">
+            <button type="button" @click.stop="toggleRotation">
               {{ autoRotate ? '暂停旋转' : '恢复旋转' }}
             </button>
-            <button type="button" :disabled="!activeSuggestion?.steps.length" @click="playPath">
+            <button type="button" :disabled="!activeSuggestion?.steps.length" @click.stop="playPath">
               播放路径
             </button>
-            <button type="button" @click="resetCamera">重置视角</button>
+            <button type="button" @click.stop="resetCamera">重置视角</button>
+          </div>
+
+          <div v-if="categoryChips.length" class="knowledge-sphere-categories">
+            <button
+              v-for="item in categoryChips"
+              :key="item.key"
+              type="button"
+              :class="{ off: !activeCategories.has(item.key) }"
+              @click.stop="toggleCategory(item.key)"
+            >
+              <i :style="{ background: item.color }" />
+              <span>{{ item.label }}</span>
+              <b>{{ item.count }}</b>
+            </button>
           </div>
         </div>
       </div>
 
       <aside class="knowledge-sphere-sidebar">
         <div class="knowledge-sphere-card knowledge-sphere-current">
-          <strong>当前节点</strong>
+          <div class="knowledge-sphere-card-head">
+            <strong>节点</strong>
+            <button v-if="selectedNode" type="button" @click="clearSelection">清除</button>
+          </div>
           <template v-if="selectedNode">
             <span>{{ nodeSubtitle(selectedNode) }}</span>
             <h3>{{ selectedNode.label }}</h3>
             <p>{{ selectedDescription }}</p>
             <div class="knowledge-sphere-meta">
-              <small v-for="(item, key) in selectedMeta" :key="key">
-                {{ key }}: {{ item }}
+              <small v-for="item in selectedFacts" :key="item.label">
+                <b>{{ item.label }}</b>{{ item.value }}
               </small>
             </div>
             <div v-if="selectedEvidence.length" class="knowledge-sphere-evidence">
-              <strong>掌握证据</strong>
+              <strong>证据</strong>
               <p v-for="item in selectedEvidence" :key="item">{{ item }}</p>
             </div>
-            <el-button size="small" @click="clearSelection">取消选择</el-button>
+            <div class="knowledge-sphere-relations">
+              <section>
+                <strong>先学</strong>
+                <button
+                  v-for="node in selectedPrerequisites"
+                  :key="node.id"
+                  type="button"
+                  @click="selectNode(node.id, true)"
+                >
+                  {{ node.label }}
+                </button>
+                <span v-if="!selectedPrerequisites.length">无</span>
+              </section>
+              <section>
+                <strong>后续</strong>
+                <button
+                  v-for="node in selectedNext"
+                  :key="node.id"
+                  type="button"
+                  @click="selectNode(node.id, true)"
+                >
+                  {{ node.label }}
+                </button>
+                <span v-if="!selectedNext.length">无</span>
+              </section>
+            </div>
           </template>
           <template v-else>
-            <span>点击节点可查看来源、前置关系、掌握证据和它在学习路径中的位置。</span>
+            <span>点击任意节点，查看它在学习顺序中的位置。</span>
           </template>
         </div>
 
         <div class="knowledge-sphere-card">
           <div class="knowledge-sphere-card-head">
-            <strong>DAG 输出：个性化学习路径</strong>
+            <strong>学习路径</strong>
             <span>{{ activeSuggestion?.project_title || '全部知识库' }}</span>
           </div>
           <p v-if="activeSuggestion?.strategy" class="knowledge-sphere-strategy">
@@ -113,44 +156,20 @@
           <div v-if="activeSuggestion?.dynamic_signals?.length" class="knowledge-sphere-signals">
             <small v-for="signal in activeSuggestion.dynamic_signals" :key="signal">{{ signal }}</small>
           </div>
-          <template v-if="activeSuggestion?.steps.length">
-            <ol class="knowledge-sphere-path">
-              <li
-                v-for="step in activeSuggestion.steps"
-                :key="step.id"
-                :class="{ active: selectedNode?.id === step.id }"
-                @click="handleStepClick(step.id)"
-              >
-                <b>{{ step.order || '?' }}</b>
-                <span>{{ step.label }}</span>
-                <em>{{ step.phase || step.layer }} · {{ step.estimated_minutes || 35 }} 分钟</em>
-                <small>{{ step.reason }}</small>
-              </li>
-            </ol>
-          </template>
-          <template v-else>
-            <span>当前暂无可展示路径。上传资料、建立项目知识点或补充学习画像后，系统会重新计算路径。</span>
-          </template>
-        </div>
-
-        <div class="knowledge-sphere-card knowledge-sphere-map">
-          <strong>图谱范围</strong>
-          <div class="knowledge-sphere-stat-grid">
-            <span><b>{{ graph?.nodes.length || 0 }}</b>节点</span>
-            <span><b>{{ graph?.edges.length || 0 }}</b>关系</span>
-            <span><b>{{ graph?.meta?.document_count || 0 }}</b>资料</span>
-            <span><b>{{ graph?.meta?.isolated_count || 0 }}</b>孤立点</span>
-          </div>
-          <div class="knowledge-sphere-subjects">
-            <span
-              v-for="item in chapterStats"
-              :key="item.subject"
-              :style="{ '--subject-color': item.color }"
+          <ol v-if="activeSuggestion?.steps.length" class="knowledge-sphere-path">
+            <li
+              v-for="step in activeSuggestion.steps"
+              :key="step.id"
+              :class="{ active: selectedNode?.id === step.id }"
+              @click="selectNode(step.id, true)"
             >
-              {{ item.subject }} {{ item.count }}
-            </span>
-          </div>
-          <p>{{ graph?.attribution || '知识漏斗由当前用户上传知识库、项目知识点、平台功能介绍与学习画像动态聚合生成。' }}</p>
+              <b>{{ step.order || '?' }}</b>
+              <span>{{ step.label }}</span>
+              <em>{{ step.phase || step.layer }} · {{ step.estimated_minutes || 35 }} 分钟</em>
+              <small>{{ step.reason }}</small>
+            </li>
+          </ol>
+          <span v-else>上传资料或建立项目知识点后，系统会重新计算路径。</span>
         </div>
       </aside>
     </div>
@@ -158,10 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type {
   KnowledgeLinkEdge,
   KnowledgeLinkGraphResponse,
@@ -169,14 +185,41 @@ import type {
   KnowledgePathSuggestion
 } from '../services/apiClient'
 
-type ViewMode = 'all' | 'path' | 'documents'
-type GraphEntry = {
-  mesh: any
-  halo?: any
-  label?: any
+type ViewMode = 'all' | 'path' | 'evidence'
+type Vec3 = {
+  x: number
+  y: number
+  z: number
+}
+type WorldNode = Vec3 & {
+  index: number
   node: KnowledgeLinkNode
-  position: any
-  baseColor: number
+  color: string
+  rgb: [number, number, number]
+  radius: number
+  categoryKey: string
+  appear: number
+  countWeight: number
+}
+type WorldEdge = {
+  index: number
+  source: number
+  target: number
+  edge: KnowledgeLinkEdge
+  path: boolean
+}
+type ProjectedNode = {
+  sx: number
+  sy: number
+  pf: number
+  radius: number
+  visible: boolean
+}
+type CategoryChip = {
+  key: string
+  label: string
+  color: string
+  count: number
 }
 
 const props = defineProps<{
@@ -195,38 +238,61 @@ const emit = defineEmits<{
   (event: 'select-node', node: KnowledgeLinkNode | null): void
 }>()
 
+const FOV = 1400
+const WORLD_HEIGHT = 980
+const SPIN_SPEED = 0.00018
+const MAX_DRAW_EDGES = 900
+const palette = ['#dc8b5e', '#c4daeb', '#cadab2', '#fadfa7', '#f0cebb', '#9ebecf', '#c9a06e', '#b97b74']
+
 const canvasHost = ref<HTMLDivElement | null>(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 const hoveredNode = ref<KnowledgeLinkNode | null>(null)
 const selectedNode = ref<KnowledgeLinkNode | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
 const viewMode = ref<ViewMode>('all')
 const autoRotate = ref(true)
+const activeCategories = shallowRef<Set<string>>(new Set())
+const categoryChips = ref<CategoryChip[]>([])
 
 const viewOptions: Array<{ label: string; value: ViewMode }> = [
-  { label: '全域', value: 'all' },
+  { label: '全部', value: 'all' },
   { label: '路径', value: 'path' },
-  { label: '证据', value: 'documents' }
+  { label: '证据', value: 'evidence' }
 ]
 
-let renderer: any = null
-let labelRenderer: any = null
-let camera: any = null
-let scene: any = null
-let controls: any = null
-let frame = 0
-let rootLayer: any = null
-let nodeLayer: any = null
-let linkLayer: any = null
-let pathLayer: any = null
-let orbitLayer: any = null
-let guideLayer: any = null
+let context: CanvasRenderingContext2D | null = null
+let resizeObserver: ResizeObserver | null = null
 let animationFrame = 0
 let pathTimer = 0
-let raycaster: any = null
-let pointer = new THREE.Vector2()
-let resizeObserver: ResizeObserver | null = null
+let dpr = 1
+let width = 0
+let height = 0
+let reduceMotion = false
+let startedAt = 0
+let lastFrameAt = 0
+let grow = 0
+let rotY = 0.58
+let tilt = -0.32
+let zoom = 1
+let rotYTarget: number | null = null
+let tiltTarget: number | null = null
+let zoomTarget: number | null = null
+let dragging = false
+let moved = false
+let lastPointerX = 0
+let lastPointerY = 0
+let pinchDistance = 0
+let hoverIndex = -1
 
-const nodeMap = new Map<string, GraphEntry>()
+const pointers = new Map<number, [number, number]>()
+const worldNodes: WorldNode[] = []
+const projectedNodes: ProjectedNode[] = []
+const worldEdges: WorldEdge[] = []
+const nodeIndexById = new Map<string, number>()
+const directPre = new Map<string, string[]>()
+const directNext = new Map<string, string[]>()
+let lineageNodes = new Set<string>()
+let lineageEdges = new Set<number>()
 
 const activeSuggestion = computed<KnowledgePathSuggestion | null>(() => {
   if (!props.graph?.path_suggestions.length) return null
@@ -242,14 +308,6 @@ const graphStats = computed(() => {
   const documents = props.graph?.meta?.document_count || 0
   const points = props.graph?.meta?.knowledge_point_count || 0
   return `${nodes} 节点 · ${edges} 关系 · ${documents} 资料 · ${points} 知识点`
-})
-
-const chapterStats = computed(() => {
-  const subjects = props.graph?.meta?.chapter_subjects || props.graph?.meta?.document_types || {}
-  return Object.entries(subjects)
-    .map(([subject, count]) => ({ subject, count: Number(count), color: cssSubjectColor(subject) }))
-    .sort((left, right) => right.count - left.count)
-    .slice(0, 8)
 })
 
 const selectedDescription = computed(() => {
@@ -269,34 +327,34 @@ const selectedEvidence = computed<string[]>(() => {
   return evidence.map((item) => String(item)).filter(Boolean).slice(0, 3)
 })
 
-const selectedMeta = computed<Record<string, string>>(() => {
-  if (!selectedNode.value) return {}
-  const meta = selectedNode.value.meta || {}
-  const entries: Array<[string, unknown]> = []
-  if (selectedNode.value.layer === 'document') {
-    entries.push(['type', selectedNode.value.category], ['chunks', meta.chunk_count], ['points', meta.point_count], ['course', meta.course_code])
-  } else if (selectedNode.value.layer === 'knowledge_base') {
-    entries.push(['chapter', meta.chapter], ['chunks', meta.chunk_count], ['documents', meta.document_count], ['difficulty', meta.difficulty])
-  } else {
-    entries.push(['status', meta.status], ['subject', meta.subject], ['goal', meta.goal_type])
-  }
+const selectedFacts = computed<Array<{ label: string; value: string }>>(() => {
+  if (!selectedNode.value) return []
+  const node = selectedNode.value
+  const meta = node.meta || {}
+  const facts: Array<{ label: string; value: string }> = []
+  facts.push({ label: '分类', value: node.category || '知识点' })
+  if (meta.chapter) facts.push({ label: '章节', value: formatMeta(meta.chapter) })
+  if (meta.difficulty) facts.push({ label: '难度', value: formatMeta(meta.difficulty) })
+  if (meta.chunk_count) facts.push({ label: '片段', value: formatMeta(meta.chunk_count) })
+  if (meta.document_count) facts.push({ label: '资料', value: formatMeta(meta.document_count) })
+  if (meta.dag_level !== undefined) facts.push({ label: '层级', value: formatMeta(meta.dag_level) })
+  if (meta.degree !== undefined) facts.push({ label: '关系', value: `${formatMeta(meta.degree)} 条` })
   if (meta.path) {
-    entries.push(['path', `第 ${meta.path.order} 步 · ${meta.path.phase}`], ['time', `${meta.path.estimated_minutes || 35} 分钟`])
+    const path = meta.path as Record<string, unknown>
+    facts.push({ label: '路径', value: `第 ${path.order || '?'} 步` })
   }
-  entries.push(['degree', meta.degree], ['level', meta.dag_level])
-  return Object.fromEntries(
-    entries
-      .filter(([, value]) => value !== null && value !== undefined && value !== '')
-      .slice(0, 8)
-      .map(([key, value]) => [key, formatMeta(value)])
-  )
+  return facts.slice(0, 8)
 })
+
+const selectedPrerequisites = computed(() => relatedNodes(selectedNode.value?.id || '', directPre))
+const selectedNext = computed(() => relatedNodes(selectedNode.value?.id || '', directNext))
 
 watch(
   () => props.graph,
   async () => {
     await nextTick()
-    rebuildGraph()
+    restartGrowth()
+    rebuildWorldGraph()
   },
   { deep: true }
 )
@@ -306,38 +364,36 @@ watch(
   (id) => {
     if (!id || !props.graph) {
       selectedNode.value = null
-      highlightSelected()
+      buildLineage('')
       return
     }
     selectedNode.value = props.graph.nodes.find((item) => item.id === id) || null
-    highlightSelected()
+    buildLineage(selectedNode.value?.id || '')
     if (selectedNode.value) focusNode(selectedNode.value.id)
   }
 )
 
 watch([viewMode, pathNodeIds], () => {
-  applyViewMode()
-  rebuildPathLayer()
+  rebuildWorldGraph()
 })
 
 onMounted(async () => {
   await nextTick()
-  initScene()
-  rebuildGraph()
-  renderFrame()
+  reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  context = canvasRef.value?.getContext('2d') || null
+  resizeCanvas()
+  rebuildWorldGraph()
+  startedAt = performance.now()
+  lastFrameAt = startedAt
+  animationFrame = requestAnimationFrame(frame)
+  resizeObserver = new ResizeObserver(() => resizeCanvas())
+  if (canvasHost.value) resizeObserver.observe(canvasHost.value)
 })
 
 onBeforeUnmount(() => {
   if (animationFrame) cancelAnimationFrame(animationFrame)
   if (pathTimer) window.clearInterval(pathTimer)
   resizeObserver?.disconnect()
-  controls?.dispose()
-  renderer?.dispose()
-  if (canvasHost.value) {
-    canvasHost.value.removeEventListener('pointermove', handlePointerMove)
-    canvasHost.value.removeEventListener('click', handlePointerClick)
-  }
-  disposeGraph()
 })
 
 function updateProjectId(value: number | string | null | undefined) {
@@ -348,560 +404,688 @@ function updateQuery(value: string | number | null | undefined) {
   emit('update:query', String(value ?? ''))
 }
 
-function initScene() {
-  const host = canvasHost.value
-  if (!host) return
-
-  scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(0x060a14, 620, 1500)
-
-  camera = new THREE.PerspectiveCamera(42, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 4000)
-  camera.position.set(0, 150, 900)
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-  renderer.setSize(host.clientWidth, host.clientHeight)
-  renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  host.innerHTML = ''
-  host.appendChild(renderer.domElement)
-
-  labelRenderer = new CSS2DRenderer()
-  labelRenderer.setSize(host.clientWidth, host.clientHeight)
-  labelRenderer.domElement.className = 'knowledge-sphere-label-layer'
-  host.appendChild(labelRenderer.domElement)
-
-  controls = new OrbitControls(camera, renderer.domElement)
-  controls.enableDamping = true
-  controls.enablePan = false
-  controls.minDistance = 360
-  controls.maxDistance = 1180
-  controls.autoRotate = autoRotate.value
-  controls.autoRotateSpeed = 0.42
-
-  const ambient = new THREE.AmbientLight(0xffffff, 1.35)
-  const key = new THREE.DirectionalLight(0xffefd6, 2.2)
-  key.position.set(220, 260, 260)
-  const fill = new THREE.DirectionalLight(0xc4daeb, 1.1)
-  fill.position.set(-260, -120, 180)
-  scene.add(ambient, key, fill)
-
-  rootLayer = new THREE.Group()
-  nodeLayer = new THREE.Group()
-  linkLayer = new THREE.Group()
-  pathLayer = new THREE.Group()
-  orbitLayer = new THREE.Group()
-  guideLayer = new THREE.Group()
-  rootLayer.add(guideLayer, orbitLayer, linkLayer, pathLayer, nodeLayer)
-  scene.add(rootLayer)
-  raycaster = new THREE.Raycaster()
-
-  addCoreObjects()
-
-  resizeObserver = new ResizeObserver(() => resizeRenderer())
-  resizeObserver.observe(host)
-
-  host.addEventListener('pointermove', handlePointerMove)
-  host.addEventListener('click', handlePointerClick)
+function restartGrowth() {
+  startedAt = performance.now()
+  lastFrameAt = startedAt
+  grow = reduceMotion ? 1 : 0
 }
 
-function addCoreObjects() {
-  if (!scene) return
-  buildGraphGuides()
-}
+function rebuildWorldGraph() {
+  worldNodes.length = 0
+  projectedNodes.length = 0
+  worldEdges.length = 0
+  nodeIndexById.clear()
+  directPre.clear()
+  directNext.clear()
 
-function buildGraphGuides() {
-  if (!guideLayer) return
-  disposeGroup(guideLayer)
-  const levels = [-220, -110, 0, 110, 220]
-  levels.forEach((x, index) => {
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(x, -260, -260),
-      new THREE.Vector3(x, -260, 260),
-      new THREE.Vector3(x, 260, 260),
-      new THREE.Vector3(x, 260, -260),
-      new THREE.Vector3(x, -260, -260)
-    ])
-    const line = new THREE.Line(
-      geometry,
-      new THREE.LineBasicMaterial({
-        color: index === 0 ? 0xffefd6 : 0xffffff,
-        transparent: true,
-        opacity: index === 0 ? 0.16 : 0.08
-      })
-    )
-    guideLayer.add(line)
+  const graph = props.graph
+  if (!graph) {
+    categoryChips.value = []
+    return
+  }
+
+  const categories = buildCategoryChips(graph.nodes)
+  categoryChips.value = categories
+  syncActiveCategories(categories.map((item) => item.key))
+
+  const levels = graph.nodes.map((node) => Math.max(0, Number(node.meta?.dag_level || 0)))
+  const maxLevel = Math.max(1, ...levels)
+  const layerLocalIndex = new Map<string, number>()
+  const levelBuckets = buildLevelBuckets(graph.nodes)
+  const isolatedNodes = graph.nodes.filter((node) => node.meta?.is_isolated)
+
+  const ordered = [...graph.nodes].sort((left, right) => {
+    const levelDelta = Number(left.meta?.dag_level || 0) - Number(right.meta?.dag_level || 0)
+    if (levelDelta !== 0) return levelDelta
+    return hashString(left.id) - hashString(right.id)
   })
 
-  const axis = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-320, 0, 0),
-      new THREE.Vector3(320, 0, 0)
-    ]),
-    new THREE.LineBasicMaterial({ color: 0xdc8b5e, transparent: true, opacity: 0.34 })
-  )
-  guideLayer.add(axis)
-}
-
-function rebuildGraph() {
-  if (!scene || !nodeLayer || !linkLayer || !orbitLayer || !props.graph) return
-  disposeGraph()
-  buildGraphGuides()
-  drawAgeRings()
-
-  const orderedNodes = [...props.graph.nodes].sort((left, right) => layerOrder(left.layer) - layerOrder(right.layer))
-  const layerCounters = new Map<string, number>()
-  orderedNodes.forEach((node) => {
-    const index = layerCounters.get(node.layer) || 0
-    layerCounters.set(node.layer, index + 1)
-    const position = positionForNode(node, index)
+  ordered.forEach((node) => {
+    const key = `${node.layer}:${node.meta?.dag_level || 0}:${node.category || ''}`
+    const index = layerLocalIndex.get(key) || 0
+    layerLocalIndex.set(key, index + 1)
+    const position = positionForNode(node, index, maxLevel, levelBuckets, isolatedNodes)
     const color = nodeColor(node)
-    const material = new THREE.MeshStandardMaterial({
+    const worldNode: WorldNode = {
+      index: worldNodes.length,
+      node,
       color,
-      emissive: color,
-      emissiveIntensity: isPathNode(node.id) ? 0.68 : 0.22,
-      roughness: 0.18,
-      metalness: 0.12,
-      transparent: true,
-      opacity: nodeOpacity(node)
-    })
-
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(nodeRadius(node), 28, 16), material)
-    mesh.position.copy(position)
-    mesh.userData.nodeId = node.id
-    mesh.userData.layer = node.layer
-    nodeLayer?.add(mesh)
-
-    const halo = createHalo(node, color)
-    if (halo) {
-      halo.position.copy(position)
-      nodeLayer?.add(halo)
+      rgb: hexToRgb(color),
+      radius: nodeRadius(node),
+      categoryKey: categoryKey(node),
+      appear: Math.min(1, Math.max(0, position.y / WORLD_HEIGHT)),
+      countWeight: Math.max(1, Number(node.weight || 1)),
+      ...position
     }
-
-    const label = createNodeLabel(node)
-    if (label) {
-      label.position.copy(position.clone().add(new THREE.Vector3(0, nodeRadius(node) + 10, 0)))
-      nodeLayer?.add(label)
-    }
-
-    nodeMap.set(node.id, { mesh, halo, label, node, position, baseColor: color })
+    nodeIndexById.set(node.id, worldNode.index)
+    worldNodes.push(worldNode)
+    projectedNodes.push({ sx: 0, sy: 0, pf: 1, radius: worldNode.radius, visible: false })
   })
 
-  drawEdges(props.graph.edges)
-  rebuildPathLayer()
-  applyViewMode()
-  highlightSelected()
-}
-
-function drawAgeRings() {
-  if (!orbitLayer) return
-  const connectedCount = props.graph?.nodes.filter((node) => !node.meta?.is_isolated).length || 0
-  const radius = connectedCount ? 330 : 210
-  ;[0, 1, 2].forEach((index) => {
-    const y = (index - 1) * 135
-    const geometry = new THREE.BufferGeometry().setFromPoints(
-      Array.from({ length: 160 }, (_, pointIndex) => {
-        const angle = (pointIndex / 159) * Math.PI * 2
-        return new THREE.Vector3(Math.cos(angle) * radius * 0.58, y, Math.sin(angle) * radius)
-      })
-    )
-    const line = new THREE.Line(
-      geometry,
-      new THREE.LineBasicMaterial({
-        color: index === 1 ? 0xc4daeb : 0xffffff,
-        transparent: true,
-        opacity: index === 1 ? 0.14 : 0.08
-      })
-    )
-    line.rotation.z = Math.PI / 2
-    orbitLayer.add(line)
-  })
-}
-
-function drawEdges(edges: KnowledgeLinkEdge[]) {
-  if (!linkLayer) return
-  edges.slice(0, 560).forEach((edge) => {
-    const source = nodeMap.get(edge.source)
-    const target = nodeMap.get(edge.target)
-    if (!source || !target) return
-    const isPathEdge = isPathNode(edge.source) && isPathNode(edge.target)
-    const points = curvedPoints(source.position, target.position, edge.relation === 'prerequisite' ? 30 : 14)
-    const opacity = isPathEdge ? 0.62 : edge.relation === 'prerequisite' ? 0.38 : 0.12
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(points),
-      new THREE.LineBasicMaterial({
-        color: edgeColor(edge),
-        transparent: true,
-        opacity
-      })
-    )
-    line.userData.relation = edge.relation
-    linkLayer.add(line)
+  graph.edges.slice(0, MAX_DRAW_EDGES).forEach((edge, index) => {
+    const source = nodeIndexById.get(edge.source)
+    const target = nodeIndexById.get(edge.target)
+    if (source === undefined || target === undefined) return
+    const path = pathNodeIds.value.has(edge.source) && pathNodeIds.value.has(edge.target)
+    worldEdges.push({ index, source, target, edge, path })
     if (edge.relation === 'prerequisite') {
-      const arrow = createArrowHead(points[points.length - 2], points[points.length - 1], edgeColor(edge), opacity + 0.16)
-      linkLayer.add(arrow)
+      pushRelation(directPre, edge.target, edge.source)
+      pushRelation(directNext, edge.source, edge.target)
     }
   })
+
+  buildLineage(selectedNode.value?.id || props.selectedNodeId || '')
 }
 
-function createArrowHead(from: any, to: any, color: number, opacity: number) {
-  const direction = to.clone().sub(from).normalize()
-  const arrow = new THREE.Mesh(
-    new THREE.ConeGeometry(5.5, 14, 18),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.82, opacity) })
-  )
-  arrow.position.copy(to.clone().sub(direction.multiplyScalar(12)))
-  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
-  return arrow
+function buildCategoryChips(nodes: KnowledgeLinkNode[]): CategoryChip[] {
+  const counts = new Map<string, number>()
+  nodes.forEach((node) => {
+    const key = categoryKey(node)
+    counts.set(key, (counts.get(key) || 0) + 1)
+  })
+  return Array.from(counts.entries())
+    .map(([key, count]) => ({ key, label: categoryLabel(key), color: categoryColor(key), count }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 10)
 }
 
-function rebuildPathLayer() {
-  if (!pathLayer) return
-  disposeGroup(pathLayer)
-  const steps = activeSuggestion.value?.steps || []
-  const pathEntries = steps.map((step) => nodeMap.get(step.id)).filter(Boolean) as GraphEntry[]
-  if (!pathEntries.length) return
+function buildLevelBuckets(nodes: KnowledgeLinkNode[]) {
+  const buckets = new Map<number, KnowledgeLinkNode[]>()
+  nodes.forEach((node) => {
+    if (node.meta?.is_isolated) return
+    const level = Math.max(0, Number(node.meta?.dag_level || 0))
+    const list = buckets.get(level) || []
+    list.push(node)
+    buckets.set(level, list)
+  })
+  return buckets
+}
 
-  const guidePoints = pathEntries.map((entry) => entry.position)
-
-  for (let index = 0; index < guidePoints.length - 1; index += 1) {
-    const current = guidePoints[index]
-    const next = guidePoints[index + 1]
-    const curve = new THREE.CatmullRomCurve3(curvedPoints(current, next, index === 0 ? 24 : 42))
-    const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 42, 2.8, 8, false),
-      new THREE.MeshBasicMaterial({
-        color: 0xffefd6,
-        transparent: true,
-        opacity: viewMode.value === 'documents' ? 0.18 : 0.62
-      })
-    )
-    pathLayer.add(tube)
+function syncActiveCategories(keys: string[]) {
+  const current = activeCategories.value
+  if (!current.size) {
+    activeCategories.value = new Set(keys)
+    return
   }
-}
-
-function disposeGraph() {
-  nodeMap.forEach(({ mesh, halo, label }) => {
-    mesh.geometry.dispose()
-    ;(mesh.material as any).dispose()
-    if (halo) {
-      halo.geometry.dispose()
-      ;(halo.material as any).dispose()
-    }
-    label?.element.remove()
+  const next = new Set<string>()
+  keys.forEach((key) => {
+    if (current.has(key)) next.add(key)
   })
-  nodeMap.clear()
-  if (nodeLayer) disposeGroup(nodeLayer)
-  if (linkLayer) disposeGroup(linkLayer)
-  if (pathLayer) disposeGroup(pathLayer)
-  if (orbitLayer) disposeGroup(orbitLayer)
-  if (guideLayer) disposeGroup(guideLayer)
+  activeCategories.value = next.size ? next : new Set(keys)
 }
 
-function disposeGroup(group: any) {
-  group.children.forEach((child: any) => {
-    if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
-      child.geometry.dispose()
-      const material = child.material
-      if (Array.isArray(material)) material.forEach((item) => item.dispose())
-      else material.dispose()
-    }
-    if (child instanceof CSS2DObject) child.element.remove()
-  })
-  group.clear()
+function toggleCategory(key: string) {
+  const next = new Set(activeCategories.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  activeCategories.value = next
 }
 
-function positionForNode(node: KnowledgeLinkNode, index: number) {
-  if (node.meta?.is_isolated) return isolatedPosition(node, index)
-  if (node.layer === 'project') return projectPosition(node, index)
-  if (node.layer === 'document') return documentPosition(node, index)
-  if (node.layer === 'platform') return platformPosition(node, index)
-  if (node.layer === 'knowledge_base') return knowledgeBasePosition(node, index)
-  return knowledgeBasePosition(node, index)
-}
+function positionForNode(
+  node: KnowledgeLinkNode,
+  index: number,
+  maxLevel: number,
+  levelBuckets: Map<number, KnowledgeLinkNode[]>,
+  isolatedNodes: KnowledgeLinkNode[]
+): Vec3 {
+  if (node.meta?.is_isolated) return isolatedPosition(node, isolatedNodes)
 
-function projectPosition(node: KnowledgeLinkNode, index: number) {
-  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'project' && !item.meta?.is_isolated).length || 1)
-  const angle = (index / count) * Math.PI * 2 + 0.34
-  const radius = 210 + (hashString(node.id) % 40)
-  return new THREE.Vector3(-310, Math.cos(angle) * radius * 0.55, Math.sin(angle) * radius)
-}
-
-function documentPosition(node: KnowledgeLinkNode, index: number) {
-  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'document' && !item.meta?.is_isolated).length || 1)
-  const hash = hashString(node.id)
-  const angle = (index / count) * Math.PI * 2 + ((hash % 17) / 17) * 0.34
-  const radius = 188 + (hash % 74)
-  return new THREE.Vector3(-150, Math.cos(angle) * radius * 0.66, Math.sin(angle) * radius)
-}
-
-function platformPosition(node: KnowledgeLinkNode, index: number) {
-  const level = Math.max(0, Number(node.meta?.dag_level || 0))
-  const x = -310 + Math.min(5, level) * 118
-  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'platform' && Number(item.meta?.dag_level || 0) === level).length || 1)
-  const localIndex = props.graph?.nodes.filter((item) => item.layer === 'platform' && Number(item.meta?.dag_level || 0) === level).findIndex((item) => item.id === node.id) ?? index
-  const angle = (localIndex / count) * Math.PI * 2 + 0.2
-  const radius = 84 + (hashString(node.id) % 28)
-  return new THREE.Vector3(x, Math.cos(angle) * radius, Math.sin(angle) * radius)
-}
-
-function knowledgeBasePosition(node: KnowledgeLinkNode, index: number) {
-  const hash = hashString(`${node.category}:${node.id}`)
-  const categoryAngle = ((hashString(node.category || 'kb') % 360) / 360) * Math.PI * 2
-  const difficulty = String(node.meta?.difficulty || '').toLowerCase()
-  const level = Math.max(0, Number(node.meta?.dag_level || 0))
   const path = node.meta?.path as Record<string, unknown> | undefined
-  if (path?.order) {
-    const order = Math.max(1, Number(path.order || 1))
-    const steps = Math.max(1, activeSuggestion.value?.steps.length || 1)
-    const t = steps <= 1 ? 0 : Math.min(1, (order - 1) / Math.max(1, steps - 1))
-    const x = -120 + t * 420
-    const pathAngle = categoryAngle + order * 0.68
-    const radius = 92 + (hash % 54)
-    return new THREE.Vector3(x, Math.cos(pathAngle) * radius, Math.sin(pathAngle) * radius)
+  if (path?.order) return pathPosition(node, path)
+
+  if (node.layer === 'document') return evidencePosition(node, index)
+  if (node.layer === 'project') return targetPosition(node, index)
+
+  const level = Math.max(0, Number(node.meta?.dag_level || 0))
+  const yNorm = Math.min(0.9, Math.max(0.08, (level + 0.28) / (maxLevel + 1)))
+  const y = yNorm * WORLD_HEIGHT
+  const bucket = levelBuckets.get(level) || [node]
+  const localIndex = Math.max(0, bucket.findIndex((item) => item.id === node.id))
+  const count = Math.max(1, bucket.length)
+  const baseAngle = (localIndex / count) * Math.PI * 2
+  const categoryOffset = (hashString(categoryKey(node)) % 360) / 360 * Math.PI * 2
+  const angle = baseAngle + categoryOffset * 0.33 + (hashString(node.id) % 17) * 0.018
+  const funnelRadius = 120 + (1 - yNorm) * 360
+  const jitter = (hashString(`${node.id}:r`) % 72) - 36
+  const radius = funnelRadius + jitter
+  return {
+    x: Math.cos(angle) * radius,
+    y,
+    z: Math.sin(angle) * radius
   }
-  const x = -90 + Math.min(5, level) * 105
-  const levelNodes = props.graph?.nodes.filter(
-    (item) => item.layer === 'knowledge_base' && !item.meta?.is_isolated && Number(item.meta?.dag_level || 0) === level
-  ) || []
-  const localIndex = Math.max(0, levelNodes.findIndex((item) => item.id === node.id))
-  const angle = categoryAngle + localIndex * 0.78
-  const difficultyOffset = difficulty.includes('hard') || difficulty.includes('困难') ? -42 : difficulty.includes('easy') || difficulty.includes('基础') ? 42 : 0
-  const radius = 118 + (hash % 110)
-  return new THREE.Vector3(x, Math.cos(angle) * radius + difficultyOffset, Math.sin(angle) * radius)
 }
 
-function isolatedPosition(node: KnowledgeLinkNode, index: number) {
-  const isolatedNodes = props.graph?.nodes.filter((item) => item.meta?.is_isolated) || []
+function pathPosition(node: KnowledgeLinkNode, path: Record<string, unknown>): Vec3 {
+  const order = Math.max(1, Number(path.order || 1))
+  const total = Math.max(1, activeSuggestion.value?.steps.length || 1)
+  const t = total <= 1 ? 0.5 : (order - 1) / Math.max(1, total - 1)
+  const y = (0.12 + t * 0.78) * WORLD_HEIGHT
+  const angle = order * 1.22 + (hashString(node.id) % 19) * 0.03
+  const radius = 52 + (order % 4) * 16
+  return {
+    x: Math.cos(angle) * radius,
+    y,
+    z: Math.sin(angle) * radius
+  }
+}
+
+function evidencePosition(node: KnowledgeLinkNode, index: number): Vec3 {
+  const angle = index * 2.399 + (hashString(node.id) % 91) * 0.01
+  const radius = 365 + (hashString(`${node.id}:doc`) % 90)
+  return {
+    x: Math.cos(angle) * radius,
+    y: WORLD_HEIGHT * (0.04 + (index % 4) * 0.025),
+    z: Math.sin(angle) * radius
+  }
+}
+
+function targetPosition(node: KnowledgeLinkNode, index: number): Vec3 {
+  const angle = index * 2.1 + 0.6
+  const radius = 72 + (hashString(node.id) % 32)
+  return {
+    x: Math.cos(angle) * radius,
+    y: WORLD_HEIGHT * 0.95,
+    z: Math.sin(angle) * radius
+  }
+}
+
+function isolatedPosition(node: KnowledgeLinkNode, isolatedNodes: KnowledgeLinkNode[]): Vec3 {
   const localIndex = Math.max(0, isolatedNodes.findIndex((item) => item.id === node.id))
-  const count = Math.max(1, isolatedNodes.length)
-  const hash = hashString(node.id)
-  const angle = (localIndex / count) * Math.PI * 2 + ((hash % 23) / 23) * 0.38
-  const ring = 320 + (localIndex % 4) * 38
-  const x = 420 + (localIndex % 3) * 58
-  return new THREE.Vector3(x, Math.cos(angle) * ring * 0.72, Math.sin(angle) * ring)
+  const angle = localIndex * 2.399963 + (hashString(node.id) % 37) * 0.04
+  const ring = 125 + (localIndex % 5) * 34
+  return {
+    x: 575 + Math.cos(angle) * ring * 0.75,
+    y: WORLD_HEIGHT * (0.18 + ((localIndex * 7) % 61) / 100),
+    z: Math.sin(angle) * ring
+  }
 }
 
-function nodeRadius(node: KnowledgeLinkNode) {
-  const weight = Math.max(1, Number(node.weight || 1))
-  const pathBoost = isPathNode(node.id) ? 4 : 0
-  if (node.layer === 'project') return 18 + pathBoost
-  if (node.layer === 'document') return 12 + Math.min(10, Math.log(weight + 1) * 2.6) + pathBoost
-  if (node.layer === 'platform') return 10 + pathBoost
-  if (node.layer === 'knowledge_base') return 9 + Math.min(11, Math.log(weight + 1) * 3) + pathBoost
-  return 6 + Math.min(9, Math.log(weight + 1) * 3.2) + pathBoost
+function frame(ts: number) {
+  animationFrame = requestAnimationFrame(frame)
+  if (!context) return
+
+  if (!reduceMotion) grow = Math.min(1.02, ((ts - startedAt) / 2800) * 1.02)
+  else grow = 1
+
+  const dt = Math.min(64, ts - lastFrameAt)
+  lastFrameAt = ts
+  if (autoRotate.value && hoverIndex < 0 && !selectedNode.value && !dragging && !reduceMotion) {
+    rotY += SPIN_SPEED * dt
+  }
+  updateCameraTween()
+  draw()
 }
 
-function createHalo(node: KnowledgeLinkNode, color: number) {
-  if (!isPathNode(node.id) && node.layer !== 'project' && node.layer !== 'document' && node.layer !== 'platform') return null
-  const radius = nodeRadius(node) + (node.layer === 'project' ? 8 : 6)
-  const halo = new THREE.Mesh(
-    new THREE.TorusGeometry(radius, 1.2, 8, 48),
-    new THREE.MeshBasicMaterial({
-      color: isPathNode(node.id) ? 0xdc8b5e : color,
-      transparent: true,
-      opacity: isPathNode(node.id) ? 0.9 : 0.38
+function updateCameraTween() {
+  if (rotYTarget === null) return
+  const delta = normalizedAngle(rotYTarget - rotY)
+  rotY += delta * 0.12
+  if (tiltTarget !== null) tilt += (tiltTarget - tilt) * 0.12
+  if (zoomTarget !== null) zoom += (zoomTarget - zoom) * 0.12
+  if (Math.abs(delta) < 0.008) {
+    rotYTarget = null
+    tiltTarget = null
+    zoomTarget = null
+  }
+}
+
+function draw() {
+  if (!context || !width || !height) return
+  const ctx = context
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+  drawBackground(ctx)
+  projectNodes()
+  drawFunnelGuides(ctx)
+  drawEdges(ctx)
+  drawNodes(ctx)
+}
+
+function drawBackground(ctx: CanvasRenderingContext2D) {
+  const gradient = ctx.createLinearGradient(0, 0, width, height)
+  gradient.addColorStop(0, '#fffdf9')
+  gradient.addColorStop(0.58, '#ffffff')
+  gradient.addColorStop(1, '#fff8ef')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, width, height)
+
+  ctx.save()
+  ctx.globalAlpha = 0.22
+  ctx.strokeStyle = '#f0cebb'
+  ctx.lineWidth = 1
+  for (let x = 0; x < width; x += 42) {
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, height)
+    ctx.stroke()
+  }
+  for (let y = 0; y < height; y += 42) {
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(width, y)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawFunnelGuides(ctx: CanvasRenderingContext2D) {
+  if (!worldNodes.length) return
+  ctx.save()
+  ctx.lineWidth = 1
+  const levels = [0.1, 0.32, 0.54, 0.76, 0.94]
+  levels.forEach((level, index) => {
+    const y = level * WORLD_HEIGHT
+    const radius = 120 + (1 - level) * 360
+    const points: Array<{ x: number; y: number }> = []
+    for (let i = 0; i <= 96; i += 1) {
+      const angle = (i / 96) * Math.PI * 2
+      const projected = projectPoint({ x: Math.cos(angle) * radius, y, z: Math.sin(angle) * radius })
+      points.push({ x: projected.sx, y: projected.sy })
+    }
+    ctx.strokeStyle = index === levels.length - 1 ? 'rgba(220,139,94,0.24)' : 'rgba(151,122,98,0.12)'
+    ctx.beginPath()
+    points.forEach((point, pointIndex) => {
+      if (pointIndex === 0) ctx.moveTo(point.x, point.y)
+      else ctx.lineTo(point.x, point.y)
     })
-  )
-  halo.rotation.x = Math.PI / 2
-  return halo
-}
-
-function createNodeLabel(node: KnowledgeLinkNode) {
-  const isImportant = node.layer === 'project' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
-  if (!isImportant) return null
-  const label = document.createElement('span')
-  label.className = `knowledge-sphere-label ${node.layer === 'project' ? 'is-project' : node.layer === 'document' ? 'is-document' : node.layer === 'platform' ? 'is-platform' : 'is-path'}`
-  label.textContent = node.meta?.path?.order ? `${node.meta.path.order}. ${node.label}` : node.label
-  return new CSS2DObject(label)
-}
-
-function nodeColor(node: KnowledgeLinkNode) {
-  if (node.layer === 'project') return 0xdc8b5e
-  if (node.layer === 'document') return 0xfadfa7
-  if (node.layer === 'platform') return 0xcadab2
-  if (node.layer === 'knowledge_base') return 0xc4daeb
-  return subjectColor(String(node.category || 'knowledge'))
-}
-
-function subjectColor(subject: string) {
-  const colors: Record<string, number> = {
-    Science: 0xc4daeb,
-    Mathematics: 0xcadab2,
-    English: 0xf0cebb,
-    History: 0xfadfa7,
-    Computing: 0xdc8b5e,
-    'Life Skills': 0xcadab2,
-    'Learning to Learn': 0xffefd6,
-    'Personal & Social Development': 0xf0cebb
-  }
-  return colors[subject] || 0xc4daeb
-}
-
-function cssSubjectColor(subject: string) {
-  return `#${subjectColor(subject).toString(16).padStart(6, '0')}`
-}
-
-function edgeColor(edge: KnowledgeLinkEdge) {
-  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? 0xdc8b5e : 0xfadfa7
-  if (edge.relation === 'evidence') return 0xc4daeb
-  if (edge.relation === 'focuses') return 0xcadab2
-  return 0xf0cebb
-}
-
-function nodeOpacity(node: KnowledgeLinkNode) {
-  if (viewMode.value === 'all') return 0.96
-  if (viewMode.value === 'path') return isPathNode(node.id) || node.layer === 'project' ? 1 : 0.18
-  return node.layer === 'document' || node.layer === 'knowledge_base' || isPathNode(node.id) ? 0.96 : 0.22
-}
-
-function applyViewMode() {
-  nodeMap.forEach(({ mesh, halo, label, node }) => {
-    const material = mesh.material as any
-    material.opacity = nodeOpacity(node)
-    material.emissiveIntensity = isPathNode(node.id) ? 0.82 : viewMode.value === 'path' ? 0.18 : 0.34
-    mesh.visible = viewMode.value !== 'documents' || node.layer !== 'project' || isPathNode(node.id)
-    if (halo) halo.visible = viewMode.value !== 'documents' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
-    if (label) label.visible = viewMode.value !== 'documents' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
+    ctx.stroke()
   })
+
+  const axisStart = projectPoint({ x: 0, y: 0, z: 0 })
+  const axisEnd = projectPoint({ x: 0, y: WORLD_HEIGHT, z: 0 })
+  ctx.strokeStyle = 'rgba(220,139,94,0.22)'
+  ctx.setLineDash([6, 8])
+  ctx.beginPath()
+  ctx.moveTo(axisStart.sx, axisStart.sy)
+  ctx.lineTo(axisEnd.sx, axisEnd.sy)
+  ctx.stroke()
+  ctx.restore()
 }
 
-function highlightSelected() {
-  const selectedId = props.selectedNodeId || selectedNode.value?.id || ''
-  const neighborhood = selectedId ? connectedNodeIds(selectedId) : new Set<string>()
-  nodeMap.forEach(({ mesh, halo, node }) => {
-    const material = mesh.material as any
-    const active = node.id === selectedId
-    const neighbor = neighborhood.has(node.id)
-    const path = isPathNode(node.id)
-    mesh.scale.setScalar(active ? 1.44 : neighbor ? 1.18 : path ? 1.12 : 1)
-    material.opacity = selectedId && !active && !neighbor && !path ? 0.22 : nodeOpacity(node)
-    material.emissiveIntensity = active ? 1.08 : neighbor ? 0.72 : path ? 0.82 : 0.28
-    if (halo) halo.scale.setScalar(active ? 1.18 : 1)
-  })
-}
+function drawEdges(ctx: CanvasRenderingContext2D) {
+  const hasSelection = !!selectedNode.value
+  const visibleEdges = worldEdges
+    .filter((edge) => {
+      const source = worldNodes[edge.source]
+      const target = worldNodes[edge.target]
+      return isNodeVisible(source) && isNodeVisible(target)
+    })
+    .sort((left, right) => {
+      const leftDepth = projectedNodes[left.source].pf + projectedNodes[left.target].pf
+      const rightDepth = projectedNodes[right.source].pf + projectedNodes[right.target].pf
+      return leftDepth - rightDepth
+    })
 
-function connectedNodeIds(nodeId: string) {
-  const result = new Set<string>([nodeId])
-  for (const edge of props.graph?.edges || []) {
-    if (edge.source === nodeId) result.add(edge.target)
-    if (edge.target === nodeId) result.add(edge.source)
-  }
-  return result
-}
+  ctx.save()
+  visibleEdges.forEach((worldEdge) => {
+    const source = projectedNodes[worldEdge.source]
+    const target = projectedNodes[worldEdge.target]
+    if (!source.visible || !target.visible) return
 
-function isPathNode(nodeId: string) {
-  return pathNodeIds.value.has(nodeId)
-}
+    const inLineage = lineageEdges.has(worldEdge.index)
+    const sourceNode = worldNodes[worldEdge.source]
+    const alpha = edgeAlpha(worldEdge, hasSelection, inLineage)
+    if (alpha <= 0.01) return
+    const rgb = inLineage ? sourceNode.rgb : edgeRgb(worldEdge.edge)
+    const depth = Math.max(0.35, Math.min(1.15, (source.pf + target.pf) / 2))
 
-function resizeRenderer() {
-  if (!renderer || !camera || !canvasHost.value) return
-  const { clientWidth, clientHeight } = canvasHost.value
-  if (!clientWidth || !clientHeight) return
-  renderer.setSize(clientWidth, clientHeight)
-  labelRenderer?.setSize(clientWidth, clientHeight)
-  camera.aspect = clientWidth / clientHeight
-  camera.updateProjectionMatrix()
-}
+    ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha * depth})`
+    ctx.lineWidth = inLineage || worldEdge.path ? 1.7 : worldEdge.edge.relation === 'prerequisite' ? 1.05 : 0.85
+    ctx.beginPath()
+    ctx.moveTo(source.sx, source.sy)
+    ctx.lineTo(target.sx, target.sy)
+    ctx.stroke()
 
-function renderFrame() {
-  animationFrame = requestAnimationFrame(renderFrame)
-  frame += 0.01
-  if (controls) {
-    controls.autoRotate = autoRotate.value
-    controls.update()
-  }
-  if (rootLayer) rootLayer.rotation.y = Math.sin(frame * 0.18) * 0.08
-  nodeMap.forEach(({ halo }, nodeId) => {
-    if (halo) {
-      halo.rotation.z += 0.01
-      const pulse = isPathNode(nodeId) ? 1 + Math.sin(frame * 4 + hashString(nodeId)) * 0.06 : 1
-      halo.scale.setScalar(pulse)
+    if (worldEdge.edge.relation === 'prerequisite' && (inLineage || worldEdge.path || viewMode.value !== 'evidence')) {
+      drawArrow(ctx, source, target, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(0.72, alpha * 1.25)})`)
     }
   })
-  if (scene && camera && renderer) {
-    renderer.render(scene, camera)
-    labelRenderer?.render(scene, camera)
+  ctx.restore()
+}
+
+function drawNodes(ctx: CanvasRenderingContext2D) {
+  const hasSelection = !!selectedNode.value
+  const order = worldNodes
+    .map((node) => node.index)
+    .sort((left, right) => projectedNodes[left].pf - projectedNodes[right].pf)
+
+  ctx.save()
+  order.forEach((index) => {
+    const worldNode = worldNodes[index]
+    const projected = projectedNodes[index]
+    if (!projected.visible || !isNodeVisible(worldNode)) return
+
+    const node = worldNode.node
+    const selected = selectedNode.value?.id === node.id
+    const hovered = hoverIndex === index
+    const lineage = lineageNodes.has(node.id)
+    const path = pathNodeIds.value.has(node.id)
+    let dim = 1
+    if (hasSelection && !selected && !lineage && !path) dim = 0.14
+    if (viewMode.value === 'path' && !path && !selected) dim *= node.layer === 'project' ? 0.35 : 0.22
+    if (viewMode.value === 'evidence' && !['document', 'knowledge_base'].includes(node.layer) && !path) dim *= 0.22
+
+    const r = projected.radius * (selected ? 1.62 : hovered ? 1.42 : path ? 1.18 : 1)
+    const alpha = dim * (0.52 + 0.48 * Math.min(1, projected.pf * projected.pf))
+    const [red, green, blue] = worldNode.rgb
+
+    if (selected || hovered || lineage || path) {
+      ctx.shadowColor = `rgba(${red}, ${green}, ${blue}, ${selected || hovered ? 0.54 : 0.32})`
+      ctx.shadowBlur = selected || hovered ? 18 : 8
+    } else {
+      ctx.shadowBlur = 0
+    }
+
+    const fill = ctx.createRadialGradient(
+      projected.sx - r * 0.36,
+      projected.sy - r * 0.42,
+      Math.max(1, r * 0.08),
+      projected.sx,
+      projected.sy,
+      r
+    )
+    fill.addColorStop(0, `rgba(255, 255, 255, ${0.92 * alpha})`)
+    fill.addColorStop(0.34, `rgba(${red}, ${green}, ${blue}, ${0.88 * alpha})`)
+    fill.addColorStop(1, `rgba(${Math.max(0, red - 48)}, ${Math.max(0, green - 48)}, ${Math.max(0, blue - 48)}, ${alpha})`)
+    ctx.fillStyle = fill
+    ctx.beginPath()
+    ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = `rgba(65, 54, 46, ${0.28 * dim})`
+    ctx.lineWidth = Math.max(0.8, projected.pf)
+    ctx.beginPath()
+    ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
+    ctx.stroke()
+
+    if (selected || hovered) {
+      ctx.strokeStyle = selected ? '#dc8b5e' : '#172033'
+      ctx.lineWidth = 1.8
+      ctx.beginPath()
+      ctx.arc(projected.sx, projected.sy, r + 4, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
+    if (path) drawPathOrder(ctx, node, projected, r)
+  })
+  ctx.restore()
+}
+
+function drawPathOrder(ctx: CanvasRenderingContext2D, node: KnowledgeLinkNode, projected: ProjectedNode, radius: number) {
+  const order = Number(node.meta?.path?.order || 0)
+  if (!order) return
+  const badgeRadius = Math.max(8, Math.min(13, radius * 0.62))
+  const x = projected.sx + radius * 0.6
+  const y = projected.sy - radius * 0.7
+  ctx.fillStyle = '#172033'
+  ctx.beginPath()
+  ctx.arc(x, y, badgeRadius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ctx.font = `700 ${Math.max(9, badgeRadius * 0.88)}px Inter, system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(order), x, y + 0.4)
+}
+
+function drawArrow(ctx: CanvasRenderingContext2D, source: ProjectedNode, target: ProjectedNode, color: string) {
+  const dx = target.sx - source.sx
+  const dy = target.sy - source.sy
+  const length = Math.hypot(dx, dy)
+  if (length < 12) return
+  const ux = dx / length
+  const uy = dy / length
+  const endX = target.sx - ux * Math.max(8, target.radius * 1.15)
+  const endY = target.sy - uy * Math.max(8, target.radius * 1.15)
+  const size = Math.max(4.6, Math.min(8, target.radius * 0.68))
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(endX, endY)
+  ctx.lineTo(endX - ux * size - uy * size * 0.62, endY - uy * size + ux * size * 0.62)
+  ctx.lineTo(endX - ux * size + uy * size * 0.62, endY - uy * size - ux * size * 0.62)
+  ctx.closePath()
+  ctx.fill()
+}
+
+function projectNodes() {
+  worldNodes.forEach((node) => {
+    const projected = projectPoint(node)
+    const scaleBoost = Math.min(1.6, Math.max(0.86, zoom))
+    const radius = (2.2 + Math.sqrt(node.countWeight) * node.radius) * projected.pf * scaleBoost
+    projectedNodes[node.index] = {
+      sx: projected.sx,
+      sy: projected.sy,
+      pf: projected.pf,
+      radius: Math.max(3.2, Math.min(28, radius)),
+      visible: node.appear <= grow || reduceMotion
+    }
+  })
+}
+
+function projectPoint(point: Vec3) {
+  const centeredY = point.y - WORLD_HEIGHT / 2
+  const cosY = Math.cos(rotY)
+  const sinY = Math.sin(rotY)
+  const cosTilt = Math.cos(tilt)
+  const sinTilt = Math.sin(tilt)
+  const worldScale = Math.min(width / 1520, height / 1260) * zoom
+  const centerX = width * 0.5
+  const centerY = height * 0.53
+
+  const x = point.x * cosY + point.z * sinY
+  const z = -point.x * sinY + point.z * cosY
+  const y2 = centeredY * cosTilt - z * sinTilt
+  const z2 = centeredY * sinTilt + z * cosTilt
+  const pf = FOV / (FOV + z2 * worldScale * 1.6)
+
+  return {
+    sx: centerX + x * worldScale * pf,
+    sy: centerY - y2 * worldScale * pf,
+    pf
   }
+}
+
+function isNodeVisible(worldNode: WorldNode) {
+  if (!activeCategories.value.has(worldNode.categoryKey)) return false
+  if (viewMode.value === 'path') return pathNodeIds.value.has(worldNode.node.id) || worldNode.node.layer === 'project' || lineageNodes.has(worldNode.node.id)
+  if (viewMode.value === 'evidence') return ['document', 'knowledge_base'].includes(worldNode.node.layer) || pathNodeIds.value.has(worldNode.node.id)
+  return true
+}
+
+function edgeAlpha(edge: WorldEdge, hasSelection: boolean, inLineage: boolean) {
+  if (hasSelection) return inLineage ? 0.72 : edge.path ? 0.3 : 0.035
+  if (edge.path) return 0.58
+  if (edge.edge.relation === 'prerequisite') return edge.edge.strength === 'hard' ? 0.16 : 0.1
+  if (edge.edge.relation === 'evidence') return 0.07
+  return 0.08
+}
+
+function pickNode(x: number, y: number) {
+  let best = -1
+  let bestDistance = 24 * 24
+  for (let index = 0; index < worldNodes.length; index += 1) {
+    const node = worldNodes[index]
+    const projected = projectedNodes[index]
+    if (!projected.visible || !isNodeVisible(node)) continue
+    const dx = projected.sx - x
+    const dy = projected.sy - y
+    const distance = dx * dx + dy * dy
+    const threshold = Math.max(12, projected.radius + 7)
+    if (distance < threshold * threshold && distance < bestDistance) {
+      best = index
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+function handlePointerDown(event: PointerEvent) {
+  if (!canvasHost.value) return
+  if (event.target !== canvasRef.value) return
+  pointers.set(event.pointerId, [event.clientX, event.clientY])
+  canvasHost.value.setPointerCapture(event.pointerId)
+  dragging = true
+  moved = false
+  lastPointerX = event.clientX
+  lastPointerY = event.clientY
 }
 
 function handlePointerMove(event: PointerEvent) {
-  if (!canvasHost.value || !camera || !raycaster) return
+  if (!canvasHost.value) return
+  if (event.target !== canvasRef.value && !pointers.has(event.pointerId)) return
+  if (pointers.has(event.pointerId)) pointers.set(event.pointerId, [event.clientX, event.clientY])
+
+  if (pointers.size === 2) {
+    const [first, second] = Array.from(pointers.values())
+    const distance = Math.hypot(first[0] - second[0], first[1] - second[1])
+    if (pinchDistance) zoom = clamp(zoom * distance / pinchDistance, 0.54, 3.8)
+    pinchDistance = distance
+    dragging = false
+    moved = true
+    return
+  }
+
+  if (dragging) {
+    const dx = event.clientX - lastPointerX
+    const dy = event.clientY - lastPointerY
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved = true
+    rotY += dx * 0.0055
+    tilt = clamp(tilt - dy * 0.003, -1.08, 0.18)
+    lastPointerX = event.clientX
+    lastPointerY = event.clientY
+    return
+  }
+
+  updateHover(event)
+}
+
+function handlePointerUp(event: PointerEvent) {
+  if (!pointers.has(event.pointerId)) return
+  pointers.delete(event.pointerId)
+  if (pointers.size < 2) pinchDistance = 0
+  if (!moved) selectFromPointer(event)
+  dragging = false
+}
+
+function handlePointerCancel(event: PointerEvent) {
+  if (!pointers.has(event.pointerId)) return
+  pointers.delete(event.pointerId)
+  dragging = false
+  pinchDistance = 0
+}
+
+function handlePointerLeave() {
+  dragging = false
+  pointers.clear()
+  pinchDistance = 0
+  clearHover()
+}
+
+function handleWheel(event: WheelEvent) {
+  if (event.target !== canvasRef.value) return
+  event.preventDefault()
+  zoom = clamp(zoom * Math.exp(-event.deltaY * 0.0015), 0.54, 3.8)
+}
+
+function updateHover(event: PointerEvent) {
+  if (!canvasHost.value) return
   const rect = canvasHost.value.getBoundingClientRect()
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
-  raycaster.setFromCamera(pointer, camera)
-  const intersects = raycaster.intersectObjects(nodeLayer?.children.filter((item: any) => item instanceof THREE.Mesh && item.userData.nodeId) || [])
-  const hit = intersects[0]?.object as any
-  if (!hit) {
+  const index = pickNode(event.clientX - rect.left, event.clientY - rect.top)
+  hoverIndex = index
+  if (index < 0) {
     clearHover()
     return
   }
-  const nodeId = String(hit.userData.nodeId || '')
-  const entry = nodeMap.get(nodeId)
-  if (!entry) return
-  hoveredNode.value = entry.node
-  tooltipStyle.value = {
-    left: `${event.offsetX + 14}px`,
-    top: `${event.offsetY + 14}px`
-  }
+  hoveredNode.value = worldNodes[index].node
+  tooltipStyle.value = placeTooltip(event.clientX - rect.left, event.clientY - rect.top)
   canvasHost.value.style.cursor = 'pointer'
 }
 
-function handlePointerClick(event: MouseEvent) {
-  if (!canvasHost.value || !camera || !raycaster) return
+function selectFromPointer(event: PointerEvent) {
+  if (!canvasHost.value) return
   const rect = canvasHost.value.getBoundingClientRect()
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
-  raycaster.setFromCamera(pointer, camera)
-  const intersects = raycaster.intersectObjects(nodeLayer?.children.filter((item: any) => item instanceof THREE.Mesh && item.userData.nodeId) || [])
-  const hit = intersects[0]?.object as any
-  if (!hit) return
-  const nodeId = String(hit.userData.nodeId || '')
-  const entry = nodeMap.get(nodeId)
-  if (!entry) return
-  selectedNode.value = entry.node
-  emit('select-node', entry.node)
-  highlightSelected()
-  focusNode(nodeId)
+  const index = pickNode(event.clientX - rect.left, event.clientY - rect.top)
+  if (index < 0) {
+    clearSelection()
+    return
+  }
+  selectNode(worldNodes[index].node.id, true)
+}
+
+function placeTooltip(x: number, y: number) {
+  const left = x > width - 280 ? x - 248 : x + 16
+  const top = y > height - 150 ? y - 116 : y + 16
+  return {
+    left: `${Math.max(12, left)}px`,
+    top: `${Math.max(12, top)}px`
+  }
 }
 
 function clearHover() {
+  hoverIndex = -1
   hoveredNode.value = null
-  if (canvasHost.value) canvasHost.value.style.cursor = 'default'
+  if (canvasHost.value) canvasHost.value.style.cursor = 'grab'
 }
 
 function clearSelection() {
   selectedNode.value = null
   emit('select-node', null)
-  highlightSelected()
+  buildLineage('')
 }
 
-function handleStepClick(nodeId: string) {
+function selectNode(nodeId: string, shouldEmit: boolean) {
   const node = props.graph?.nodes.find((item) => item.id === nodeId) || null
   if (!node) return
   selectedNode.value = node
-  emit('select-node', node)
-  highlightSelected()
-  focusNode(nodeId)
+  buildLineage(node.id)
+  focusNode(node.id)
+  if (shouldEmit) emit('select-node', node)
+}
+
+function buildLineage(nodeId: string) {
+  lineageNodes = new Set<string>()
+  lineageEdges = new Set<number>()
+  if (!nodeId) return
+  const queue = [nodeId]
+  lineageNodes.add(nodeId)
+  while (queue.length) {
+    const current = queue.shift()
+    if (!current) continue
+    for (const edge of worldEdges) {
+      if (edge.edge.relation !== 'prerequisite') continue
+      if (edge.edge.target !== current) continue
+      lineageEdges.add(edge.index)
+      if (!lineageNodes.has(edge.edge.source)) {
+        lineageNodes.add(edge.edge.source)
+        queue.push(edge.edge.source)
+      }
+    }
+  }
 }
 
 function focusNode(nodeId: string) {
-  const entry = nodeMap.get(nodeId)
-  if (!entry || !controls || !camera) return
-  controls.target.copy(entry.position)
-  const direction = entry.position.clone().normalize()
-  if (direction.lengthSq() < 0.1) direction.set(0.2, 0.2, 1)
-  camera.position.copy(entry.position.clone().add(direction.multiplyScalar(360)).add(new THREE.Vector3(0, 80, 160)))
-  camera.lookAt(entry.position)
-  controls.update()
+  const index = nodeIndexById.get(nodeId)
+  if (index === undefined) return
+  const node = worldNodes[index]
+  let best = rotY
+  let bestDepth = Infinity
+  for (const candidate of [Math.atan2(-node.x, node.z), Math.atan2(-node.x, node.z) + Math.PI]) {
+    const z = -node.x * Math.sin(candidate) + node.z * Math.cos(candidate)
+    if (z < bestDepth) {
+      bestDepth = z
+      best = candidate
+    }
+  }
+  rotYTarget = best
+  tiltTarget = -0.2
+  zoomTarget = Math.max(1.45, zoom)
 }
 
 function resetCamera() {
-  if (!camera || !controls) return
-  camera.position.set(0, 150, 900)
-  controls.target.set(0, 4, 0)
-  controls.update()
+  rotYTarget = 0.58
+  tiltTarget = -0.32
+  zoomTarget = 1
 }
 
 function toggleRotation() {
@@ -914,7 +1098,7 @@ function playPath() {
   if (pathTimer) window.clearInterval(pathTimer)
   viewMode.value = 'path'
   let index = 0
-  handleStepClick(steps[index].id)
+  selectNode(steps[index].id, true)
   pathTimer = window.setInterval(() => {
     index += 1
     if (index >= steps.length) {
@@ -922,39 +1106,87 @@ function playPath() {
       pathTimer = 0
       return
     }
-    handleStepClick(steps[index].id)
-  }, 1600)
+    selectNode(steps[index].id, true)
+  }, 1550)
 }
 
-function curvedPoints(source: any, target: any, lift: number) {
-  const middle = source.clone().lerp(target, 0.5)
-  const outward = new THREE.Vector3(middle.x, 0, middle.z).normalize().multiplyScalar(lift)
-  return [source, source.clone().lerp(target, 0.35).add(outward), target.clone().lerp(source, 0.35).add(outward), target]
+function relatedNodes(nodeId: string, source: Map<string, string[]>) {
+  const ids = source.get(nodeId) || []
+  return ids
+    .map((id) => props.graph?.nodes.find((node) => node.id === id) || null)
+    .filter((node): node is KnowledgeLinkNode => Boolean(node))
+    .slice(0, 8)
 }
 
-function layerOrder(layer: string) {
-  if (layer === 'project') return 0
-  if (layer === 'document') return 1
-  if (layer === 'knowledge_base') return 2
-  return 2
+function pushRelation(map: Map<string, string[]>, key: string, value: string) {
+  const list = map.get(key) || []
+  if (!list.includes(value)) list.push(value)
+  map.set(key, list)
+}
+
+function resizeCanvas() {
+  const host = canvasHost.value
+  const canvas = canvasRef.value
+  if (!host || !canvas) return
+  dpr = Math.min(window.devicePixelRatio || 1, 2)
+  width = Math.max(1, host.clientWidth)
+  height = Math.max(1, host.clientHeight)
+  canvas.width = Math.floor(width * dpr)
+  canvas.height = Math.floor(height * dpr)
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  context = canvas.getContext('2d')
+}
+
+function nodeRadius(node: KnowledgeLinkNode) {
+  const weight = Math.max(1, Number(node.weight || 1))
+  const pathBoost = pathNodeIds.value.has(node.id) ? 1.5 : 0
+  if (node.layer === 'project') return 5.4 + pathBoost
+  if (node.layer === 'document') return 3.4 + Math.min(3.2, Math.log(weight + 1) * 0.72)
+  if (node.layer === 'platform') return 3.1 + pathBoost
+  if (node.layer === 'knowledge_base') return 3.0 + Math.min(3.8, Math.log(weight + 1) * 0.82) + pathBoost
+  return 2.8 + Math.min(3.5, Math.log(weight + 1) * 0.8)
+}
+
+function nodeColor(node: KnowledgeLinkNode) {
+  if (pathNodeIds.value.has(node.id)) return '#dc8b5e'
+  if (node.layer === 'project') return '#dc8b5e'
+  if (node.layer === 'document') return '#fadfa7'
+  if (node.layer === 'platform') return '#cadab2'
+  return categoryColor(categoryKey(node))
+}
+
+function categoryKey(node: KnowledgeLinkNode) {
+  if (node.layer === 'platform') return '平台功能介绍'
+  return String(node.category || node.meta?.subject || node.layer || '知识点')
+}
+
+function categoryLabel(key: string) {
+  return key.replace(/^知识库[:：]/, '') || '知识点'
+}
+
+function categoryColor(key: string) {
+  if (key === '平台功能介绍') return '#cadab2'
+  if (key.includes('文献') || key.includes('论文')) return '#c4daeb'
+  if (key.includes('项目')) return '#dc8b5e'
+  if (key.includes('资料') || key.includes('pdf') || key.includes('document')) return '#fadfa7'
+  return palette[hashString(key) % palette.length]
+}
+
+function edgeRgb(edge: KnowledgeLinkEdge): [number, number, number] {
+  if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? [220, 139, 94] : [196, 149, 93]
+  if (edge.relation === 'evidence') return [141, 169, 190]
+  return [126, 148, 105]
 }
 
 function nodeSubtitle(node: KnowledgeLinkNode) {
   if (node.layer === 'project') return `项目 · ${node.category || '学习目标'}`
-  if (node.layer === 'document') return `上传资料 · ${node.category || 'document'}`
-  if (node.layer === 'platform') return `基础节点 · 平台功能介绍`
-  if (node.layer === 'knowledge_base') return `RAG 知识点 · ${node.category || '知识库'}`
+  if (node.layer === 'document') return `资料 · ${node.category || 'document'}`
+  if (node.layer === 'platform') return '平台功能介绍'
+  if (node.layer === 'knowledge_base') return `知识点 · ${node.category || '知识库'}`
   const meta = node.meta || {}
   const age = formatAge(meta.age_range)
   return `${meta.subject || '知识'} · ${meta.domain || node.category || 'domain'}${age ? ` · ${age}` : ''}`
-}
-
-function hashString(value: string) {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
-  }
-  return hash
 }
 
 function formatAge(value: unknown): string {
@@ -975,6 +1207,28 @@ function formatMeta(value: unknown): string {
       .join(' / ')
   }
   return String(value)
+}
+
+function hexToRgb(color: string): [number, number, number] {
+  const value = color.replace('#', '')
+  const numeric = Number.parseInt(value.length === 3 ? value.split('').map((char) => char + char).join('') : value, 16)
+  return [(numeric >> 16) & 255, (numeric >> 8) & 255, numeric & 255]
+}
+
+function hashString(value: string) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function normalizedAngle(value: number) {
+  return ((value + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
 }
 </script>
 
@@ -999,8 +1253,8 @@ function formatMeta(value: unknown): string {
 }
 
 .knowledge-sphere-toolbar__title strong {
-  font-size: 28px;
   color: var(--study-ink);
+  font-size: 28px;
   letter-spacing: 0;
 }
 
@@ -1027,13 +1281,16 @@ function formatMeta(value: unknown): string {
 .knowledge-sphere-segments {
   display: inline-flex;
   padding: 3px;
-  border: 1px solid rgba(220, 139, 94, 0.22);
-  border-radius: 10px;
+  border: 1px solid rgba(220, 139, 94, 0.2);
+  border-radius: 8px;
   background: #ffefd6;
 }
 
 .knowledge-sphere-segments button,
-.knowledge-sphere-actions button {
+.knowledge-sphere-actions button,
+.knowledge-sphere-categories button,
+.knowledge-sphere-card-head button,
+.knowledge-sphere-relations button {
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -1054,76 +1311,30 @@ function formatMeta(value: unknown): string {
 
 .knowledge-sphere-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(340px, 0.72fr);
+  grid-template-columns: minmax(0, 1.92fr) minmax(330px, 0.72fr);
   gap: 16px;
 }
 
 .knowledge-sphere-stage {
   position: relative;
   min-height: 760px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(220, 139, 94, 0.16);
   border-radius: 8px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 42% 45%, rgba(196, 218, 235, 0.18), transparent 28%),
-    radial-gradient(circle at 75% 52%, rgba(202, 218, 178, 0.12), transparent 24%),
-    radial-gradient(circle at 22% 28%, rgba(220, 139, 94, 0.12), transparent 18%),
-    linear-gradient(135deg, #070a13 0%, #0b1020 54%, #060811 100%);
-  box-shadow: 0 32px 90px rgba(9, 12, 24, 0.28);
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(86, 62, 46, 0.12);
+  cursor: grab;
+  touch-action: none;
 }
 
-.knowledge-sphere-stage::after {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: radial-gradient(ellipse at 54% 52%, black 0%, transparent 76%);
+.knowledge-sphere-stage:active {
+  cursor: grabbing;
 }
 
 .knowledge-sphere-canvas {
   position: absolute;
   inset: 0;
-}
-
-:deep(.knowledge-sphere-label-layer) {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-:deep(.knowledge-sphere-label) {
   display: block;
-  max-width: 150px;
-  padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 6px;
-  background: rgba(6, 10, 20, 0.82);
-  color: #fff;
-  font-size: 11px;
-  line-height: 1.3;
-  text-align: center;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
-  backdrop-filter: blur(10px);
-}
-
-:deep(.knowledge-sphere-label.is-project) {
-  background: rgba(15, 118, 110, 0.86);
-}
-
-:deep(.knowledge-sphere-label.is-document) {
-  background: rgba(138, 87, 0, 0.84);
-}
-
-:deep(.knowledge-sphere-label.is-platform) {
-  background: rgba(85, 107, 63, 0.86);
-}
-
-:deep(.knowledge-sphere-label.is-path) {
-  border-color: rgba(245, 158, 11, 0.65);
 }
 
 .knowledge-sphere-overlay {
@@ -1133,12 +1344,12 @@ function formatMeta(value: unknown): string {
 }
 
 .knowledge-sphere-badge,
-.knowledge-sphere-legend,
 .knowledge-sphere-actions,
-.knowledge-sphere-tooltip {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(8, 12, 24, 0.78);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+.knowledge-sphere-tooltip,
+.knowledge-sphere-categories {
+  border: 1px solid rgba(220, 139, 94, 0.16);
+  background: rgba(255, 253, 249, 0.86);
+  box-shadow: 0 14px 34px rgba(86, 62, 46, 0.12);
   backdrop-filter: blur(14px);
 }
 
@@ -1147,28 +1358,32 @@ function formatMeta(value: unknown): string {
   top: 16px;
   left: 16px;
   display: grid;
-  max-width: 430px;
-  gap: 6px;
-  padding: 14px 16px;
+  max-width: 300px;
+  gap: 5px;
+  padding: 12px 14px;
   border-radius: 8px;
-  color: #f8fafc;
+  color: #172033;
   font-size: 12px;
 }
 
 .knowledge-sphere-badge strong {
-  font-size: 16px;
+  font-size: 15px;
+}
+
+.knowledge-sphere-badge span {
+  color: #6d6472;
+  line-height: 1.5;
 }
 
 .knowledge-sphere-tooltip {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   display: grid;
-  min-width: 190px;
-  max-width: 280px;
+  width: 238px;
   gap: 3px;
   padding: 10px 12px;
-  border-radius: 12px;
-  color: #f8fafc;
+  border-radius: 8px;
+  color: #172033;
 }
 
 .knowledge-sphere-tooltip strong,
@@ -1179,55 +1394,8 @@ function formatMeta(value: unknown): string {
 
 .knowledge-sphere-tooltip span,
 .knowledge-sphere-tooltip small {
-  color: #cbd5e1;
+  color: #6d6472;
   font-size: 12px;
-}
-
-.knowledge-sphere-legend {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-}
-
-.knowledge-sphere-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #d7dde8;
-  font-size: 12px;
-}
-
-.knowledge-sphere-legend i {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-}
-
-.knowledge-sphere-legend i.project {
-  background: #dc8b5e;
-}
-
-.knowledge-sphere-legend i.knowledge_base {
-  background: #c4daeb;
-}
-
-.knowledge-sphere-legend i.document {
-  background: #fadfa7;
-}
-
-.knowledge-sphere-legend i.platform {
-  background: #cadab2;
-}
-
-.knowledge-sphere-legend i.path {
-  background: #fadfa7;
 }
 
 .knowledge-sphere-actions {
@@ -1245,15 +1413,55 @@ function formatMeta(value: unknown): string {
   padding: 7px 9px;
 }
 
-.knowledge-sphere-actions button:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+.knowledge-sphere-actions button:hover,
+.knowledge-sphere-categories button:hover,
+.knowledge-sphere-card-head button:hover,
+.knowledge-sphere-relations button:hover {
+  background: rgba(220, 139, 94, 0.12);
+  color: #172033;
   transform: translateY(-1px);
 }
 
 .knowledge-sphere-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.knowledge-sphere-categories {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 8px;
+  pointer-events: auto;
+}
+
+.knowledge-sphere-categories button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #4c4139;
+}
+
+.knowledge-sphere-categories button.off {
+  opacity: 0.42;
+}
+
+.knowledge-sphere-categories i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.knowledge-sphere-categories b {
+  color: #8d4d2f;
+  font-variant-numeric: tabular-nums;
 }
 
 .knowledge-sphere-sidebar {
@@ -1267,7 +1475,7 @@ function formatMeta(value: unknown): string {
   gap: 10px;
   padding: 16px;
   border: 1px solid rgba(220, 139, 94, 0.16);
-  border-radius: 14px;
+  border-radius: 8px;
   background: #ffefd6;
 }
 
@@ -1282,8 +1490,13 @@ function formatMeta(value: unknown): string {
   gap: 12px;
 }
 
+.knowledge-sphere-card-head button {
+  padding: 5px 8px;
+}
+
 .knowledge-sphere-card-head span,
-.knowledge-sphere-current > span {
+.knowledge-sphere-current > span,
+.knowledge-sphere-card > span {
   color: var(--study-muted);
   font-size: 12px;
 }
@@ -1303,8 +1516,7 @@ function formatMeta(value: unknown): string {
 }
 
 .knowledge-sphere-meta,
-.knowledge-sphere-signals,
-.knowledge-sphere-subjects {
+.knowledge-sphere-signals {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1312,10 +1524,16 @@ function formatMeta(value: unknown): string {
 
 .knowledge-sphere-meta small,
 .knowledge-sphere-signals small {
+  display: inline-flex;
+  gap: 5px;
   padding: 6px 8px;
   border-radius: 8px;
   background: #f0cebb;
   color: #4c4139;
+}
+
+.knowledge-sphere-meta b {
+  color: #8d4d2f;
 }
 
 .knowledge-sphere-evidence {
@@ -1334,12 +1552,38 @@ function formatMeta(value: unknown): string {
   font-size: 13px;
 }
 
+.knowledge-sphere-relations {
+  display: grid;
+  gap: 8px;
+}
+
+.knowledge-sphere-relations section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.knowledge-sphere-relations strong {
+  width: 42px;
+  font-size: 13px;
+}
+
+.knowledge-sphere-relations button,
+.knowledge-sphere-relations span {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #ffffff 60%, #c4daeb);
+  color: #4c4139;
+  font-size: 12px;
+}
+
 .knowledge-sphere-strategy {
   font-size: 13px;
 }
 
 .knowledge-sphere-path {
-  max-height: 410px;
+  max-height: 430px;
   margin: 0;
   padding: 0;
   display: grid;
@@ -1353,8 +1597,8 @@ function formatMeta(value: unknown): string {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 2px 10px;
-  padding: 10px 10px;
-  border-radius: 11px;
+  padding: 10px;
+  border-radius: 8px;
   background: color-mix(in srgb, #ffefd6 74%, #ffffff);
   cursor: pointer;
   transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
@@ -1396,41 +1640,6 @@ function formatMeta(value: unknown): string {
   line-height: 1.45;
 }
 
-.knowledge-sphere-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.knowledge-sphere-stat-grid span {
-  display: grid;
-  gap: 2px;
-  padding: 10px;
-  border-radius: 10px;
-  background: #f0cebb;
-  color: #4c4139;
-  font-size: 12px;
-}
-
-.knowledge-sphere-stat-grid b {
-  color: #172033;
-  font-size: 19px;
-  font-variant-numeric: tabular-nums;
-}
-
-.knowledge-sphere-subjects span {
-  padding: 5px 7px;
-  border-left: 3px solid var(--subject-color);
-  border-radius: 7px;
-  background: color-mix(in srgb, #c4daeb 48%, #ffffff);
-  color: #4c4139;
-  font-size: 12px;
-}
-
-.knowledge-sphere-map p {
-  font-size: 12px;
-}
-
 @media (max-width: 1180px) {
   .knowledge-sphere-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -1449,18 +1658,23 @@ function formatMeta(value: unknown): string {
   }
 
   .knowledge-sphere-stage {
-    min-height: 540px;
+    min-height: 560px;
   }
 
   .knowledge-sphere-actions {
     top: auto;
     right: 12px;
-    bottom: 66px;
+    bottom: 92px;
   }
 
   .knowledge-sphere-badge {
     right: 12px;
     max-width: none;
+  }
+
+  .knowledge-sphere-categories {
+    max-height: 78px;
+    overflow: auto;
   }
 }
 </style>
