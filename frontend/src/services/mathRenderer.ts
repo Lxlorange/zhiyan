@@ -1,5 +1,4 @@
 import katex from 'katex'
-import { parse as parseMathExpression } from 'mathjs'
 
 type MathSegment = {
   raw: string
@@ -83,7 +82,6 @@ function renderFormulaNode(segment: MathSegment) {
   const wrapper = document.createElement('span')
   wrapper.className = segment.displayMode ? 'tex-formula tex-formula-block' : 'tex-formula tex-formula-inline'
   wrapper.dataset.mathRendered = 'true'
-  tryMathjsParse(segment.body)
   try {
     wrapper.innerHTML = katex.renderToString(segment.body, {
       displayMode: segment.displayMode,
@@ -148,21 +146,6 @@ function isLikelyFormula(body: string, delimiter: string) {
   if (body.length > 160) return false
   if (/^\d+(?:[.,]\d+)?$/.test(body)) return false
   return /[\\_^=+\-*/<>]|[A-Za-z]/.test(body)
-}
-
-function tryMathjsParse(body: string) {
-  const normalized = body
-    .replace(/\\cdot|\\times/g, '*')
-    .replace(/\\div/g, '/')
-    .replace(/\^/g, '^')
-    .replace(/[{}]/g, '')
-  if (/\\[A-Za-z]+/.test(normalized)) return
-  if (!/^[\dA-Za-z_+\-*/^().,\s=<>]+$/.test(normalized)) return
-  try {
-    parseMathExpression(normalized.replace(/=/g, '=='))
-  } catch {
-    // KaTeX is the source of truth for TeX rendering; mathjs parsing is only a lightweight expression hook.
-  }
 }
 
 function shouldSkipElement(element: Element): boolean {

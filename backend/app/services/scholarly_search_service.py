@@ -24,6 +24,7 @@ class ScholarlySearchHit:
     url: str
     source: str
     reason: str
+    abstract: str = ""
 
 
 GENERAL_SEARCH_SITES = [
@@ -148,6 +149,7 @@ def verify_candidate_resource_url(
         url=normalized_url,
         source=source or f"{_host(normalized_url)} · Verified",
         reason=reason or "LLM candidate URL verified by server",
+        abstract="",
     )
 
 
@@ -174,7 +176,8 @@ def _search_openalex(query: str, topic: str = "") -> Optional[ScholarlySearchHit
             source += f" · {year}"
         if authors:
             source += f" · {authors}"
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"OpenAlex result for: {query}")
+        abstract = _text(item.get("abstract") or item.get("summary") or "")
+        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"OpenAlex result for: {query}", abstract=abstract)
     return None
 
 
@@ -208,7 +211,7 @@ def _search_semantic_scholar(query: str, topic: str = "") -> Optional[ScholarlyS
         ]
         if author_names:
             source += f" · {', '.join(author_names)}"
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Semantic Scholar result for: {query}")
+        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Semantic Scholar result for: {query}", abstract=abstract)
     return None
 
 
@@ -228,7 +231,7 @@ def _search_arxiv(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
         url = _text(id_match.group(1))
         if not _is_public_http_url(url):
             continue
-        return ScholarlySearchHit(title=title, url=url, source="arXiv", reason=f"arXiv result for: {query}")
+        return ScholarlySearchHit(title=title, url=url, source="arXiv", reason=f"arXiv result for: {query}", abstract=summary)
     return None
 
 
@@ -248,7 +251,7 @@ def _search_crossref(query: str, topic: str = "") -> Optional[ScholarlySearchHit
         year = _crossref_year(item)
         if year:
             source += f" · {year}"
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Crossref result for: {query}")
+        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Crossref result for: {query}", abstract=_crossref_abstract(item))
     return None
 
 
@@ -269,6 +272,7 @@ def _search_duckduckgo(query: str, topic: str = "") -> Optional[ScholarlySearchH
                 url=url,
                 source=f"{_host(url)} · Web",
                 reason=f"Web result for: {search_query}",
+                abstract=snippet,
             )
     return None
 
@@ -646,3 +650,6 @@ def _text(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+

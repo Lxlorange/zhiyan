@@ -8,6 +8,7 @@ import KnowledgeUploadPage from './pages/KnowledgeUploadPage.vue'
 import KnowledgeStarMapPage from './pages/KnowledgeStarMapPage.vue'
 import ProjectHomePage from './pages/ProjectHomePage.vue'
 import MethodsWorkspacePage from './pages/MethodsWorkspacePage.vue'
+import ResearchToolDetailPage from './pages/ResearchToolDetailPage.vue'
 import PracticePaperCreatePage from './pages/PracticePaperCreatePage.vue'
 import PracticePaperDetailPage from './pages/PracticePaperDetailPage.vue'
 import PracticePaperListPage from './pages/PracticePaperListPage.vue'
@@ -89,12 +90,6 @@ export const pageMeta: Record<string, PageMeta> = {
     description: '这里将支持论文上传、引用管理、阅读笔记和文献关系整理。',
     highlights: ['文献管理', '引用格式', '知识库']
   },
-  writing: {
-    title: '论文写作',
-    subtitle: '论文修改、格式规范、综述和引用辅助',
-    description: '这里将提供论文润色、结构诊断、格式规范和综述写作辅助。',
-    highlights: ['论文修改', '格式检查', '综述辅助']
-  },
   methods: {
     title: '科研方法',
     subtitle: '学习实验设计、复现、评估和学术规范',
@@ -124,7 +119,6 @@ export const pageRouteNames: Record<string, string> = {
   'knowledge-upload': 'knowledge-upload',
   assessment: 'assessment',
   literature: 'literature',
-  writing: 'writing',
   methods: 'methods',
   agents: 'agents',
   settings: 'settings'
@@ -147,8 +141,8 @@ export const routes: RouteRecordRaw[] = [
   { path: '/assessment/new', name: 'practice-paper-create', component: PracticePaperCreatePage, meta: { page: 'assessment' } },
   { path: '/assessment/:paperId(\\d+)', name: 'practice-paper-detail', component: PracticePaperDetailPage, meta: { page: 'assessment' } },
   { path: '/literature', name: 'literature', component: WorkspaceModulePage, props: { mode: 'literature' }, meta: { page: 'literature' } },
-  { path: '/writing', name: 'writing', component: WorkspaceModulePage, props: { mode: 'writing' }, meta: { page: 'writing' } },
   { path: '/methods', name: 'methods', component: MethodsWorkspacePage, meta: { page: 'methods' } },
+  { path: '/methods/:tool', name: 'research-tool-detail', component: ResearchToolDetailPage, meta: { page: 'methods' } },
   { path: '/agents', name: 'agents', component: DashboardModulePage, meta: { page: 'agents' } },
   { path: '/teacher', redirect: '/settings' },
   { path: '/settings', name: 'settings', component: AccountSettings, meta: { page: 'settings' } },
