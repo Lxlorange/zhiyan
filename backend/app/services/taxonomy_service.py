@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from typing import Any, Optional
 
 from sqlalchemy import desc, func, select
@@ -20,7 +20,70 @@ from app.schemas import KnowledgeLinkEdge, KnowledgeLinkGraphResponse, Knowledge
 from app.services.knowledge_ingestion_service import _job_id_from_document_path
 
 
-GRAPH_ATTRIBUTION = "知识漏斗由当前用户上传知识库、项目知识点与学习画像动态聚合生成。"
+GRAPH_ATTRIBUTION = "知识漏斗由当前用户上传知识库、项目知识点、平台功能介绍与学习画像动态聚合生成。"
+
+PLATFORM_FEATURE_NODES: list[dict[str, Any]] = [
+    {
+        "id": "platform:knowledge-base",
+        "label": "知识库",
+        "description": "上传 PDF、PPT、文档和压缩包，解析为可检索、可引用的学习资料。",
+        "prerequisites": [],
+    },
+    {
+        "id": "platform:rag-qa",
+        "label": "RAG 问答",
+        "description": "基于已上传资料检索证据，再结合模型生成可追溯回答。",
+        "prerequisites": ["知识库"],
+    },
+    {
+        "id": "platform:knowledge-dag",
+        "label": "知识漏斗",
+        "description": "把知识库片段整理成有向无环知识图，显示先学什么、后学什么。",
+        "prerequisites": ["知识库"],
+    },
+    {
+        "id": "platform:learning-profile",
+        "label": "学习画像",
+        "description": "沉淀学生目标、薄弱点、偏好、练习证据和学习节奏。",
+        "prerequisites": [],
+    },
+    {
+        "id": "platform:project-planning",
+        "label": "项目规划",
+        "description": "围绕学生目标生成项目、阶段目标、输出要求和推进策略。",
+        "prerequisites": ["学习画像"],
+    },
+    {
+        "id": "platform:syllabus",
+        "label": "学习清单",
+        "description": "把项目目标拆解为可执行的学习条目，并支持动态调整。",
+        "prerequisites": ["项目规划", "知识漏斗"],
+    },
+    {
+        "id": "platform:daily-plan",
+        "label": "每日计划",
+        "description": "根据学习清单、可用时间和进度生成当天学习安排。",
+        "prerequisites": ["学习清单"],
+    },
+    {
+        "id": "platform:ai-classroom",
+        "label": "AI 课堂",
+        "description": "围绕学习条目生成讲解、PPT、可视化、练习和反思反馈。",
+        "prerequisites": ["每日计划"],
+    },
+    {
+        "id": "platform:practice-paper",
+        "label": "练习试卷",
+        "description": "从知识图节点生成题目，记录作答结果并反哺学习画像。",
+        "prerequisites": ["知识漏斗", "AI 课堂"],
+    },
+    {
+        "id": "platform:research-tools",
+        "label": "科研工具",
+        "description": "支持文献阅读、论文写作、实验方法和答辩准备等大学生科研任务。",
+        "prerequisites": ["项目规划", "知识库"],
+    },
+]
 
 
 def build_knowledge_link_graph(
@@ -43,12 +106,16 @@ def build_knowledge_link_graph(
     project_nodes = _add_project_nodes(nodes, projects)
     document_nodes = _add_document_nodes(nodes, documents)
     kb_nodes = _add_knowledge_base_nodes(nodes, database_points)
+    platform_nodes = _add_platform_feature_nodes(nodes)
 
     edges: list[KnowledgeLinkEdge] = []
+    edges.extend(_link_platform_features(platform_nodes))
     edges.extend(_link_documents_to_points(document_nodes, kb_nodes))
     edges.extend(_link_projects_to_points(project_nodes, kb_nodes, document_nodes))
     edges.extend(_link_database_prerequisites(kb_nodes))
-    edges.extend(_link_co_occurrence_edges(database_points, kb_nodes))
+    edges.extend(_link_document_sequence_edges(db, owned_document_ids, kb_nodes))
+    edges = _enforce_dag_edges(nodes, edges)
+    _annotate_graph_topology(nodes, edges)
 
     path_suggestions = _build_path_suggestions(projects, database_points, profile_data)
     _annotate_path_membership(nodes, path_suggestions)
@@ -237,6 +304,7 @@ def _add_project_nodes(nodes: dict[str, KnowledgeLinkNode], projects: list[Learn
                 "related_documents": list(project.related_documents or []),
                 "weak_points": list(project.current_weak_points or []),
                 "personalization_strategy": list(project.personalization_strategy or []),
+                "source_kind": "project",
             },
         )
         nodes[node.id] = node
@@ -260,6 +328,7 @@ def _add_document_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[dict[str
                 "course_code": row.get("course_code", ""),
                 "chunk_count": int(row.get("chunk_count") or 0),
                 "point_count": int(row.get("point_count") or 0),
+                "source_kind": "document",
             },
         )
         nodes[node.id] = node
@@ -291,11 +360,54 @@ def _add_knowledge_base_nodes(nodes: dict[str, KnowledgeLinkNode], rows: list[di
                 "prerequisites": list(row.get("prerequisites") or []),
                 "difficulty": row.get("difficulty", "medium"),
                 "evidence": _evidence_for_point(row),
+                "source_kind": "rag",
             },
         )
         nodes[node.id] = node
         result.append(node)
     return result
+
+
+def _add_platform_feature_nodes(nodes: dict[str, KnowledgeLinkNode]) -> list[KnowledgeLinkNode]:
+    result: list[KnowledgeLinkNode] = []
+    for index, item in enumerate(PLATFORM_FEATURE_NODES, start=1):
+        node = KnowledgeLinkNode(
+            id=str(item["id"]),
+            label=str(item["label"]),
+            layer="platform",
+            category="平台功能介绍",
+            description=str(item["description"]),
+            weight=3,
+            meta={
+                "source_kind": "platform",
+                "chapter": "平台功能介绍",
+                "difficulty": "easy" if index <= 4 else "medium",
+                "prerequisites": list(item.get("prerequisites") or []),
+                "evidence": ["系统预置基础说明，用于帮助学生理解平台功能关系。"],
+            },
+        )
+        nodes[node.id] = node
+        result.append(node)
+    return result
+
+
+def _link_platform_features(platform_nodes: list[KnowledgeLinkNode]) -> list[KnowledgeLinkEdge]:
+    by_label = {_normalize_label(node.label): node for node in platform_nodes}
+    edges: list[KnowledgeLinkEdge] = []
+    for node in platform_nodes:
+        for prereq in node.meta.get("prerequisites", []) or []:
+            source = by_label.get(_normalize_label(str(prereq)))
+            if source:
+                edges.append(
+                    KnowledgeLinkEdge(
+                        source=source.id,
+                        target=node.id,
+                        relation="prerequisite",
+                        strength="hard",
+                        reason="平台功能的使用顺序关系",
+                    )
+                )
+    return edges
 
 
 def _link_documents_to_points(
@@ -313,9 +425,9 @@ def _link_documents_to_points(
                 KnowledgeLinkEdge(
                     source=document.id,
                     target=point.id,
-                    relation="contains",
+                    relation="evidence",
                     strength="medium",
-                    reason="文档片段被聚合为该知识点",
+                    reason="该知识点由文档片段提供证据",
                 )
             )
     return edges
@@ -342,7 +454,7 @@ def _link_projects_to_points(
                     KnowledgeLinkEdge(
                         source=project.id,
                         target=kb_node.id,
-                        relation="uses",
+                        relation="focuses",
                         strength="strong",
                         reason="项目目标或薄弱点命中知识库知识点",
                     )
@@ -353,7 +465,7 @@ def _link_projects_to_points(
                     KnowledgeLinkEdge(
                         source=project.id,
                         target=document.id,
-                        relation="uses_document",
+                        relation="evidence",
                         strength="medium",
                         reason="项目目标命中上传资料",
                     )
@@ -380,23 +492,37 @@ def _link_database_prerequisites(kb_nodes: list[KnowledgeLinkNode]) -> list[Know
     return edges
 
 
-def _link_co_occurrence_edges(rows: list[dict[str, Any]], kb_nodes: list[KnowledgeLinkNode]) -> list[KnowledgeLinkEdge]:
+def _link_document_sequence_edges(
+    db: Session,
+    document_ids: set[int],
+    kb_nodes: list[KnowledgeLinkNode],
+) -> list[KnowledgeLinkEdge]:
     by_id = {str(node.meta.get("point_id")): node for node in kb_nodes}
-    points_by_doc: dict[str, list[str]] = defaultdict(list)
-    for row in rows:
-        point_id = str(row.get("point_id"))
-        for title in row.get("document_titles") or []:
-            points_by_doc[str(title)].append(point_id)
+    if not document_ids or not by_id:
+        return []
+    chunks = db.execute(
+        select(DocumentChunk.document_id, DocumentChunk.knowledge_point_id, DocumentChunk.chunk_index)
+        .where(DocumentChunk.document_id.in_(document_ids), DocumentChunk.knowledge_point_id.is_not(None))
+        .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
+    ).all()
+    points_by_doc: dict[int, list[str]] = defaultdict(list)
+    for document_id, point_id, _chunk_index in chunks:
+        point_key = str(point_id)
+        if point_key in by_id:
+            points_by_doc[int(document_id)].append(point_key)
 
     pair_counts: Counter[tuple[str, str]] = Counter()
     for point_ids in points_by_doc.values():
-        unique = list(dict.fromkeys(point_ids))
-        for index, left in enumerate(unique):
-            for right in unique[index + 1 : index + 4]:
-                pair_counts[tuple(sorted((left, right)))] += 1
+        compact = []
+        for point_id in point_ids:
+            if not compact or compact[-1] != point_id:
+                compact.append(point_id)
+        for left, right in zip(compact, compact[1:]):
+            if left != right:
+                pair_counts[(left, right)] += 1
 
     edges: list[KnowledgeLinkEdge] = []
-    for (left, right), count in pair_counts.most_common(180):
+    for (left, right), count in pair_counts.most_common(220):
         left_node = by_id.get(left)
         right_node = by_id.get(right)
         if not left_node or not right_node:
@@ -405,12 +531,85 @@ def _link_co_occurrence_edges(rows: list[dict[str, Any]], kb_nodes: list[Knowled
             KnowledgeLinkEdge(
                 source=left_node.id,
                 target=right_node.id,
-                relation="co_occurs",
-                strength="strong" if count >= 2 else "weak",
-                reason=f"在 {count} 份上传资料中共同出现",
+                relation="prerequisite",
+                strength="soft",
+                reason=f"按上传资料中的出现顺序推断：前者应先理解，再进入后者（出现 {count} 次）。",
             )
         )
     return edges
+
+
+def _enforce_dag_edges(
+    nodes: dict[str, KnowledgeLinkNode],
+    edges: list[KnowledgeLinkEdge],
+) -> list[KnowledgeLinkEdge]:
+    seen: set[tuple[str, str, str]] = set()
+    graph: dict[str, set[str]] = defaultdict(set)
+    result: list[KnowledgeLinkEdge] = []
+    priority = {"prerequisite": 0, "evidence": 1, "focuses": 2}
+    for edge in sorted(edges, key=lambda item: priority.get(item.relation, 9)):
+        if edge.source == edge.target:
+            continue
+        if edge.source not in nodes or edge.target not in nodes:
+            continue
+        key = (edge.source, edge.target, edge.relation)
+        if key in seen:
+            continue
+        if edge.relation == "prerequisite" and _has_path(graph, edge.target, edge.source):
+            continue
+        seen.add(key)
+        result.append(edge)
+        if edge.relation == "prerequisite":
+            graph[edge.source].add(edge.target)
+    return result[:620]
+
+
+def _has_path(graph: dict[str, set[str]], start: str, target: str) -> bool:
+    stack = [start]
+    visited: set[str] = set()
+    while stack:
+        current = stack.pop()
+        if current == target:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        stack.extend(graph.get(current, set()) - visited)
+    return False
+
+
+def _annotate_graph_topology(nodes: dict[str, KnowledgeLinkNode], edges: list[KnowledgeLinkEdge]) -> None:
+    prerequisite_edges = [edge for edge in edges if edge.relation == "prerequisite"]
+    incoming: dict[str, int] = {node_id: 0 for node_id in nodes}
+    outgoing: dict[str, int] = {node_id: 0 for node_id in nodes}
+    children: dict[str, list[str]] = defaultdict(list)
+    for edge in edges:
+        outgoing[edge.source] = outgoing.get(edge.source, 0) + 1
+        incoming[edge.target] = incoming.get(edge.target, 0) + 1
+        if edge.relation == "prerequisite":
+            children[edge.source].append(edge.target)
+
+    prereq_incoming: dict[str, int] = {node_id: 0 for node_id in nodes}
+    for edge in prerequisite_edges:
+        prereq_incoming[edge.target] += 1
+
+    queue = deque([node_id for node_id, count in prereq_incoming.items() if count == 0])
+    levels: dict[str, int] = {node_id: 0 for node_id in queue}
+    while queue:
+        node_id = queue.popleft()
+        for child in children.get(node_id, []):
+            levels[child] = max(levels.get(child, 0), levels.get(node_id, 0) + 1)
+            prereq_incoming[child] -= 1
+            if prereq_incoming[child] <= 0:
+                queue.append(child)
+
+    for node_id, node in nodes.items():
+        degree = incoming.get(node_id, 0) + outgoing.get(node_id, 0)
+        node.meta["in_degree"] = incoming.get(node_id, 0)
+        node.meta["out_degree"] = outgoing.get(node_id, 0)
+        node.meta["degree"] = degree
+        node.meta["dag_level"] = levels.get(node_id, 0)
+        node.meta["is_isolated"] = degree == 0
 
 
 def _build_path_suggestions(
@@ -463,6 +662,30 @@ def _build_path_suggestions(
                             "evidence": _evidence_for_point(row),
                         }
                         for row in ranked[:18]
+                    ]
+                ),
+            }
+        )
+
+    if not suggestions and not rows:
+        suggestions.append(
+            {
+                "project_id": None,
+                "project_title": "平台功能介绍",
+                "strategy": "先理解平台的数据入口，再进入知识图谱、学习清单、AI 课堂和练习反馈，形成完整学习闭环。",
+                "dynamic_signals": _dynamic_signals(None, profile_data),
+                "steps": _number_path_steps(
+                    [
+                        {
+                            "id": item["id"],
+                            "label": item["label"],
+                            "layer": "platform",
+                            "reason": str(item["description"]),
+                            "phase": "平台入门",
+                            "estimated_minutes": 8,
+                            "evidence": ["系统预置基础说明。"],
+                        }
+                        for item in PLATFORM_FEATURE_NODES
                     ]
                 ),
             }
@@ -552,12 +775,15 @@ def _build_graph_meta(
         "graph_source": "user_knowledge_base",
         "knowledge_point_count": len(rows),
         "document_count": len(documents),
+        "platform_feature_count": len([node for node in nodes.values() if node.layer == "platform"]),
         "document_types": documents_by_type,
         "chapter_subjects": chapters,
         "taxonomy_selected_topics": 0,
         "taxonomy_total_topics": 0,
         "taxonomy_subjects": {},
         "edge_count": len(edges),
+        "dag_edge_count": len([edge for edge in edges if edge.relation == "prerequisite"]),
+        "isolated_count": len([node for node in nodes.values() if node.meta.get("is_isolated")]),
         "path_count": len(suggestions),
         "profile_signals": _dynamic_signals(None, profile_data),
     }

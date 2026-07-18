@@ -50,8 +50,8 @@ def knowledge_search_enhanced(request: KnowledgeSearchRequest, db: Session = Dep
 @router.post("/knowledge/import", response_model=KnowledgeImportJobRead)
 async def knowledge_import(
     file: UploadFile = File(...),
-    course_code: str = Form(default="IMPORTED-COURSEWARE"),
-    course_title: str = Form(default="导入课程课件知识库"),
+    course_code: str = Form(default=""),
+    course_title: str = Form(default=""),
     use_ocr: str = Form(default="false"),
     rebuild_course: str = Form(default="false"),
     db: Session = Depends(get_db),

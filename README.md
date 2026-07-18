@@ -39,7 +39,7 @@ DATABASE_URL=postgresql+psycopg://zhiyan:zhiyan@localhost:5432/zhiyan_xinglian
 LLM_PROVIDER=qwen
 QWEN_API_KEY=你的千问 API Key
 QWEN_MODEL=qwen-plus
-QWEN_BASE_URL=https://ws-1ulzsdw0gslyucjg.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+QWEN_BASE_URL=https://ws-zdgnhxh8fif3r56e.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 ```
 
 未配置 `QWEN_API_KEY` 时，AI 生成接口会直接返回错误；项目不会使用静态预设内容。

@@ -22,18 +22,15 @@
             <span>知识库空间 · 单次上传不超过 {{ MAX_UPLOAD_MB }} MB</span>
           </div>
           <el-progress :percentage="storageUsage?.used_percent || 0" :stroke-width="10" :show-text="false" />
-          <small>
-            剩余 {{ formatMb(storageUsage?.remaining_mb ?? 1024) }} MB。空间满后请删除无用上传记录再继续导入。
-          </small>
         </div>
 
         <el-form label-position="top" class="knowledge-upload-form">
           <div class="knowledge-upload-grid">
             <el-form-item label="课程代码">
-              <el-input v-model="uploadForm.course_code" placeholder="例如 USER-COURSEWARE" />
+              <el-input v-model="uploadForm.course_code" placeholder="可选：例如 CS101" />
             </el-form-item>
             <el-form-item label="课程名称">
-              <el-input v-model="uploadForm.course_title" placeholder="例如 我的课程资料库" />
+              <el-input v-model="uploadForm.course_title" placeholder="可选：例如 机器学习课程资料" />
             </el-form-item>
           </div>
           <div class="knowledge-upload-options">
@@ -46,16 +43,31 @@
           class="knowledge-upload-drop"
           drag
           :auto-upload="false"
-          :show-file-list="false"
+          :show-file-list="true"
+          :limit="1"
+          :file-list="selectedUploadFiles"
           :disabled="uploading"
-          :on-change="handleUpload"
+          :on-change="handleUploadSelect"
+          :on-remove="handleUploadRemove"
           :before-upload="validateUploadFile"
         >
           <div class="knowledge-upload-drop-inner">
-            <strong>{{ uploading ? '正在解析资料...' : '拖拽或点击上传资料包' }}</strong>
-            <span>上传后只做解析入库和普通管理，不触发学习内容生成。</span>
+            <strong>{{ selectedUploadFile ? selectedUploadFile.name : '拖拽或点击选择资料包' }}</strong>
+            <span>选择文件后，可先补充课程代码和名称，再点击开始分析。</span>
           </div>
         </el-upload>
+
+        <div class="knowledge-upload-confirm">
+          <el-button
+            type="primary"
+            :loading="uploading"
+            :disabled="!selectedUploadFile"
+            @click="handleUploadConfirm"
+          >
+            开始分析
+          </el-button>
+          <el-button :disabled="uploading || !selectedUploadFile" @click="clearSelectedUpload">重新选择</el-button>
+        </div>
       </article>
 
       <article class="panel-like knowledge-upload-panel">
@@ -213,6 +225,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadFile, UploadUserFile } from 'element-plus'
 import {
   askDatabase,
   deleteKnowledgeDocument,
@@ -238,11 +251,13 @@ const MAX_UPLOAD_MB = 100
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 const uploadForm = reactive({
-  course_code: 'USER-COURSEWARE',
-  course_title: '用户课程资料库',
+  course_code: '',
+  course_title: '',
   use_ocr: false,
   rebuild_course: false
 })
+const selectedUploadFile = ref<File | null>(null)
+const selectedUploadFiles = ref<UploadUserFile[]>([])
 const jobs = ref<KnowledgeImportJobRead[]>([])
 const documents = ref<KnowledgeDocumentRead[]>([])
 const chunks = ref<KnowledgeChunkRead[]>([])
@@ -316,19 +331,42 @@ async function loadKnowledgePoints() {
   knowledgePoints.value = data
 }
 
-async function handleUpload(uploadFile: any) {
+function handleUploadSelect(uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
   const raw = uploadFile?.raw as File | undefined
+  if (!raw) return
+  if (!validateUploadFile(raw)) {
+    selectedUploadFile.value = null
+    selectedUploadFiles.value = []
+    return
+  }
+  selectedUploadFile.value = raw
+  selectedUploadFiles.value = uploadFiles.slice(-1)
+}
+
+function handleUploadRemove(_uploadFile: UploadFile, uploadFiles: UploadUserFile[]) {
+  selectedUploadFiles.value = uploadFiles
+  selectedUploadFile.value = null
+}
+
+function clearSelectedUpload() {
+  selectedUploadFile.value = null
+  selectedUploadFiles.value = []
+}
+
+async function handleUploadConfirm() {
+  const raw = selectedUploadFile.value
   if (!raw) return
   if (!validateUploadFile(raw)) return
   uploading.value = true
   try {
     await importKnowledgePackage(raw, {
-      course_code: uploadForm.course_code.trim() || 'USER-COURSEWARE',
-      course_title: uploadForm.course_title.trim() || '用户课程资料库',
+      course_code: uploadForm.course_code.trim(),
+      course_title: uploadForm.course_title.trim(),
       use_ocr: uploadForm.use_ocr,
       rebuild_course: uploadForm.rebuild_course
     })
     ElMessage.success('资料已解析入库')
+    clearSelectedUpload()
     await loadAll()
   } finally {
     uploading.value = false

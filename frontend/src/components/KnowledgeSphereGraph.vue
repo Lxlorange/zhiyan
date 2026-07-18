@@ -2,7 +2,7 @@
   <section class="knowledge-sphere-panel">
     <header class="knowledge-sphere-toolbar">
       <div class="knowledge-sphere-toolbar__title">
-        <strong>知识漏斗</strong>
+        <strong>知识漏斗 DAG</strong>
         <span>{{ graphStats }}</span>
       </div>
       <div class="knowledge-sphere-toolbar__controls">
@@ -28,7 +28,7 @@
           @update:model-value="updateQuery"
           @keyup.enter="emit('search')"
         />
-        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗视图">
+        <div class="knowledge-sphere-segments" role="group" aria-label="知识漏斗 DAG 视图">
           <button
             v-for="option in viewOptions"
             :key="option.value"
@@ -39,7 +39,7 @@
             {{ option.label }}
           </button>
         </div>
-        <el-button :loading="loading" type="primary" @click="emit('search')">刷新漏斗</el-button>
+        <el-button :loading="loading" type="primary" @click="emit('search')">刷新图谱</el-button>
       </div>
     </header>
 
@@ -49,14 +49,8 @@
 
         <div class="knowledge-sphere-overlay">
           <div class="knowledge-sphere-badge">
-            <strong>知识漏斗</strong>
-            <span>把上传资料、项目目标和练习证据汇入上层，沿先修关系筛分并收束为下一步学习路径</span>
-          </div>
-
-          <div class="knowledge-sphere-rulers" aria-hidden="true">
-            <span>资料汇入</span>
-            <span>概念筛分</span>
-            <span>路径收束</span>
+            <strong>RAG 知识 DAG</strong>
+            <span>节点来自知识库与平台基础数据，边表示“先学什么再学什么”；孤立节点像 Obsidian 图谱一样分散在外围。</span>
           </div>
 
           <div v-if="hoveredNode" class="knowledge-sphere-tooltip" :style="tooltipStyle">
@@ -68,8 +62,9 @@
           <div class="knowledge-sphere-legend">
             <span><i class="project" />项目目标</span>
             <span><i class="document" />上传资料</span>
-            <span><i class="knowledge_base" />知识点</span>
-            <span><i class="path" />漏斗输出</span>
+            <span><i class="knowledge_base" />RAG 知识点</span>
+            <span><i class="platform" />平台功能介绍</span>
+            <span><i class="path" />学习路径</span>
           </div>
 
           <div class="knowledge-sphere-actions">
@@ -103,13 +98,13 @@
             <el-button size="small" @click="clearSelection">取消选择</el-button>
           </template>
           <template v-else>
-            <span>点击漏斗中的节点，可查看来源、前置关系、掌握证据和它在学习路径中的位置。</span>
+            <span>点击节点可查看来源、前置关系、掌握证据和它在学习路径中的位置。</span>
           </template>
         </div>
 
         <div class="knowledge-sphere-card">
           <div class="knowledge-sphere-card-head">
-            <strong>漏斗输出：个性化学习路径</strong>
+            <strong>DAG 输出：个性化学习路径</strong>
             <span>{{ activeSuggestion?.project_title || '全部知识库' }}</span>
           </div>
           <p v-if="activeSuggestion?.strategy" class="knowledge-sphere-strategy">
@@ -139,12 +134,12 @@
         </div>
 
         <div class="knowledge-sphere-card knowledge-sphere-map">
-          <strong>漏斗范围</strong>
+          <strong>图谱范围</strong>
           <div class="knowledge-sphere-stat-grid">
             <span><b>{{ graph?.nodes.length || 0 }}</b>节点</span>
             <span><b>{{ graph?.edges.length || 0 }}</b>关系</span>
             <span><b>{{ graph?.meta?.document_count || 0 }}</b>资料</span>
-            <span><b>{{ activeSuggestion?.steps.length || 0 }}</b>路径步</span>
+            <span><b>{{ graph?.meta?.isolated_count || 0 }}</b>孤立点</span>
           </div>
           <div class="knowledge-sphere-subjects">
             <span
@@ -155,7 +150,7 @@
               {{ item.subject }} {{ item.count }}
             </span>
           </div>
-          <p>{{ graph?.attribution || '知识漏斗由当前用户上传知识库、项目知识点与学习画像动态聚合生成。' }}</p>
+          <p>{{ graph?.attribution || '知识漏斗由当前用户上传知识库、项目知识点、平台功能介绍与学习画像动态聚合生成。' }}</p>
         </div>
       </aside>
     </div>
@@ -210,7 +205,7 @@ const autoRotate = ref(true)
 const viewOptions: Array<{ label: string; value: ViewMode }> = [
   { label: '全域', value: 'all' },
   { label: '路径', value: 'path' },
-  { label: '资料', value: 'documents' }
+  { label: '证据', value: 'documents' }
 ]
 
 let renderer: any = null
@@ -224,7 +219,7 @@ let nodeLayer: any = null
 let linkLayer: any = null
 let pathLayer: any = null
 let orbitLayer: any = null
-let funnelLayer: any = null
+let guideLayer: any = null
 let animationFrame = 0
 let pathTimer = 0
 let raycaster: any = null
@@ -288,6 +283,7 @@ const selectedMeta = computed<Record<string, string>>(() => {
   if (meta.path) {
     entries.push(['path', `第 ${meta.path.order} 步 · ${meta.path.phase}`], ['time', `${meta.path.estimated_minutes || 35} 分钟`])
   }
+  entries.push(['degree', meta.degree], ['level', meta.dag_level])
   return Object.fromEntries(
     entries
       .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -395,8 +391,8 @@ function initScene() {
   linkLayer = new THREE.Group()
   pathLayer = new THREE.Group()
   orbitLayer = new THREE.Group()
-  funnelLayer = new THREE.Group()
-  rootLayer.add(funnelLayer, orbitLayer, linkLayer, pathLayer, nodeLayer)
+  guideLayer = new THREE.Group()
+  rootLayer.add(guideLayer, orbitLayer, linkLayer, pathLayer, nodeLayer)
   scene.add(rootLayer)
   raycaster = new THREE.Raycaster()
 
@@ -411,119 +407,46 @@ function initScene() {
 
 function addCoreObjects() {
   if (!scene) return
-  buildFunnelFrame()
+  buildGraphGuides()
 }
 
-function buildFunnelFrame() {
-  if (!funnelLayer) return
-  disposeGroup(funnelLayer)
-
-  const topY = 270
-  const midY = 20
-  const bottomY = -270
-  const topRadius = 300
-  const midRadius = 176
-  const bottomRadius = 58
-
-  const wallMaterial = new THREE.MeshBasicMaterial({
-    color: 0xc4daeb,
-    transparent: true,
-    opacity: 0.045,
-    side: THREE.DoubleSide,
-    wireframe: true
-  })
-  const upperWall = new THREE.Mesh(
-    new THREE.CylinderGeometry(topRadius, midRadius, topY - midY, 96, 8, true),
-    wallMaterial
-  )
-  upperWall.position.y = (topY + midY) / 2
-  const lowerWall = new THREE.Mesh(
-    new THREE.CylinderGeometry(midRadius, bottomRadius, midY - bottomY, 96, 8, true),
-    wallMaterial.clone()
-  )
-  lowerWall.position.y = (midY + bottomY) / 2
-  funnelLayer.add(upperWall, lowerWall)
-
-  addFunnelRing(topY, topRadius, 0xffefd6, 0.58)
-  addFunnelRing(midY, midRadius, 0xcadab2, 0.36)
-  addFunnelRing(bottomY, bottomRadius, 0xdc8b5e, 0.72)
-
-  for (let index = 0; index < 24; index += 1) {
-    const angle = (index / 24) * Math.PI * 2
-    const top = polarPoint(topRadius, topY, angle)
-    const mid = polarPoint(midRadius, midY, angle + 0.08)
-    const bottom = polarPoint(bottomRadius, bottomY, angle + 0.14)
+function buildGraphGuides() {
+  if (!guideLayer) return
+  disposeGroup(guideLayer)
+  const levels = [-220, -110, 0, 110, 220]
+  levels.forEach((x, index) => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, -260, -260),
+      new THREE.Vector3(x, -260, 260),
+      new THREE.Vector3(x, 260, 260),
+      new THREE.Vector3(x, 260, -260),
+      new THREE.Vector3(x, -260, -260)
+    ])
     const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([top, mid, bottom]),
-      new THREE.LineBasicMaterial({
-        color: index % 3 === 0 ? 0xf0cebb : 0x9fb4c5,
-        transparent: true,
-        opacity: index % 3 === 0 ? 0.22 : 0.12
-      })
-    )
-    funnelLayer.add(line)
-  }
-
-  ;[-160, -70, 70, 170].forEach((y, index) => {
-    const radius = funnelRadiusAtY(y)
-    const geometry = new THREE.BufferGeometry().setFromPoints(
-      Array.from({ length: 144 }, (_, pointIndex) => {
-        const angle = (pointIndex / 143) * Math.PI * 2
-        const wobble = Math.sin(angle * 4 + index) * 6
-        return polarPoint(radius + wobble, y, angle)
-      })
-    )
-    const ring = new THREE.Line(
       geometry,
       new THREE.LineBasicMaterial({
-        color: 0xffffff,
+        color: index === 0 ? 0xffefd6 : 0xffffff,
         transparent: true,
-        opacity: 0.1
+        opacity: index === 0 ? 0.16 : 0.08
       })
     )
-    funnelLayer.add(ring)
+    guideLayer.add(line)
   })
 
-  const outputGlow = new THREE.Mesh(
-    new THREE.TorusGeometry(bottomRadius + 14, 5, 12, 96),
-    new THREE.MeshBasicMaterial({
-      color: 0xdc8b5e,
-      transparent: true,
-      opacity: 0.42
-    })
+  const axis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-320, 0, 0),
+      new THREE.Vector3(320, 0, 0)
+    ]),
+    new THREE.LineBasicMaterial({ color: 0xdc8b5e, transparent: true, opacity: 0.34 })
   )
-  outputGlow.position.y = bottomY - 2
-  outputGlow.rotation.x = Math.PI / 2
-  funnelLayer.add(outputGlow)
-}
-
-function addFunnelRing(y: number, radius: number, color: number, opacity: number) {
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(radius, y < -200 ? 2.8 : 1.6, 10, 120),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity })
-  )
-  ring.position.y = y
-  ring.rotation.x = Math.PI / 2
-  funnelLayer?.add(ring)
-}
-
-function polarPoint(radius: number, y: number, angle: number) {
-  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
-}
-
-function funnelRadiusAtY(y: number) {
-  const topY = 270
-  const bottomY = -270
-  const topRadius = 300
-  const bottomRadius = 58
-  const t = Math.max(0, Math.min(1, (topY - y) / (topY - bottomY)))
-  return topRadius + (bottomRadius - topRadius) * Math.pow(t, 0.92)
+  guideLayer.add(axis)
 }
 
 function rebuildGraph() {
   if (!scene || !nodeLayer || !linkLayer || !orbitLayer || !props.graph) return
   disposeGraph()
-  buildFunnelFrame()
+  buildGraphGuides()
   drawAgeRings()
 
   const orderedNodes = [...props.graph.nodes].sort((left, right) => layerOrder(left.layer) - layerOrder(right.layer))
@@ -536,9 +459,9 @@ function rebuildGraph() {
     const material = new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: isPathNode(node.id) ? 0.78 : 0.34,
-      roughness: 0.28,
-      metalness: node.layer === 'project' ? 0.28 : 0.08,
+      emissiveIntensity: isPathNode(node.id) ? 0.68 : 0.22,
+      roughness: 0.18,
+      metalness: 0.12,
       transparent: true,
       opacity: nodeOpacity(node)
     })
@@ -572,27 +495,25 @@ function rebuildGraph() {
 
 function drawAgeRings() {
   if (!orbitLayer) return
-  const levels = [
-    { y: 226, radius: 282, opacity: 0.18 },
-    { y: 84, radius: 220, opacity: 0.12 },
-    { y: -72, radius: 146, opacity: 0.11 },
-    { y: -228, radius: 74, opacity: 0.18 }
-  ]
-  levels.forEach(({ y, radius, opacity }) => {
+  const connectedCount = props.graph?.nodes.filter((node) => !node.meta?.is_isolated).length || 0
+  const radius = connectedCount ? 330 : 210
+  ;[0, 1, 2].forEach((index) => {
+    const y = (index - 1) * 135
     const geometry = new THREE.BufferGeometry().setFromPoints(
       Array.from({ length: 160 }, (_, pointIndex) => {
         const angle = (pointIndex / 159) * Math.PI * 2
-        return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
+        return new THREE.Vector3(Math.cos(angle) * radius * 0.58, y, Math.sin(angle) * radius)
       })
     )
     const line = new THREE.Line(
       geometry,
       new THREE.LineBasicMaterial({
-        color: 0xffffff,
+        color: index === 1 ? 0xc4daeb : 0xffffff,
         transparent: true,
-        opacity
+        opacity: index === 1 ? 0.14 : 0.08
       })
     )
+    line.rotation.z = Math.PI / 2
     orbitLayer.add(line)
   })
 }
@@ -605,17 +526,33 @@ function drawEdges(edges: KnowledgeLinkEdge[]) {
     if (!source || !target) return
     const isPathEdge = isPathNode(edge.source) && isPathNode(edge.target)
     const points = curvedPoints(source.position, target.position, edge.relation === 'prerequisite' ? 30 : 14)
+    const opacity = isPathEdge ? 0.62 : edge.relation === 'prerequisite' ? 0.38 : 0.12
     const line = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(points),
       new THREE.LineBasicMaterial({
         color: edgeColor(edge),
         transparent: true,
-        opacity: isPathEdge ? 0.48 : edge.relation === 'prerequisite' ? 0.28 : 0.15
+        opacity
       })
     )
     line.userData.relation = edge.relation
     linkLayer.add(line)
+    if (edge.relation === 'prerequisite') {
+      const arrow = createArrowHead(points[points.length - 2], points[points.length - 1], edgeColor(edge), opacity + 0.16)
+      linkLayer.add(arrow)
+    }
   })
+}
+
+function createArrowHead(from: any, to: any, color: number, opacity: number) {
+  const direction = to.clone().sub(from).normalize()
+  const arrow = new THREE.Mesh(
+    new THREE.ConeGeometry(5.5, 14, 18),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.82, opacity) })
+  )
+  arrow.position.copy(to.clone().sub(direction.multiplyScalar(12)))
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
+  return arrow
 }
 
 function rebuildPathLayer() {
@@ -625,41 +562,22 @@ function rebuildPathLayer() {
   const pathEntries = steps.map((step) => nodeMap.get(step.id)).filter(Boolean) as GraphEntry[]
   if (!pathEntries.length) return
 
-  const entryPoint = new THREE.Vector3(0, 286, 0)
-  const outputPoint = new THREE.Vector3(0, -318, 0)
-  const guidePoints = [
-    entryPoint,
-    ...pathEntries.map((entry) => entry.position),
-    outputPoint
-  ]
+  const guidePoints = pathEntries.map((entry) => entry.position)
 
   for (let index = 0; index < guidePoints.length - 1; index += 1) {
     const current = guidePoints[index]
     const next = guidePoints[index + 1]
     const curve = new THREE.CatmullRomCurve3(curvedPoints(current, next, index === 0 ? 24 : 42))
     const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 42, index === guidePoints.length - 2 ? 3.8 : 2.4, 8, false),
+      new THREE.TubeGeometry(curve, 42, 2.8, 8, false),
       new THREE.MeshBasicMaterial({
-        color: index === guidePoints.length - 2 ? 0xffefd6 : 0xdc8b5e,
+        color: 0xffefd6,
         transparent: true,
         opacity: viewMode.value === 'documents' ? 0.18 : 0.62
       })
     )
     pathLayer.add(tube)
   }
-
-  const output = new THREE.Mesh(
-    new THREE.SphereGeometry(14, 28, 16),
-    new THREE.MeshStandardMaterial({
-      color: 0xffefd6,
-      emissive: 0xdc8b5e,
-      emissiveIntensity: 1.1,
-      transparent: true,
-      opacity: 0.92
-    })
-  )
-  output.position.copy(outputPoint)
-  pathLayer.add(output)
 }
 
 function disposeGraph() {
@@ -677,6 +595,7 @@ function disposeGraph() {
   if (linkLayer) disposeGroup(linkLayer)
   if (pathLayer) disposeGroup(pathLayer)
   if (orbitLayer) disposeGroup(orbitLayer)
+  if (guideLayer) disposeGroup(guideLayer)
 }
 
 function disposeGroup(group: any) {
@@ -693,47 +612,74 @@ function disposeGroup(group: any) {
 }
 
 function positionForNode(node: KnowledgeLinkNode, index: number) {
+  if (node.meta?.is_isolated) return isolatedPosition(node, index)
   if (node.layer === 'project') return projectPosition(node, index)
   if (node.layer === 'document') return documentPosition(node, index)
+  if (node.layer === 'platform') return platformPosition(node, index)
   if (node.layer === 'knowledge_base') return knowledgeBasePosition(node, index)
   return knowledgeBasePosition(node, index)
 }
 
 function projectPosition(node: KnowledgeLinkNode, index: number) {
-  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'project').length || 1)
+  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'project' && !item.meta?.is_isolated).length || 1)
   const angle = (index / count) * Math.PI * 2 + 0.34
-  const radius = 190 + (hashString(node.id) % 70)
-  return new THREE.Vector3(Math.cos(angle) * radius, 218 + ((index % 3) - 1) * 24, Math.sin(angle) * radius)
+  const radius = 210 + (hashString(node.id) % 40)
+  return new THREE.Vector3(-310, Math.cos(angle) * radius * 0.55, Math.sin(angle) * radius)
 }
 
 function documentPosition(node: KnowledgeLinkNode, index: number) {
-  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'document').length || 1)
+  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'document' && !item.meta?.is_isolated).length || 1)
   const hash = hashString(node.id)
-  const angle = (index / count) * Math.PI * 2 + ((hash % 17) / 17) * 0.2
-  const y = 124 + ((hash % 130) - 65)
-  const radius = funnelRadiusAtY(y) - 18 - (hash % 54)
-  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
+  const angle = (index / count) * Math.PI * 2 + ((hash % 17) / 17) * 0.34
+  const radius = 188 + (hash % 74)
+  return new THREE.Vector3(-150, Math.cos(angle) * radius * 0.66, Math.sin(angle) * radius)
+}
+
+function platformPosition(node: KnowledgeLinkNode, index: number) {
+  const level = Math.max(0, Number(node.meta?.dag_level || 0))
+  const x = -310 + Math.min(5, level) * 118
+  const count = Math.max(1, props.graph?.nodes.filter((item) => item.layer === 'platform' && Number(item.meta?.dag_level || 0) === level).length || 1)
+  const localIndex = props.graph?.nodes.filter((item) => item.layer === 'platform' && Number(item.meta?.dag_level || 0) === level).findIndex((item) => item.id === node.id) ?? index
+  const angle = (localIndex / count) * Math.PI * 2 + 0.2
+  const radius = 84 + (hashString(node.id) % 28)
+  return new THREE.Vector3(x, Math.cos(angle) * radius, Math.sin(angle) * radius)
 }
 
 function knowledgeBasePosition(node: KnowledgeLinkNode, index: number) {
   const hash = hashString(`${node.category}:${node.id}`)
   const categoryAngle = ((hashString(node.category || 'kb') % 360) / 360) * Math.PI * 2
-  const angle = categoryAngle + index * 0.23
   const difficulty = String(node.meta?.difficulty || '').toLowerCase()
+  const level = Math.max(0, Number(node.meta?.dag_level || 0))
   const path = node.meta?.path as Record<string, unknown> | undefined
   if (path?.order) {
     const order = Math.max(1, Number(path.order || 1))
     const steps = Math.max(1, activeSuggestion.value?.steps.length || 1)
-    const t = steps <= 1 ? 0.86 : Math.min(1, (order - 1) / Math.max(1, steps - 1))
-    const y = 120 - t * 360
-    const radius = Math.max(42, funnelRadiusAtY(y) * (0.62 - t * 0.28))
-    const pathAngle = categoryAngle + order * 0.62
-    return new THREE.Vector3(Math.cos(pathAngle) * radius, y, Math.sin(pathAngle) * radius)
+    const t = steps <= 1 ? 0 : Math.min(1, (order - 1) / Math.max(1, steps - 1))
+    const x = -120 + t * 420
+    const pathAngle = categoryAngle + order * 0.68
+    const radius = 92 + (hash % 54)
+    return new THREE.Vector3(x, Math.cos(pathAngle) * radius, Math.sin(pathAngle) * radius)
   }
-  const baseY = difficulty.includes('hard') || difficulty.includes('困难') ? -84 : difficulty.includes('easy') || difficulty.includes('基础') ? 82 : 0
-  const y = baseY + ((hash % 96) - 48)
-  const radius = Math.max(70, funnelRadiusAtY(y) - 50 - (hash % 78))
-  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius)
+  const x = -90 + Math.min(5, level) * 105
+  const levelNodes = props.graph?.nodes.filter(
+    (item) => item.layer === 'knowledge_base' && !item.meta?.is_isolated && Number(item.meta?.dag_level || 0) === level
+  ) || []
+  const localIndex = Math.max(0, levelNodes.findIndex((item) => item.id === node.id))
+  const angle = categoryAngle + localIndex * 0.78
+  const difficultyOffset = difficulty.includes('hard') || difficulty.includes('困难') ? -42 : difficulty.includes('easy') || difficulty.includes('基础') ? 42 : 0
+  const radius = 118 + (hash % 110)
+  return new THREE.Vector3(x, Math.cos(angle) * radius + difficultyOffset, Math.sin(angle) * radius)
+}
+
+function isolatedPosition(node: KnowledgeLinkNode, index: number) {
+  const isolatedNodes = props.graph?.nodes.filter((item) => item.meta?.is_isolated) || []
+  const localIndex = Math.max(0, isolatedNodes.findIndex((item) => item.id === node.id))
+  const count = Math.max(1, isolatedNodes.length)
+  const hash = hashString(node.id)
+  const angle = (localIndex / count) * Math.PI * 2 + ((hash % 23) / 23) * 0.38
+  const ring = 320 + (localIndex % 4) * 38
+  const x = 420 + (localIndex % 3) * 58
+  return new THREE.Vector3(x, Math.cos(angle) * ring * 0.72, Math.sin(angle) * ring)
 }
 
 function nodeRadius(node: KnowledgeLinkNode) {
@@ -741,12 +687,13 @@ function nodeRadius(node: KnowledgeLinkNode) {
   const pathBoost = isPathNode(node.id) ? 4 : 0
   if (node.layer === 'project') return 18 + pathBoost
   if (node.layer === 'document') return 12 + Math.min(10, Math.log(weight + 1) * 2.6) + pathBoost
+  if (node.layer === 'platform') return 10 + pathBoost
   if (node.layer === 'knowledge_base') return 9 + Math.min(11, Math.log(weight + 1) * 3) + pathBoost
   return 6 + Math.min(9, Math.log(weight + 1) * 3.2) + pathBoost
 }
 
 function createHalo(node: KnowledgeLinkNode, color: number) {
-  if (!isPathNode(node.id) && node.layer !== 'project' && node.layer !== 'document') return null
+  if (!isPathNode(node.id) && node.layer !== 'project' && node.layer !== 'document' && node.layer !== 'platform') return null
   const radius = nodeRadius(node) + (node.layer === 'project' ? 8 : 6)
   const halo = new THREE.Mesh(
     new THREE.TorusGeometry(radius, 1.2, 8, 48),
@@ -761,10 +708,10 @@ function createHalo(node: KnowledgeLinkNode, color: number) {
 }
 
 function createNodeLabel(node: KnowledgeLinkNode) {
-  const isImportant = node.layer === 'project' || node.layer === 'document' || isPathNode(node.id)
+  const isImportant = node.layer === 'project' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
   if (!isImportant) return null
   const label = document.createElement('span')
-  label.className = `knowledge-sphere-label ${node.layer === 'project' ? 'is-project' : node.layer === 'document' ? 'is-document' : 'is-path'}`
+  label.className = `knowledge-sphere-label ${node.layer === 'project' ? 'is-project' : node.layer === 'document' ? 'is-document' : node.layer === 'platform' ? 'is-platform' : 'is-path'}`
   label.textContent = node.meta?.path?.order ? `${node.meta.path.order}. ${node.label}` : node.label
   return new CSS2DObject(label)
 }
@@ -772,6 +719,7 @@ function createNodeLabel(node: KnowledgeLinkNode) {
 function nodeColor(node: KnowledgeLinkNode) {
   if (node.layer === 'project') return 0xdc8b5e
   if (node.layer === 'document') return 0xfadfa7
+  if (node.layer === 'platform') return 0xcadab2
   if (node.layer === 'knowledge_base') return 0xc4daeb
   return subjectColor(String(node.category || 'knowledge'))
 }
@@ -796,8 +744,8 @@ function cssSubjectColor(subject: string) {
 
 function edgeColor(edge: KnowledgeLinkEdge) {
   if (edge.relation === 'prerequisite') return edge.strength === 'hard' ? 0xdc8b5e : 0xfadfa7
-  if (edge.relation === 'aligns') return 0xcadab2
-  if (edge.relation === 'maps_to') return 0xc4daeb
+  if (edge.relation === 'evidence') return 0xc4daeb
+  if (edge.relation === 'focuses') return 0xcadab2
   return 0xf0cebb
 }
 
@@ -813,21 +761,33 @@ function applyViewMode() {
     material.opacity = nodeOpacity(node)
     material.emissiveIntensity = isPathNode(node.id) ? 0.82 : viewMode.value === 'path' ? 0.18 : 0.34
     mesh.visible = viewMode.value !== 'documents' || node.layer !== 'project' || isPathNode(node.id)
-    if (halo) halo.visible = viewMode.value !== 'documents' || node.layer === 'document' || isPathNode(node.id)
-    if (label) label.visible = viewMode.value !== 'documents' || node.layer === 'document' || isPathNode(node.id)
+    if (halo) halo.visible = viewMode.value !== 'documents' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
+    if (label) label.visible = viewMode.value !== 'documents' || node.layer === 'document' || node.layer === 'platform' || isPathNode(node.id)
   })
 }
 
 function highlightSelected() {
   const selectedId = props.selectedNodeId || selectedNode.value?.id || ''
+  const neighborhood = selectedId ? connectedNodeIds(selectedId) : new Set<string>()
   nodeMap.forEach(({ mesh, halo, node }) => {
     const material = mesh.material as any
     const active = node.id === selectedId
+    const neighbor = neighborhood.has(node.id)
     const path = isPathNode(node.id)
-    mesh.scale.setScalar(active ? 1.38 : path ? 1.12 : 1)
-    material.emissiveIntensity = active ? 1.08 : path ? 0.82 : 0.34
+    mesh.scale.setScalar(active ? 1.44 : neighbor ? 1.18 : path ? 1.12 : 1)
+    material.opacity = selectedId && !active && !neighbor && !path ? 0.22 : nodeOpacity(node)
+    material.emissiveIntensity = active ? 1.08 : neighbor ? 0.72 : path ? 0.82 : 0.28
     if (halo) halo.scale.setScalar(active ? 1.18 : 1)
   })
+}
+
+function connectedNodeIds(nodeId: string) {
+  const result = new Set<string>([nodeId])
+  for (const edge of props.graph?.edges || []) {
+    if (edge.source === nodeId) result.add(edge.target)
+    if (edge.target === nodeId) result.add(edge.source)
+  }
+  return result
 }
 
 function isPathNode(nodeId: string) {
@@ -982,7 +942,8 @@ function layerOrder(layer: string) {
 function nodeSubtitle(node: KnowledgeLinkNode) {
   if (node.layer === 'project') return `项目 · ${node.category || '学习目标'}`
   if (node.layer === 'document') return `上传资料 · ${node.category || 'document'}`
-  if (node.layer === 'knowledge_base') return `知识点 · ${node.category || '知识库'}`
+  if (node.layer === 'platform') return `基础节点 · 平台功能介绍`
+  if (node.layer === 'knowledge_base') return `RAG 知识点 · ${node.category || '知识库'}`
   const meta = node.meta || {}
   const age = formatAge(meta.age_range)
   return `${meta.subject || '知识'} · ${meta.domain || node.category || 'domain'}${age ? ` · ${age}` : ''}`
@@ -1104,8 +1065,9 @@ function formatMeta(value: unknown): string {
   border-radius: 8px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 52% 24%, rgba(196, 218, 235, 0.16), transparent 26%),
-    radial-gradient(circle at 53% 77%, rgba(220, 139, 94, 0.16), transparent 22%),
+    radial-gradient(circle at 42% 45%, rgba(196, 218, 235, 0.18), transparent 28%),
+    radial-gradient(circle at 75% 52%, rgba(202, 218, 178, 0.12), transparent 24%),
+    radial-gradient(circle at 22% 28%, rgba(220, 139, 94, 0.12), transparent 18%),
     linear-gradient(135deg, #070a13 0%, #0b1020 54%, #060811 100%);
   box-shadow: 0 32px 90px rgba(9, 12, 24, 0.28);
 }
@@ -1156,6 +1118,10 @@ function formatMeta(value: unknown): string {
   background: rgba(138, 87, 0, 0.84);
 }
 
+:deep(.knowledge-sphere-label.is-platform) {
+  background: rgba(85, 107, 63, 0.86);
+}
+
 :deep(.knowledge-sphere-label.is-path) {
   border-color: rgba(245, 158, 11, 0.65);
 }
@@ -1191,18 +1157,6 @@ function formatMeta(value: unknown): string {
 
 .knowledge-sphere-badge strong {
   font-size: 16px;
-}
-
-.knowledge-sphere-rulers {
-  position: absolute;
-  top: 120px;
-  bottom: 116px;
-  left: 16px;
-  display: grid;
-  align-content: space-between;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  pointer-events: none;
 }
 
 .knowledge-sphere-tooltip {
@@ -1266,6 +1220,10 @@ function formatMeta(value: unknown): string {
 
 .knowledge-sphere-legend i.document {
   background: #fadfa7;
+}
+
+.knowledge-sphere-legend i.platform {
+  background: #cadab2;
 }
 
 .knowledge-sphere-legend i.path {

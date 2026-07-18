@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     llm_provider: str = "qwen"
     qwen_api_key: str = ""
     qwen_model: str = "qwen-plus"
-    qwen_base_url: str = "https://ws-1ulzsdw0gslyucjg.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    qwen_base_url: str = "https://ws-zdgnhxh8fif3r56e.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     qwen_timeout_seconds: int = 180
     qwen_classroom_timeout_seconds: int = 300
     xunfei_app_id: str = ""

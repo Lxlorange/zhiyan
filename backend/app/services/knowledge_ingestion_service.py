@@ -289,8 +289,8 @@ async def import_knowledge_upload(
     upload_root.mkdir(parents=True, exist_ok=True)
 
     source_name = _safe_filename(file.filename)
-    course_code = _clean_text(course_code)[:64] or "IMPORTED-COURSEWARE"
-    course_title = _clean_text(course_title)[:255] or "导入课程课件知识库"
+    course_code = _clean_text(course_code)[:64] or "PERSONAL-KNOWLEDGE"
+    course_title = _clean_text(course_title)[:255] or "个人知识库"
     job = KnowledgeImportJob(
         user_id=user.id,
         course_code=course_code,
@@ -957,8 +957,20 @@ def _clean_metadata(value: object) -> object:
 
 
 def _safe_filename(filename: str) -> str:
-    value = _clean_text(Path(filename).name)
+    recovered = _recover_zip_mojibake(filename)
+    value = _clean_text(Path(recovered).name)
     return value or "upload.bin"
+
+
+def _recover_zip_mojibake(value: str) -> str:
+    text_value = _clean_text(value)
+    if not text_value:
+        return text_value
+    try:
+        recovered = text_value.encode("cp437").decode("gb18030")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text_value
+    return recovered if any("\u4e00" <= char <= "\u9fff" for char in recovered) else text_value
 
 
 def _job_storage_dir(job_id: int) -> Path:

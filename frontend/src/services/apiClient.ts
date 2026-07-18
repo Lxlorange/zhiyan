@@ -1305,8 +1305,8 @@ export function importKnowledgePackage(file: File, payload: {
 }) {
   const formData = new FormData()
   formData.append('file', file)
-  formData.append('course_code', payload.course_code || 'IMPORTED-COURSEWARE')
-  formData.append('course_title', payload.course_title || '导入课程课件知识库')
+  formData.append('course_code', payload.course_code || '')
+  formData.append('course_title', payload.course_title || '')
   formData.append('use_ocr', String(Boolean(payload.use_ocr)))
   formData.append('rebuild_course', String(Boolean(payload.rebuild_course)))
   return api.post<KnowledgeImportJobRead>('/course/knowledge/import', formData, {

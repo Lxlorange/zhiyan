@@ -9257,7 +9257,7 @@ body::after {
 .knowledge-upload-layout,
 .knowledge-content-layout {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(420px, 1.16fr) minmax(0, 0.84fr);
   gap: 22px;
   align-items: start;
 }
@@ -9363,6 +9363,13 @@ body::after {
 .knowledge-upload-drop-inner strong {
   color: var(--study-green);
   font-size: 22px;
+}
+
+.knowledge-upload-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .knowledge-table {
