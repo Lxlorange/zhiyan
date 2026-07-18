@@ -135,8 +135,6 @@
           v-loading="loadingDocuments"
           class="knowledge-table"
           row-key="id"
-          highlight-current-row
-          @current-change="handleSelectDocument"
         >
           <el-table-column prop="title" label="文档" min-width="220" show-overflow-tooltip />
           <el-table-column prop="doc_type" label="类型" width="90" />
@@ -152,27 +150,6 @@
           </el-table-column>
         </el-table>
       </article>
-
-      <aside class="panel-like knowledge-upload-panel knowledge-chunk-panel">
-        <header>
-          <strong>{{ selectedDocument?.title || '内容预览' }}</strong>
-          <span>{{ chunks.length }} 个片段</span>
-        </header>
-
-        <el-empty v-if="!selectedDocument" description="选择左侧文档查看解析内容。" />
-        <div v-else class="knowledge-chunk-list" v-loading="loadingChunks">
-          <article v-for="chunk in chunks" :key="chunk.id">
-            <div>
-              <strong>#{{ chunk.chunk_index }} · {{ chunk.knowledge_point }}</strong>
-              <span>{{ chunk.section_title || locationLabel(chunk) }}</span>
-            </div>
-            <p>{{ chunk.content }}</p>
-            <div class="knowledge-chunk-tags">
-              <el-tag v-for="keyword in chunk.keywords" :key="keyword" effect="plain">{{ keyword }}</el-tag>
-            </div>
-          </article>
-        </div>
-      </aside>
     </section>
 
     <section class="panel-like knowledge-upload-panel knowledge-rag-panel">
@@ -249,13 +226,11 @@ import {
   getKnowledgeStorageUsage,
   importKnowledgePackage,
   listKnowledgePoints,
-  listKnowledgeDocumentChunks,
   listKnowledgeDocuments,
   listKnowledgeImportJobs,
   listLearningProjects,
   type DatabaseAskResponse,
   type DatabaseCitation,
-  type KnowledgeChunkRead,
   type KnowledgeDocumentRead,
   type KnowledgeImportJobRead,
   type KnowledgePointRead,
@@ -276,11 +251,9 @@ const selectedUploadFile = ref<File | null>(null)
 const selectedUploadFiles = ref<UploadUserFile[]>([])
 const jobs = ref<KnowledgeImportJobRead[]>([])
 const documents = ref<KnowledgeDocumentRead[]>([])
-const chunks = ref<KnowledgeChunkRead[]>([])
 const storageUsage = ref<KnowledgeStorageUsageRead | null>(null)
 const projects = ref<LearningProjectRead[]>([])
 const knowledgePoints = ref<KnowledgePointRead[]>([])
-const selectedDocument = ref<KnowledgeDocumentRead | null>(null)
 const documentQuery = ref('')
 const ragQuestion = ref('')
 const ragAnswer = ref('')
@@ -291,7 +264,6 @@ const loading = ref(false)
 const uploading = ref(false)
 const loadingJobs = ref(false)
 const loadingDocuments = ref(false)
-const loadingChunks = ref(false)
 const generatingRag = ref(false)
 let importPollTimer: ReturnType<typeof window.setInterval> | null = null
 
@@ -332,10 +304,6 @@ async function loadDocuments() {
       limit: 100
     })
     documents.value = data
-    if (selectedDocument.value && !data.some((item) => item.id === selectedDocument.value?.id)) {
-      selectedDocument.value = null
-      chunks.value = []
-    }
   } finally {
     loadingDocuments.value = false
   }
@@ -467,18 +435,6 @@ function validateUploadFile(file: File) {
   return true
 }
 
-async function handleSelectDocument(row: KnowledgeDocumentRead | null) {
-  if (!row) return
-  selectedDocument.value = row
-  loadingChunks.value = true
-  try {
-    const { data } = await listKnowledgeDocumentChunks(row.id, 120)
-    chunks.value = data
-  } finally {
-    loadingChunks.value = false
-  }
-}
-
 async function handleDeleteDocument(row: KnowledgeDocumentRead) {
   try {
     await ElMessageBox.confirm(`确认删除文档“${row.title}”？对应内容片段会一起删除。`, '删除文档', {
@@ -491,10 +447,6 @@ async function handleDeleteDocument(row: KnowledgeDocumentRead) {
   }
   await deleteKnowledgeDocument(row.id)
   ElMessage.success('文档已删除')
-  if (selectedDocument.value?.id === row.id) {
-    selectedDocument.value = null
-    chunks.value = []
-  }
   await loadDocuments()
 }
 
@@ -541,11 +493,7 @@ function searchByPoint(point: string) {
 async function locateCitation(citation: DatabaseCitation) {
   documentQuery.value = citation.knowledge_point || citation.title
   await loadDocuments()
-  const matched = documents.value.find((document) => document.title === citation.title)
-  if (matched) {
-    await handleSelectDocument(matched)
-  }
-  ElMessage.success('已定位到知识库来源，可在文档列表和片段预览中继续查看。')
+  ElMessage.success('已定位到知识库来源，可在文档列表中继续查看。')
 }
 
 function renderCitationMeta(citation: DatabaseCitation) {
@@ -618,11 +566,5 @@ function formatDate(value: string) {
 
 function formatMb(value: number) {
   return Number(value || 0).toFixed(value >= 10 ? 0 : 2)
-}
-
-function locationLabel(chunk: KnowledgeChunkRead) {
-  if (chunk.page_no) return `第 ${chunk.page_no} 页`
-  if (chunk.slide_no) return `第 ${chunk.slide_no} 页`
-  return '正文片段'
 }
 </script>

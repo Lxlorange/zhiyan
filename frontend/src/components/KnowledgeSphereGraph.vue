@@ -401,6 +401,7 @@ function constrainToFunnel(node: WorldNode) {
 function buildCategoryChips(nodes: KnowledgeLinkNode[]): CategoryChip[] {
   const counts = new Map<string, number>()
   nodes.forEach((node) => {
+    if (node.layer === 'document') return
     const key = categoryKey(node)
     counts.set(key, (counts.get(key) || 0) + 1)
   })
@@ -798,6 +799,7 @@ function projectPoint(point: Vec3) {
 }
 
 function isNodeVisible(worldNode: WorldNode) {
+  if (worldNode.node.layer === 'document') return true
   if (!activeCategories.value.has(worldNode.categoryKey)) return false
   return true
 }
@@ -1046,11 +1048,25 @@ function nodeColor(node: KnowledgeLinkNode) {
 
 function categoryKey(node: KnowledgeLinkNode) {
   if (node.layer === 'platform') return '平台功能介绍'
+  if (node.layer === 'document') return '资料来源'
+  const normalizedCategory = normalizeCategoryLabel(String(node.category || ''))
+  if (normalizedCategory) return normalizedCategory
+  const normalizedSubject = normalizeCategoryLabel(String(node.meta?.subject || ''))
+  if (normalizedSubject) return normalizedSubject
   return String(node.category || node.meta?.subject || node.layer || '知识点')
 }
 
 function categoryLabel(key: string) {
   return key.replace(/^知识库[:：]/, '') || '知识点'
+}
+
+function normalizeCategoryLabel(value: string) {
+  const label = value.trim()
+  const lower = label.toLowerCase()
+  if (!label) return ''
+  if (lower === 'pdf' || lower === 'document' || lower === 'doc' || lower === 'ppt' || lower === 'pptx') return ''
+  if (label.includes('生成PDF') || label.includes('生成 PDF')) return ''
+  return label
 }
 
 function categoryColor(key: string) {
