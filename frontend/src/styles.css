@@ -8838,7 +8838,7 @@ body::after {
   flex-direction: column;
   width: min(100%, 1280px);
   max-width: 1280px;
-  gap: clamp(18px, 2.2vw, 28px);
+  gap: clamp(28px, 3vw, 42px);
 }
 
 .practice-paper-hero,
@@ -8847,15 +8847,18 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
   position: sticky;
   top: 64px;
   z-index: 12;
-  min-height: 76px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--study-rule);
-  background: color-mix(in srgb, var(--study-paper) 96%, #ffffff);
-  backdrop-filter: blur(12px);
+  min-height: 160px;
+  padding: 22px 32px;
+  margin-bottom: 8px;
+  border: 1px solid var(--study-rule);
+  border-radius: 22px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--study-paper) 96%, #ffffff), #fff7ef);
+  box-shadow: 0 14px 34px rgba(92, 72, 48, 0.08);
+  backdrop-filter: blur(14px);
 }
 
 .practice-paper-hero span,
@@ -8879,6 +8882,41 @@ body::after {
   max-width: 760px;
   font-size: clamp(1.8rem, 2.6vw, 3rem);
   line-height: 1.08;
+}
+
+.practice-create-head {
+  flex-wrap: wrap;
+  align-content: center;
+}
+
+.practice-create-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 220px;
+}
+
+.practice-create-head-title {
+  flex: 2 1 520px;
+  text-align: center;
+}
+
+.practice-create-head-title span {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.practice-create-head-title p {
+  margin: 10px auto 0;
+  max-width: 720px;
+  color: var(--study-soft-ink);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.practice-head-back,
+.practice-head-save {
+  min-width: 110px;
 }
 
 .practice-paper-actions,
@@ -8981,9 +9019,16 @@ body::after {
 
 .practice-create-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
-  gap: clamp(20px, 3vw, 36px);
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: clamp(22px, 3vw, 34px);
   align-items: start;
+  margin-top: 6px;
+}
+
+.practice-paper-create-page .practice-create-head {
+  position: static;
+  top: auto;
+  margin-bottom: 0;
 }
 
 .practice-detail-layout {
@@ -9005,10 +9050,46 @@ body::after {
 .practice-node-pool,
 .practice-paper-outline {
   position: sticky;
-  top: 156px;
-  max-height: calc(100dvh - 184px);
+  top: 200px;
+  max-height: calc(100dvh - 228px);
   overflow: auto;
-  padding: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--study-rule) 88%, #e9c7ab);
+  background: linear-gradient(180deg, #fffdf9 0%, #fff8f1 100%);
+  box-shadow: 0 18px 40px rgba(96, 72, 44, 0.08);
+}
+
+.practice-paper-create-page .practice-node-pool {
+  position: static;
+  top: auto;
+  max-height: none;
+}
+
+.practice-node-pool-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.practice-node-pool-head strong {
+  display: block;
+  color: var(--study-ink);
+  font-size: 1.05rem;
+}
+
+.practice-node-pool-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--study-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.practice-node-pool-head small {
+  color: var(--study-primary);
+  font-weight: 700;
 }
 
 .practice-node-toolbar {
@@ -9016,7 +9097,7 @@ body::after {
   grid-template-columns: minmax(0, 1fr) 82px;
   align-items: stretch;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .practice-node-groups,
@@ -9056,7 +9137,9 @@ body::after {
 .practice-node-option {
   display: block;
   padding: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  background: #fffefc;
+  border-color: color-mix(in srgb, var(--study-rule) 90%, #ead0be);
 }
 
 .practice-node-option:hover,
@@ -9077,12 +9160,15 @@ body::after {
 .practice-paper-config {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 18px;
   align-content: start;
 }
 
 .practice-config-card {
-  padding: clamp(18px, 2.2vw, 28px);
+  padding: clamp(20px, 2.4vw, 30px);
+  border: 1px solid color-mix(in srgb, var(--study-rule) 88%, #e7c7ab);
+  background: linear-gradient(180deg, #fffefc 0%, #ffffff 100%);
+  box-shadow: 0 18px 40px rgba(96, 72, 44, 0.07);
 }
 
 .practice-config-grid {
@@ -9092,7 +9178,7 @@ body::after {
 }
 
 .practice-config-card.selected-node-card {
-  max-height: min(520px, calc(100dvh - 184px));
+  max-height: min(520px, calc(100dvh - 228px));
   overflow: auto;
 }
 
@@ -9279,11 +9365,17 @@ body::after {
   .practice-create-head,
   .practice-detail-head {
     top: 58px;
+    min-height: auto;
+    padding: 18px 20px;
   }
 
   .practice-create-layout,
   .practice-detail-layout {
     grid-template-columns: 1fr;
+  }
+
+  .practice-create-layout {
+    margin-top: 0;
   }
 
   .practice-node-pool,
@@ -9309,6 +9401,10 @@ body::after {
   .practice-detail-head {
     position: static;
     align-items: stretch;
+  }
+
+  .practice-create-head-title {
+    text-align: left;
   }
 
   .practice-config-grid,
