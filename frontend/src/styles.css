@@ -12538,10 +12538,15 @@ small,
   box-shadow: 0 0 0 1px var(--study-rule) inset;
 }
 
-/* Methods workbench keeps a compact operational layout inside the folio theme. */
+/* Methods workbench follows the same folio palette as the rest of the app. */
 .methods-page {
   max-width: 1540px;
   margin: 0 auto;
+  color: var(--study-ink);
+  --methods-ink: var(--study-ink);
+  --methods-muted: var(--study-muted);
+  --methods-line: var(--study-rule);
+  --methods-accent: var(--study-green);
 }
 
 .methods-page .methods-main-layout {
@@ -12549,8 +12554,21 @@ small,
   gap: 24px;
 }
 
+.methods-page .methods-main-layout-slim {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.methods-page .methods-content-slim {
+  display: grid;
+  gap: 18px;
+}
+
 .methods-page .methods-sidebar {
   gap: 18px;
+}
+
+.methods-page .methods-nav-panel {
+  display: none;
 }
 
 .methods-page .methods-panel {
@@ -12571,7 +12589,7 @@ small,
   padding: 12px 14px;
   border: 1px solid var(--study-rule);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--study-paper);
   color: var(--study-ink);
   text-align: left;
   box-shadow: none;
@@ -12579,7 +12597,7 @@ small,
 
 .methods-page .methods-tool-chip:hover {
   border-color: rgba(7, 95, 86, 0.5);
-  background: rgba(7, 95, 86, 0.045);
+  background: rgba(7, 95, 86, 0.05);
   transform: none;
 }
 
@@ -12641,6 +12659,10 @@ small,
 
 .methods-page .methods-course-grid {
   gap: 12px;
+}
+
+.methods-page .methods-course-grid-slim {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .methods-page .methods-course-card {
@@ -12714,6 +12736,10 @@ small,
   gap: 18px;
 }
 
+.methods-page .methods-bottom-grid-slim {
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+}
+
 .methods-page .methods-panel-search,
 .methods-page .methods-panel-assist {
   align-content: start;
@@ -12723,20 +12749,503 @@ small,
   grid-template-columns: minmax(0, 1fr) 88px;
 }
 
+.methods-page .methods-panel,
+.methods-page .methods-panel .panel-like,
+.methods-page .methods-panel,
+.methods-page .methods-focus-card,
+.methods-page .methods-search-hit {
+  color: var(--study-ink);
+}
+
+.methods-page .methods-panel-caption,
+.methods-page .methods-focus-card p,
+.methods-page .methods-search-hit p,
+.methods-page .methods-search-hit small,
+.methods-page .methods-nav-item span,
+.methods-page .methods-nav-item small,
+.methods-page .methods-assist-card p {
+  color: var(--study-muted);
+}
+
+.methods-page .methods-search-hit {
+  border: 1px solid var(--study-rule);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.methods-page .methods-focus-card-compact {
+  margin-top: 14px;
+  padding: 14px 16px;
+}
+
+.methods-toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.methods-toolbox-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--study-rule);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(255, 255, 255, 0.98));
+  color: var(--study-ink);
+  text-align: left;
+  box-shadow: 0 16px 36px rgba(45, 32, 18, 0.06);
+}
+
+.methods-toolbox-card:hover {
+  border-color: rgba(7, 95, 86, 0.4);
+  transform: translateY(-2px);
+}
+
+.methods-toolbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.methods-toolbox-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(7, 95, 86, 0.08);
+  color: var(--study-green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.methods-toolbox-icon {
+  width: 42px;
+  height: 42px;
+  color: var(--study-green);
+  font-size: 20px;
+}
+
+.methods-toolbox-card strong {
+  font-size: 18px;
+}
+
+.methods-toolbox-card p {
+  margin: 0;
+  color: var(--study-muted);
+  line-height: 1.7;
+}
+
+.methods-toolbox-action {
+  color: var(--study-green);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.research-tool-detail-page {
+  display: grid;
+  gap: 18px;
+}
+
+.methods-toolbox-card .el-icon,
+.research-tool-detail-hero .el-button,
+.research-tool-action-row .el-button,
+.research-tool-link-card .el-button {
+  min-height: 34px;
+  padding-inline: 12px;
+  border-radius: 10px;
+}
+
+.research-tool-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.research-tool-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.research-tool-layout-topic {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.research-tool-layout-experiment {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.research-tool-layout-reproduce {
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+}
+
+.research-tool-detail-card {
+  display: grid;
+  gap: 12px;
+}
+
+.research-tool-detail-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-tool-detail-card header span {
+  color: var(--study-green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.research-tool-detail-card p {
+  margin: 0;
+  color: var(--study-ink);
+  line-height: 1.8;
+}
+
+.research-tool-detail-card-tight {
+  padding: 16px;
+}
+
+.research-tool-detail-hero {
+  padding-bottom: 16px;
+}
+
+.research-tool-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.research-tool-result {
+  display: grid;
+  gap: 10px;
+}
+
+.research-tool-result strong {
+  font-size: 18px;
+}
+
+.research-tool-result p {
+  margin: 0;
+  color: var(--study-muted);
+  line-height: 1.75;
+}
+
+.research-tool-result-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--study-ink);
+  line-height: 1.7;
+}
+
+.research-tool-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.research-tool-link-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.research-tool-link-card p {
+  margin: 0;
+  color: var(--study-muted);
+  line-height: 1.7;
+}
+
+.research-tool-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.research-tool-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-tool-card header span {
+  color: var(--study-green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.research-tool-card strong {
+  font-size: 16px;
+}
+
+.research-tool-card p {
+  margin: 0;
+  color: var(--study-muted);
+  line-height: 1.75;
+}
+
+.research-tool-assistant {
+  align-content: start;
+}
+
+.roadmap-list,
+.research-tool-result,
+.research-tool-answer {
+  display: grid;
+  gap: 12px;
+}
+
+.roadmap-item {
+  padding: 12px 14px;
+  border: 1px solid var(--study-rule);
+  border-radius: 12px;
+  background: rgba(255, 250, 245, 0.9);
+}
+
+.roadmap-item strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.roadmap-item p {
+  margin: 0;
+  color: var(--study-muted);
+  line-height: 1.7;
+}
+
+.experiment-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--study-rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.matrix-head,
+.matrix-row {
+  padding: 10px 12px;
+  border-right: 1px solid var(--study-rule);
+  border-bottom: 1px solid var(--study-rule);
+}
+
+.matrix-head {
+  background: rgba(7, 95, 86, 0.06);
+  color: var(--study-green);
+  font-weight: 800;
+}
+
+.matrix-row strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.matrix-row span {
+  color: var(--study-muted);
+}
+
+.timeline-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
+.timeline-list li + li {
+  margin-top: 10px;
+}
+
+.research-tool-detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.research-tool-detail-page .el-input__wrapper,
+.research-tool-detail-page .el-textarea__inner {
+  min-height: 36px;
+  border-radius: 10px;
+}
+
+.research-tool-detail-page .el-button {
+  min-height: 34px;
+  border-radius: 10px;
+}
+
+.methods-page .methods-search-hit-head span,
+.methods-page .methods-result-count {
+  color: var(--study-green);
+}
+
+.methods-page .methods-page-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 4px 0 22px;
+  border-bottom: 1px solid rgba(7, 95, 86, 0.12);
+  background: transparent;
+  box-shadow: none;
+}
+
+.methods-page .methods-page-hero-copy h1,
+.methods-page .methods-panel-head > strong,
+.methods-page .methods-workbench-head > div > strong {
+  color: var(--study-ink);
+}
+
+.methods-page .methods-eyebrow,
+.methods-page .methods-workbench-head > div > span,
+.methods-page .methods-panel-caption,
+.methods-page .methods-result-count {
+  color: var(--study-green);
+}
+
+.methods-page .methods-page-hero-copy {
+  max-width: 900px;
+}
+
+.methods-page .methods-page-hero-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.methods-page .methods-nav-item,
+.methods-page .methods-search-hit,
+.methods-page .methods-assist-card,
+.methods-page .methods-course-card,
+.methods-page .methods-tool-chip {
+  border-color: var(--study-rule);
+  background: var(--study-paper);
+}
+
+.methods-page .methods-nav-item.active,
+.methods-page .methods-nav-item:hover,
+.methods-page .methods-assist-card.active,
+.methods-page .methods-assist-card:hover,
+.methods-page .methods-course-card.active,
+.methods-page .methods-course-card:hover,
+.methods-page .methods-tool-chip.active,
+.methods-page .methods-tool-chip:hover {
+  border-color: rgba(7, 95, 86, 0.5);
+  background: rgba(7, 95, 86, 0.06);
+}
+
+.methods-page .methods-course-icon,
+.methods-page .methods-card-action,
+.methods-page .methods-panel-link .el-icon,
+.methods-page .methods-assist-card > .el-icon {
+  color: var(--study-green) !important;
+}
+
+.methods-page .methods-focus-card,
+.methods-page .methods-search-hit {
+  border: 1px solid var(--study-rule);
+  background: linear-gradient(180deg, rgba(255, 250, 245, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.methods-page .methods-focus-card-compact {
+  margin-top: 14px;
+  padding: 14px 16px;
+}
+
+.methods-page .methods-course-grid-slim {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.methods-page .methods-bottom-grid-slim {
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+}
+
+.methods-page .methods-focus-status,
+.methods-page .methods-tool-state {
+  color: var(--study-green);
+}
+
+.workspace-module-page .literature-suggestion-tip {
+  margin: 10px 0 0;
+  color: var(--study-green);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.workspace-module-page .literature-summary-card {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--study-rule);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(7, 95, 86, 0.04), rgba(255, 255, 255, 0.9));
+}
+
+.workspace-module-page .literature-summary-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--study-green);
+  font-size: 14px;
+}
+
+.workspace-module-page .literature-summary-card p {
+  margin: 0;
+  color: var(--study-ink);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
 .methods-page .el-button {
   min-height: 38px;
   border-radius: 6px;
 }
 
+.methods-page .el-button--primary,
+.methods-page .el-button--primary.is-plain {
+  --el-button-bg-color: var(--study-green);
+  --el-button-border-color: var(--study-green);
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #075f56;
+  --el-button-hover-border-color: #075f56;
+  --el-button-hover-text-color: #ffffff;
+  background: var(--study-green);
+  border-color: var(--study-green);
+  color: #ffffff !important;
+}
+
+.methods-page .el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--warning):not(.el-button--success):not(.el-button--info) {
+  background: #fffaf5;
+  border-color: var(--study-rule);
+  color: var(--study-ink);
+}
+
+.methods-page .el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--warning):not(.el-button--success):not(.el-button--info):hover {
+  border-color: rgba(7, 95, 86, 0.42);
+  color: var(--study-green);
+}
+
 .methods-page .el-input__wrapper {
   min-height: 42px;
   border-radius: 6px;
+  background: #fffaf5;
+  box-shadow: 0 0 0 1px var(--study-rule) inset;
+}
+
+.methods-page .methods-ghost-btn {
+  flex: 0 0 auto;
 }
 
 .methods-page .methods-assist-card {
   min-height: 86px;
   border-radius: 6px;
   box-shadow: none;
+}
+
+.methods-page .el-empty {
+  --el-empty-fill-color-0: #fffaf5;
+  --el-empty-fill-color-1: #fff6ed;
+  --el-empty-fill-color-2: #f7ede3;
+  --el-empty-fill-color-3: #efe1d4;
+  --el-empty-fill-color-4: #e6d0c1;
+  --el-empty-fill-color-5: #dbc0af;
+  --el-empty-fill-color-6: #d1b4a0;
+  --el-empty-fill-color-7: #c7a68e;
+  --el-empty-fill-color-8: #bd997f;
+  --el-empty-fill-color-9: #b38c71;
+  --el-empty-fill-color-10: #a67c62;
+  --el-empty-fill-color-11: #956b51;
 }
 
 @media (max-width: 1180px) {

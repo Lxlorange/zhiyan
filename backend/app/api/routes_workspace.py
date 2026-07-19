@@ -7,6 +7,8 @@ from app.models.user import User
 from app.schemas import (
     LiteraturePaperCreateRequest,
     LiteraturePaperRead,
+    LiteraturePaperSuggestRequest,
+    LiteraturePaperSuggestResponse,
     LiteraturePaperUpdateRequest,
     ProfileCenterResponse,
     ProfileEntryUpdateRequest,
@@ -22,6 +24,7 @@ from app.services.workspace_service import (
     get_workspace_overview,
     list_literature,
     list_tool_runs,
+    suggest_literature_metadata,
     run_research_tool,
     update_literature,
     update_profile_entry,
@@ -82,6 +85,13 @@ def literature_create(
     db: Session = Depends(get_db),
 ) -> LiteraturePaperRead:
     return create_literature(db, user, request)
+
+
+@router.post("/literature/suggest", response_model=LiteraturePaperSuggestResponse)
+def literature_suggest(
+    request: LiteraturePaperSuggestRequest,
+) -> LiteraturePaperSuggestResponse:
+    return suggest_literature_metadata(request)
 
 
 @router.patch("/literature/{paper_id}", response_model=LiteraturePaperRead)

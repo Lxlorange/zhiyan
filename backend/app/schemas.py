@@ -911,6 +911,22 @@ class LiteraturePaperCreateRequest(BaseModel):
     notes: str = Field(default="", max_length=8000)
 
 
+class LiteraturePaperSuggestRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+
+
+class LiteraturePaperSuggestResponse(BaseModel):
+    title: str
+    authors: List[str] = Field(default_factory=list)
+    venue: str = ""
+    year: str = ""
+    source_uri: str = ""
+    abstract: str = ""
+    keywords: List[str] = Field(default_factory=list)
+    source_name: str = ""
+    reason: str = ""
+
+
 class LiteraturePaperUpdateRequest(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     authors: Optional[List[str]] = None
