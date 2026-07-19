@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page classroom-page classroom-unified-page" :class="{ 'deck-focus-mode': isDeckFocusMode }">
     <section class="page-hero classroom-hero">
       <div>
@@ -19,7 +19,7 @@
       <aside v-if="!isDeckFocusMode" class="unified-sidebar panel-like">
         <div class="classroom-mini-card">
           <span>学习进度</span>
-          <strong>{{ completedGateCount }}/4</strong>
+          <strong>{{ completedGateCount }}/3</strong>
           <el-progress :percentage="gateProgress" :stroke-width="10" />
         </div>
 
@@ -115,8 +115,8 @@
                     </div>
                     <div class="om-player-actions">
                       <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-                      <el-button type="success" :disabled="!allSlidesViewed || classroom?.slides_completed" @click="handleCompleteSlides">
-                        {{ classroom?.slides_completed ? '课件已完成' : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
+                      <el-button type="success" :disabled="!allSlidesViewed && !classroom?.slides_completed" @click="handleCompleteSlides">
+                        {{ classroom?.slides_completed ? nextGateButtonLabel : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
                       </el-button>
                     </div>
                   </header>
@@ -227,7 +227,10 @@
                               {{ visualizationResource ? '重新生成' : '生成演示' }}
                             </el-button>
                           </header>
-                          <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
+                          <div v-if="visualizationUrl || loadingVisualizationView" class="visualization-frame-shell">
+                            <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
+                            <div v-if="loadingVisualizationView" class="visualization-loading">正在加载演示...</div>
+                          </div>
                           <div v-else class="om-empty-tool">
                             <p>根据当前页内容生成合适的动态演示，不固定为 3D。</p>
                             <el-input v-model="visualizationInstruction" type="textarea" :rows="5" :placeholder="currentVisualizationPlaceholder" />
@@ -248,32 +251,31 @@
                             </div>
                           </header>
                           <template v-if="activeTool === 'mindmap'">
-                            <div class="classroom-mindmap-flow">
-                              <div class="classroom-mindmap-canvas">
-                                <article
-                                  v-for="node in mindmapNodes"
-                                  :key="node.id"
-                                  class="classroom-mindmap-node"
-                                  :class="node.kind"
-                                  :style="{ left: `${node.x}px`, top: `${node.y}px` }"
-                                >
-                                  <span v-if="node.group" class="classroom-mindmap-group">{{ node.group }}</span>
-                                  <strong>{{ node.label }}</strong>
-                                  <p v-if="node.detail">{{ node.detail }}</p>
-                                </article>
-
-                                <svg class="classroom-mindmap-links" viewBox="0 0 1200 860" preserveAspectRatio="none" aria-hidden="true">
-                                  <line
-                                    v-for="edge in mindmapEdges"
-                                    :key="edge.id"
-                                    :x1="edge.from.x"
-                                    :y1="edge.from.y"
-                                    :x2="edge.to.x"
-                                    :y2="edge.to.y"
-                                  />
-                                </svg>
-                              </div>
-                            </div>
+                            <VueFlow
+                              :key="mindmapFlowKey"
+                              v-model:nodes="mindmapNodes"
+                              v-model:edges="mindmapEdges"
+                              class="classroom-mindmap-flow"
+                              :fit-view-on-init="true"
+                              :nodes-draggable="true"
+                              :nodes-connectable="false"
+                              :elements-selectable="false"
+                              :pan-on-drag="true"
+                              :zoom-on-scroll="true"
+                              :min-zoom="0.45"
+                              :max-zoom="1.6"
+                            >
+                              <template #node-mindmap="nodeProps">
+                                <div class="classroom-mindmap-node" :class="nodeProps.data.kind">
+                                  <Handle type="target" :position="Position.Top" />
+                                  <span v-if="nodeProps.data.group" class="classroom-mindmap-group">{{ nodeProps.data.group }}</span>
+                                  <strong>{{ nodeProps.data.label }}</strong>
+                                  <p v-if="nodeProps.data.detail">{{ nodeProps.data.detail }}</p>
+                                  <p v-if="nodeProps.data.summary">{{ nodeProps.data.summary }}</p>
+                                  <Handle type="source" :position="Position.Bottom" />
+                                </div>
+                              </template>
+                            </VueFlow>
                           </template>
                           <template v-else>
                             <el-input v-model="noteMarkdown" type="textarea" :rows="13" placeholder="用 Markdown 写下当前页笔记" />
@@ -308,7 +310,7 @@
                     <p>{{ result.explanation }}</p>
                   </article>
                 </div>
-                <div class="classroom-action-row is-sticky"><el-button type="primary" @click="activeGate = 'practice'">进入实操</el-button></div>
+                <div class="classroom-action-row is-sticky">              <el-button type="primary" @click="activeGate = 'reflection'">进入复盘</el-button></div>
               </div>
               <div v-else key="quiz-form" class="classroom-form-stack">
                 <el-alert v-if="!classroom?.slides_completed" title="请先翻完动态课件并完成课件学习" type="warning" :closable="false" />
@@ -348,28 +350,6 @@
             </Transition>
           </section>
 
-          <section v-else-if="activeGate === 'practice'" key="practice" class="classroom-pane">
-            <Transition name="panel-swap" mode="out-in">
-              <div v-if="classroom?.practice_passed" key="practice-done" class="gate-complete-panel">
-                <strong>实操已通过</strong>
-                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
-                <div class="classroom-action-row"><el-button type="primary" @click="activeGate = 'reflection'">进入复盘</el-button></div>
-              </div>
-              <div v-else key="practice-form" class="classroom-form-stack">
-                <h4>{{ practiceSpec?.title || '完成实操任务' }}</h4>
-                <div v-if="practiceSpec" class="classroom-point-list">
-                  <div v-for="step in practiceSteps" :key="step"><span>{{ step }}</span></div>
-                </div>
-                <el-input v-model="practiceForm.artifact_url" placeholder="产物链接或文件路径，可选" />
-                <el-input v-model="practiceForm.key_result" type="textarea" :rows="3" placeholder="关键结果，例如指标、截图描述、运行结果" />
-                <el-input v-model="practiceForm.report" type="textarea" :rows="7" placeholder="实操报告：说明你做了什么、如何验证、遇到什么问题、结果是否达标" />
-                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
-                <div class="classroom-action-row">
-                  <el-button type="primary" :disabled="!pptPackage" :loading="submittingPractice" @click="handleSubmitPractice">提交实操</el-button>
-                </div>
-              </div>
-            </Transition>
-          </section>
 
           <section v-else key="reflection" class="classroom-pane">
             <Transition name="panel-swap" mode="out-in">
@@ -423,6 +403,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Handle, Position, VueFlow, type Edge as FlowEdge, type Node as FlowNode } from '@vue-flow/core'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
@@ -433,7 +414,6 @@ import {
   getOrCreateClassroomSession,
   saveClassroomNote,
   sendClassroomDialogue,
-  submitClassroomPractice,
   submitClassroomQuiz,
   submitClassroomReflection,
   viewClassroomResource,
@@ -444,7 +424,7 @@ import {
   type SyllabusVersionRead
 } from '../services/apiClient'
 
-type GateKey = 'ppt' | 'quiz' | 'practice' | 'reflection'
+type GateKey = 'ppt' | 'quiz' | 'reflection'
 type ToolKey = 'lecture' | 'visualization' | 'note' | 'mindmap'
 type AssistantTabKey = 'lecture' | 'interactive' | 'workspace'
 
@@ -456,7 +436,6 @@ const loadingVisualizationView = ref(false)
 const sendingDialogue = ref(false)
 const savingNote = ref(false)
 const submittingQuiz = ref(false)
-const submittingPractice = ref(false)
 const submittingReflection = ref(false)
 const requestingPptGeneration = ref(false)
 const pollingClassroom = ref(false)
@@ -477,7 +456,6 @@ const noteMarkdown = ref('')
 const chatMessage = ref('')
 const unresolvedQuestionsText = ref('')
 const quizAnswers = reactive<Record<string, string | string[]>>({})
-const practiceForm = reactive({ report: '', artifact_url: '', key_result: '' })
 const reflectionForm = reactive({ reflection: '', next_action: '' })
 const quickActions = ['讲简单点', '举例', '出一道题', '联系科研方向', '总结本页']
 const assistantTabs = [
@@ -588,23 +566,21 @@ const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
 const conceptCards = computed<any[]>(() => pptPackage.value?.concept_cards || [])
 const voiceScript = computed<Record<string, any>>(() => pptPackage.value?.voice_script || {})
-const practiceSpec = computed(() => pptPackage.value?.practice || null)
-const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
 const reflectionPrompts = computed<string[]>(() => pptPackage.value?.reflection_prompts || [])
 const gates = computed(() => [
   { key: 'ppt' as GateKey, title: '课件学习', kind: '集成课堂', done: Boolean(classroom.value?.slides_completed) },
   { key: 'quiz' as GateKey, title: '回答例题', kind: '测验', done: Boolean(classroom.value?.quiz_passed) },
-  { key: 'practice' as GateKey, title: '完成实操', kind: '实践', done: Boolean(classroom.value?.practice_passed) },
   { key: 'reflection' as GateKey, title: '提交复盘', kind: '复盘', done: Boolean(classroom.value?.reflection_passed) }
 ])
 const activeGateMeta = computed(() => gates.value.find((gate) => gate.key === activeGate.value) || gates.value[0])
 const completedGateCount = computed(() => gates.value.filter((gate) => gate.done).length)
-const gateProgress = computed(() => Math.round((completedGateCount.value / 4) * 100))
+const gateProgress = computed(() => Math.round((completedGateCount.value / 3) * 100))
+const nextGateButtonLabel = computed(() => classroom.value?.quiz_passed ? '进入复盘' : '进入例题')
 const slideReadPercent = computed(() => {
   if (!slideList.value.length) return 0
   return Math.round((slidesVisitedCount.value / slideList.value.length) * 100)
 })
-const isDeckFocusMode = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value))
+const isDeckFocusMode = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value) && !classroom.value?.slides_completed)
 const voiceText = computed(() => {
   if (!voiceScript.value && !currentSlide.value) return ''
   const title = currentSlide.value?.title ? `现在讲解：${currentSlide.value.title}。` : ''
@@ -623,24 +599,33 @@ const currentVisualizationPlaceholder = computed(() => {
   const points = currentSlideKnowledgePoints.value.join('、') || '当前知识点'
   return `围绕「${title}」生成动态演示。可补充希望展示的机制，例如：${points} 的流程、信号传播、状态变化、数据流、交互动画或必要时的 3D 类比。`
 })
-type MindmapNode = {
-  id: string
+type MindmapNodeKind = 'center' | 'group' | 'leaf'
+type MindmapNodeData = {
   label: string
   detail?: string
   group?: string
-  kind?: string
-  x: number
-  y: number
+  kind: MindmapNodeKind
+  summary?: string
 }
-
-type MindmapEdge = {
-  id: string
-  from: { x: number; y: number }
-  to: { x: number; y: number }
-}
-
+type MindmapNode = FlowNode<MindmapNodeData, any, 'mindmap'>
+type MindmapEdge = FlowEdge
 const mindmapNodes = ref<MindmapNode[]>([])
 const mindmapEdges = ref<MindmapEdge[]>([])
+const mindmapFlowKey = computed(() => `${activeTool.value}-${activeSlideIndex.value}-${currentSlide.value?.title || 'slide'}`)
+watch(
+  () => [
+    activeSlideIndex.value,
+    activeTool.value,
+    currentSlideKnowledgePoints.value.join('|'),
+    currentSlideTakeaways.value.join('|'),
+    noteMarkdown.value,
+    visualizationResource.value?.id,
+    reflectionPrompts.value.join('|')
+  ] as const,
+  () => {
+    if (activeTool.value === 'mindmap') hydrateMindmap()
+  }
+)
 const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
@@ -653,7 +638,6 @@ const latestQuizResults = computed<Array<Record<string, any>>>(() => {
 })
 const quizResultMap = computed<Record<string, Record<string, any>>>(() => Object.fromEntries(latestQuizResults.value.map((result) => [String(result.question_id), result])))
 const quizMistakes = computed(() => latestQuizResults.value.filter((result) => !result.correct))
-const latestPracticeFeedback = computed(() => latestSubmissionByType('practice')?.feedback || '')
 const latestReflectionFeedback = computed(() => latestSubmissionByType('reflection')?.feedback || '')
 const latestReflectionRubric = computed(() => {
   const scores = latestSubmissionByType('reflection')?.content?.rubric_scores
@@ -934,7 +918,7 @@ async function handleSubmitQuiz() {
     const answers = Object.fromEntries(Object.entries(quizAnswers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]))
     const { data } = await submitClassroomQuiz(classroom.value.id, answers)
     classroom.value = data
-    if (data.quiz_passed) activeGate.value = 'practice'
+    if (data.quiz_passed) activeGate.value = 'reflection'
     ElMessage.success(data.quiz_passed ? '例题已通过' : '例题未通过，请修改后再提交')
   } finally {
     submittingQuiz.value = false
@@ -958,6 +942,10 @@ function goToSlide(index: number) {
 
 async function handleCompleteSlides() {
   if (!classroom.value || !slideList.value.length) return
+  if (classroom.value.slides_completed) {
+    activeGate.value = classroom.value.quiz_passed ? 'reflection' : 'quiz'
+    return
+  }
   const { data } = await completeClassroomSlides(classroom.value.id, {
     current_index: activeSlideIndex.value,
     total_slides: slideList.value.length,
@@ -966,19 +954,6 @@ async function handleCompleteSlides() {
   classroom.value = data
   activeGate.value = 'quiz'
   ElMessage.success('课件学习已完成，可以进入例题环节')
-}
-
-async function handleSubmitPractice() {
-  if (!classroom.value) return
-  submittingPractice.value = true
-  try {
-    const { data } = await submitClassroomPractice(classroom.value.id, { ...practiceForm })
-    classroom.value = data
-    if (data.practice_passed) activeGate.value = 'reflection'
-    ElMessage.success(data.practice_passed ? '实操已通过' : '实操未通过，请根据反馈补充')
-  } finally {
-    submittingPractice.value = false
-  }
 }
 
 async function handleSubmitReflection() {
@@ -1094,47 +1069,104 @@ function hydrateNote() {
 }
 
 function hydrateMindmap() {
-  const center = currentItem.value?.title || pptPackage.value?.title || '当前页'
-  const nodes: MindmapNode[] = [{ id: 'center', label: center, kind: 'center', x: 510, y: 320 }]
+  const centerLabel = currentSlide.value?.title || currentItem.value?.title || pptPackage.value?.title || '当前内容'
+  const nodes: MindmapNode[] = [
+    {
+      id: 'mindmap-center',
+      type: 'mindmap',
+      position: { x: 420, y: 250 },
+      data: {
+        label: centerLabel,
+        detail: currentSlideExplanation.value.slice(0, 120),
+        kind: 'center',
+        summary: currentSlideTakeaways.value[0] || currentSlideKnowledgePoints.value[0] || '核心主题'
+      },
+      draggable: true,
+      selectable: false
+    }
+  ]
   const edges: MindmapEdge[] = []
   const groups = [
-    { id: 'points', label: '知识点', items: currentItem.value?.knowledge_points || [] },
-    { id: 'concepts', label: '概念', items: conceptCards.value.map((card) => String(card.name || '')).filter(Boolean) },
-    { id: 'practice', label: '实践', items: practiceSpec.value?.title ? [practiceSpec.value.title] : [] },
-    { id: 'reflection', label: '复盘', items: reflectionPrompts.value.slice(0, 3) }
+    {
+      id: 'knowledge',
+      label: '知识点',
+      detail: '本页核心信息',
+      items: (currentSlideKnowledgePoints.value.length ? currentSlideKnowledgePoints.value : (currentItem.value?.knowledge_points || [])).slice(0, 5)
+    },
+    {
+      id: 'lecture',
+      label: '讲解',
+      detail: '课堂说明与示例',
+      items: [
+        currentSlide.value?.example,
+        currentSlide.value?.misconception,
+        currentSlide.value?.interaction_prompt
+      ].filter(Boolean) as string[]
+    },
+    {
+      id: 'output',
+      label: '产物',
+      detail: '可沉淀内容',
+      items: [
+        noteMarkdown.value ? '笔记已生成' : '可记录 Markdown 笔记',
+        visualizationResource.value ? '动态演示已生成' : '可生成动态演示',
+        currentSlideTakeaways.value[0] || ''
+      ].filter(Boolean) as string[]
+    },
+    {
+      id: 'reflection',
+      label: '复盘',
+      detail: '下一步改进',
+      items: reflectionPrompts.value.slice(0, 4)
+    }
   ]
   const anchors = [
-    { x: 220, y: 150 },
-    { x: 770, y: 150 },
-    { x: 220, y: 530 },
-    { x: 770, y: 530 }
+    { x: 140, y: 70 },
+    { x: 770, y: 70 },
+    { x: 140, y: 410 },
+    { x: 770, y: 410 }
   ]
   groups.forEach((group, groupIndex) => {
-    const anchor = anchors[groupIndex] || { x: 220 + groupIndex * 180, y: 150 }
+    const anchor = anchors[groupIndex] || anchors[groupIndex % anchors.length]
+    const groupId = `group-${group.id}`
     nodes.push({
-      id: `group-${group.id}`,
-      label: group.label,
-      kind: 'group',
-      group: group.label,
-      x: anchor.x,
-      y: anchor.y
+      id: groupId,
+      type: 'mindmap',
+      position: anchor,
+      data: {
+        label: group.label,
+        detail: group.detail,
+        group: '板块',
+        kind: 'group',
+        summary: `${group.items.length} 项`
+      },
+      draggable: true,
+      selectable: false
     })
-    edges.push({ id: `edge-center-${group.id}`, from: { x: 555, y: 355 }, to: { x: anchor.x + 84, y: anchor.y + 30 } })
-    group.items.slice(0, 5).forEach((item, itemIndex) => {
-      const column = itemIndex % 2
+    edges.push({ id: `edge-center-${group.id}`, source: 'mindmap-center', target: groupId, type: 'smoothstep' })
+    group.items.forEach((item, itemIndex) => {
       const row = Math.floor(itemIndex / 2)
-      const nodeX = anchor.x + column * 180
-      const nodeY = anchor.y + 88 + row * 92
+      const column = itemIndex % 2
+      const nodeId = `${group.id}-${itemIndex}`
+      const nodePosition = {
+        x: anchor.x + column * 180,
+        y: anchor.y + 110 + row * 106
+      }
       nodes.push({
-        id: `${group.id}-${itemIndex}`,
-        label: String(item),
-        detail: group.label,
-        kind: 'leaf',
-        group: group.label,
-        x: nodeX,
-        y: nodeY
+        id: nodeId,
+        type: 'mindmap',
+        position: nodePosition,
+        data: {
+          label: String(item),
+          detail: group.detail,
+          group: group.label,
+          kind: 'leaf',
+          summary: group.label
+        },
+        draggable: true,
+        selectable: false
       })
-      edges.push({ id: `edge-${group.id}-${itemIndex}`, from: { x: anchor.x + 84, y: anchor.y + 30 }, to: { x: nodeX + 80, y: nodeY + 22 } })
+      edges.push({ id: `edge-${group.id}-${itemIndex}`, source: groupId, target: nodeId, type: 'smoothstep' })
     })
   })
   mindmapNodes.value = nodes
@@ -1164,7 +1196,5 @@ function statusType(status: string): '' | 'success' | 'warning' | 'info' | 'prim
   return 'primary'
 }
 </script>
-
-
 
 

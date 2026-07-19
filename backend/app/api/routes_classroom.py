@@ -13,7 +13,6 @@ from app.schemas import (
     ClassroomDialogueResponse,
     ClassroomNoteSaveRequest,
     ClassroomPptGenerateRequest,
-    ClassroomPracticeSubmitRequest,
     ClassroomQuizSubmitRequest,
     ClassroomReflectionSubmitRequest,
     ClassroomSessionRead,
@@ -31,7 +30,6 @@ from app.services.classroom_service import (
     request_classroom_ppt_generation,
     save_classroom_note,
     send_classroom_dialogue,
-    submit_practice,
     submit_quiz,
     submit_reflection,
 )
@@ -250,19 +248,6 @@ def classroom_slides_complete(
 ) -> ClassroomSessionRead:
     try:
         return ClassroomSessionRead.model_validate(complete_slides(db, user, session_id, request))
-    except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
-        raise _handle_error(exc) from exc
-
-
-@router.post("/classroom-sessions/{session_id}/practice", response_model=ClassroomSessionRead)
-def classroom_practice_submit(
-    session_id: int,
-    request: ClassroomPracticeSubmitRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> ClassroomSessionRead:
-    try:
-        return ClassroomSessionRead.model_validate(submit_practice(db, user, session_id, request))
     except (KeyError, ValueError, LLMConfigurationError, LLMResponseError) as exc:
         raise _handle_error(exc) from exc
 

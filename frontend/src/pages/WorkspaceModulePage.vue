@@ -21,9 +21,47 @@
       </section>
 
       <section v-if="mode === 'profile'" class="workspace-grid two">
+        <article class="panel-like workspace-panel wide">
+          <header>
+            <strong>学习画像条目</strong>
+            <span>{{ profileEntries.length }} entries</span>
+          </header>
+          <div class="profile-entry-list">
+            <div v-for="entry in profileEntries" :key="entry.key" class="profile-entry-card">
+              <div class="profile-entry-head">
+                <div><strong>{{ entry.label }}</strong><small>{{ entry.key }}</small></div>
+                <div class="profile-entry-actions">
+                  <el-button text size="small" @click="openEditDialog(entry)">编辑</el-button>
+                  <el-button text size="small" type="danger" @click="handleDeleteEntry(entry)">删除</el-button>
+                </div>
+              </div>
+              <p>{{ entry.value }}</p>
+              <small v-if="entry.source">来源: {{ entry.source }} · {{ entry.confidence }}% 置信</small>
+            </div>
+            <div v-if="!profileEntries.length" class="profile-empty">暂无画像条目</div>
+            <el-button type="primary" size="small" @click="openNewDialog">+ 新增条目</el-button>
+          </div>
+        </article>
         <article class="panel-like workspace-panel">
-          <header><strong>学习画像</strong><span>Profile</span></header>
-          <p>这里保留可编辑的学习画像条目，作为个性化推荐的基础数据。</p>
+          <header><strong>编辑条目</strong><span>{{ editMode === 'new' ? '新增' : '修改' }}</span></header>
+          <el-form label-position="top" class="compact-form">
+            <el-form-item label="条目键名">
+              <el-select v-if="editMode === 'new'" v-model="editForm.key" filterable allow-create placeholder="选择或输入键名" style="width:100%">
+                <el-option v-for="(label, key) in profileKeyLabels" :key="key" :label="label" :value="key" />
+              </el-select>
+              <el-input v-else :model-value="editForm.key" disabled />
+            </el-form-item>
+            <el-form-item label="条目内容">
+              <el-input v-model="editForm.value" type="textarea" :rows="5" placeholder="输入画像条目内容" />
+            </el-form-item>
+            <el-form-item label="置信度">
+              <el-slider v-model="editForm.confidence" :min="0" :max="100" :step="5" />
+            </el-form-item>
+            <div class="form-row">
+              <el-button @click="resetEditForm">取消</el-button>
+              <el-button type="primary" :loading="savingProfile" :disabled="!editForm.key.trim() || !editForm.value.trim()" @click="handleSaveEntry">保存</el-button>
+            </div>
+          </el-form>
         </article>
       </section>
 
@@ -162,15 +200,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, RefreshLeft, Search } from '@element-plus/icons-vue'
+import { Delete, Edit, Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import {
   createLiterature,
   deleteLiterature,
+  deleteProfileEntry,
   getWorkspaceOverview,
   listLiterature,
   runResearchTool,
   suggestLiteratureMetadata,
+  updateProfileEntry,
   type LiteraturePaperRead,
+  type ProfileEntryRead,
+  type ProfileCenterResponse,
   type WorkspaceOverviewResponse
 } from '../services/apiClient'
 
@@ -198,6 +240,80 @@ const literatureForm = reactive({
   source_uri: '',
   abstract: ''
 })
+
+const profileEntries = computed<ProfileEntryRead[]>(() => overview.value?.profile.entries || [])
+const profileKeyLabels: Record<string, string> = {
+  knowledge_base: '知识基础',
+  learning_goal: '学习目标',
+  cognitive_style: '认知风格',
+  weak_points: '易错点',
+  practice_level: '实践能力',
+  resource_preference: '资源偏好',
+  learning_pace: '学习节奏',
+  interest_direction: '兴趣方向',
+  current_research_direction: '当前科研方向',
+  mastery: '掌握度分布',
+  question_habit: '提问习惯',
+  output_goal: '产出目标',
+  academic_writing: '学术写作能力',
+  literature_reading: '文献阅读能力',
+  coding_practice: '代码实践能力',
+  experiment_design: '实验设计能力'
+}
+const editMode = ref<'new' | 'edit'>('new')
+const editForm = reactive({ key: '', value: '', confidence: 70 })
+const savingProfile = ref(false)
+
+function openNewDialog() {
+  editMode.value = 'new'
+  editForm.key = ''
+  editForm.value = ''
+  editForm.confidence = 70
+}
+
+function openEditDialog(entry: ProfileEntryRead) {
+  editMode.value = 'edit'
+  editForm.key = entry.key
+  editForm.value = String(entry.value ?? '')
+  editForm.confidence = entry.confidence
+}
+
+function resetEditForm() {
+  editMode.value = 'new'
+  editForm.key = ''
+  editForm.value = ''
+  editForm.confidence = 70
+}
+
+async function handleSaveEntry() {
+  if (!editForm.key.trim() || !editForm.value.trim()) return
+  savingProfile.value = true
+  try {
+    const { data } = await updateProfileEntry({
+      key: editForm.key.trim(),
+      value: editForm.value.trim(),
+      confidence: editForm.confidence,
+      source: 'manual',
+      update_reason: editMode.value === 'new' ? '用户手动新增画像条目' : '用户手动编辑画像条目'
+    })
+    overview.value = { ...overview.value!, profile: data }
+    resetEditForm()
+    ElMessage.success(editMode.value === 'new' ? '画像条目已创建' : '画像条目已更新')
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function handleDeleteEntry(entry: ProfileEntryRead) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${entry.label}」条目吗？`, '确认删除', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
+    const { data } = await deleteProfileEntry(entry.key)
+    overview.value = { ...overview.value!, profile: data }
+    ElMessage.success('画像条目已删除')
+  } catch {
+    // cancelled
+  }
+}
 
 const toolForm = reactive({
   tool_type: 'method' as ToolType,
@@ -481,5 +597,67 @@ onMounted(() => {
 .literature-empty {
   padding: 16px 0;
   color: var(--el-text-color-secondary);
+}
+.profile-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.profile-entry-card {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color-page);
+}
+
+.profile-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.profile-entry-head div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-entry-head div:first-child small {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.profile-entry-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.profile-entry-card p {
+  margin: 4px 0;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.profile-entry-card small {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.profile-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.workspace-panel-wide {
+  grid-column: 1 / -1;
 }
 </style>

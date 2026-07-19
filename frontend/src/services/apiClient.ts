@@ -1030,6 +1030,10 @@ export function shiftDailyPlanItem(itemId: number, direction: 'next' | 'previous
   return api.patch<DailyPlanRead>(`/daily-plan-items/${itemId}/shift`, { direction })
 }
 
+export function reorderDailyPlanItem(itemId: number, direction: 'up' | 'down' = 'down') {
+  return api.patch<DailyPlanRead>(`/daily-plan-items/${itemId}/reorder`, { direction })
+}
+
 export function sendDailyPlanCoachMessage(planId: number, payload: {
   message: string
   active_item_id?: number | null
@@ -1112,14 +1116,6 @@ export function completeClassroomSlides(sessionId: number, payload: {
   visited_indices: number[]
 }) {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/slides/complete`, payload)
-}
-
-export function submitClassroomPractice(sessionId: number, payload: {
-  report: string
-  artifact_url?: string
-  key_result?: string
-}) {
-  return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/practice`, payload)
 }
 
 export function submitClassroomReflection(sessionId: number, payload: {
