@@ -550,6 +550,23 @@ def _crossref_year(item: dict[str, Any]) -> str:
         return str(parts[0][0])
     return ""
 
+def _crossref_abstract(item: dict[str, Any]) -> str:
+    raw_abstract = _text(item.get("abstract"))
+    if raw_abstract:
+        text = _strip_html(raw_abstract)
+        if text:
+            return text
+    subtitle = _text(item.get("subtitle"))
+    if subtitle:
+        return subtitle
+    container_titles = item.get("container-title") or []
+    if container_titles:
+        return _text(container_titles[0])
+    parts = item.get("short-container-title") or []
+    if parts:
+        return _text(parts[0])
+    return ""
+
 
 def _crossref_authors(item: dict[str, Any]) -> list[str]:
     names: list[str] = []
@@ -601,7 +618,6 @@ def _arxiv_authors(entry: str) -> list[str]:
 def _arxiv_year(entry: str) -> str:
     match = re.search(r"<published>(\d{4})-", entry)
     return match.group(1) if match else ""
-
 
 def _clean_query(value: str) -> str:
     text = re.sub(r"https?://\S+", " ", value)

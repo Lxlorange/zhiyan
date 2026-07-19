@@ -68,6 +68,7 @@ class _ResearchToolOutput(BaseModel):
     title: str
     revised_text: str = ""
     diagnosis: list[str] = Field(default_factory=list)
+    plan_chain: list[str] = Field(default_factory=list)
     structure_suggestions: list[str] = Field(default_factory=list)
     citation_suggestions: list[str] = Field(default_factory=list)
     method_steps: list[str] = Field(default_factory=list)
@@ -82,6 +83,7 @@ class _ResearchToolOutput(BaseModel):
 
     @field_validator(
         "diagnosis",
+        "plan_chain",
         "structure_suggestions",
         "citation_suggestions",
         "method_steps",
@@ -572,7 +574,7 @@ def run_research_tool(db: Session, user: User, request: ResearchToolRunRequest) 
         "paper_reading/review 输出论文摘要矩阵、研究脉络、方法对比、局限性和带来源的综述段落建议；"
         "experiment 输出技术路线、数据采集方案、评价指标、实验变量、图表规范建议和阶段计划；"
         "defense 输出开题/中期/答辩问题、追问、参考回答要点、评分量表和修改建议。"
-        "输出字段：title, revised_text, diagnosis, structure_suggestions, citation_suggestions, method_steps, "
+        "输出字段：title, revised_text, diagnosis, plan_chain, structure_suggestions, citation_suggestions, method_steps, "
         "topic_options, final_topic, experiment_plan, defense_questions, scoring_rubric, source_notes, safety_notes, next_actions。"
         f"\n{FORMULA_OUTPUT_INSTRUCTIONS}"
     )
