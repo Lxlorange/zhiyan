@@ -8,8 +8,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
-from sqlalchemy import cast, desc, or_, select, String
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.learning import (
@@ -79,6 +79,64 @@ class _ResearchToolOutput(BaseModel):
     source_notes: list[str] = Field(default_factory=list)
     safety_notes: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "diagnosis",
+        "structure_suggestions",
+        "citation_suggestions",
+        "method_steps",
+        "topic_options",
+        "experiment_plan",
+        "scoring_rubric",
+        "source_notes",
+        "safety_notes",
+        "next_actions",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_string_list(cls, value: Any) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            items: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                if isinstance(item, str):
+                    text = item.strip()
+                    if text:
+                        items.append(text)
+                else:
+                    text = str(item).strip()
+                    if text:
+                        items.append(text)
+            return items
+        if isinstance(value, dict):
+            flattened: list[str] = []
+            for key, item in value.items():
+                if isinstance(item, (str, int, float, bool)):
+                    text = f"{key}: {item}".strip()
+                else:
+                    text = str(item).strip()
+                if text:
+                    flattened.append(text)
+            return flattened
+        if isinstance(value, str):
+            parts = re.split(r"[\n;；,，]+", value)
+            return [part.strip() for part in parts if part.strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+    @field_validator("defense_questions", mode="before")
+    @classmethod
+    def _coerce_defense_questions(cls, value: Any) -> list[dict[str, Any]]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            return [value]
+        return []
 
 
 def get_workspace_overview(db: Session, user: User) -> WorkspaceOverviewResponse:
