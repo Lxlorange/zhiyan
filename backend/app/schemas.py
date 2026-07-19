@@ -783,12 +783,6 @@ class ClassroomSlidesCompleteRequest(BaseModel):
     visited_indices: List[int] = Field(..., min_length=1)
 
 
-class ClassroomPracticeSubmitRequest(BaseModel):
-    report: str = Field(..., min_length=30, max_length=5000)
-    artifact_url: str = Field(default="", max_length=512)
-    key_result: str = Field(default="", max_length=2000)
-
-
 class ClassroomReflectionSubmitRequest(BaseModel):
     reflection: str = Field(..., min_length=1, max_length=5000)
     unresolved_questions: List[str] = Field(default_factory=list)

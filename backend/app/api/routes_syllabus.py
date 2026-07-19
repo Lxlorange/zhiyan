@@ -10,6 +10,7 @@ from app.schemas import (
     DailyPlanCoachResponse,
     DailyPlanGenerateRequest,
     DailyPlanMoveItemRequest,
+    DailyPlanReorderItemRequest,
     DailyPlanShiftItemRequest,
     DailyPlanRead,
     SyllabusAdaptRequest,
@@ -45,6 +46,7 @@ from app.services.syllabus_service import (
     list_syllabus_versions,
     merge_syllabus_items,
     move_daily_plan_item,
+    reorder_daily_plan_item,
     regenerate_stage,
     reorder_syllabus_items,
     split_syllabus_item,
@@ -399,6 +401,19 @@ def daily_plan_item_shift(
 ) -> DailyPlanRead:
     try:
         return DailyPlanRead.model_validate(shift_daily_plan_item(db, user, item_id, request))
+    except (KeyError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.patch("/daily-plan-items/{item_id}/reorder", response_model=DailyPlanRead)
+def daily_plan_item_reorder(
+    item_id: int,
+    request: DailyPlanReorderItemRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DailyPlanRead:
+    try:
+        return DailyPlanRead.model_validate(reorder_daily_plan_item(db, user, item_id, request))
     except (KeyError, ValueError) as exc:
         raise _handle_error(exc) from exc
 

@@ -414,7 +414,6 @@ import {
   getOrCreateClassroomSession,
   saveClassroomNote,
   sendClassroomDialogue,
-  submitClassroomPractice,
   submitClassroomQuiz,
   submitClassroomReflection,
   viewClassroomResource,
@@ -437,7 +436,6 @@ const loadingVisualizationView = ref(false)
 const sendingDialogue = ref(false)
 const savingNote = ref(false)
 const submittingQuiz = ref(false)
-const submittingPractice = ref(false)
 const submittingReflection = ref(false)
 const requestingPptGeneration = ref(false)
 const pollingClassroom = ref(false)
@@ -949,16 +947,6 @@ async function handleCompleteSlides() {
   ElMessage.success('课件学习已完成，可以进入例题环节')
 }
 
-async function handleSubmitPractice() {
-  if (!classroom.value) return
-  submittingPractice.value = true
-  try {
-    // noop
-  } finally {
-    submittingPractice.value = false
-  }
-}
-
 async function handleSubmitReflection() {
   if (!classroom.value) return
   submittingReflection.value = true
@@ -1142,7 +1130,6 @@ function statusType(status: string): '' | 'success' | 'warning' | 'info' | 'prim
   return 'primary'
 }
 </script>
-
 
 
 

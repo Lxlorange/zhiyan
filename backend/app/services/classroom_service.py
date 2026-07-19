@@ -212,18 +212,6 @@ class _DialogueAgentResponse(BaseModel):
     profile_update_suggestion: str
 
 
-class _QuizEvaluation(BaseModel):
-    score: int = Field(ge=0, le=100)
-    passed: bool
-    feedback: str
-
-
-class _PracticeEvaluation(BaseModel):
-    score: int = Field(ge=0, le=100)
-    passed: bool
-    feedback: str
-
-
 class _ReflectionEvaluation(BaseModel):
     score: int = Field(ge=0, le=100)
     passed: bool
@@ -552,56 +540,6 @@ def mark_classroom_generation_failed(db: Session, user: User, session_id: int, e
     db.commit()
 
 
-def generate_classroom_visualization(
-    db: Session,
-    user: User,
-    session_id: int,
-    request: ClassroomVisualizationGenerateRequest,
-) -> ClassroomSession:
-    session = _get_session(db, user, session_id)
-    item = _item_or_404(db, user, session.syllabus_item_id)
-    project = _project_or_404(db, user, session.project_id)
-    package = _classroom_package_or_error(session)
-    demo = _generate_visualization_demo(project, item, package, request.instruction)
-    html_path = _write_visualization_html(session.id, item, demo)
-    widget_type = demo.widget_type
-
-    resource = ClassroomResource(
-        session_id=session.id,
-        syllabus_item_id=item.id,
-        project_id=project.id,
-        user_id=user.id,
-        resource_type="interactive_visualization",
-        title=demo.title,
-        content_data=demo.model_dump(mode="json"),
-        file_path=str(html_path),
-        source=f"THU-MAIC/OpenMAIC-inspired; widget_type={widget_type}",
-        status="ready",
-    )
-    db.add(resource)
-    db.add(
-        AgentTaskRecord(
-            session_id=f"classroom-{session.id}",
-            user_id=user.id,
-            agent="VisualizationAgent+InteractiveWidgetRouter",
-            status="completed",
-            input_summary=f"{project.title} / {item.title}",
-            output_summary=f"生成互动演示：{demo.title}",
-            latency_ms=0,
-        )
-    )
-    _write_event(
-        db,
-        project,
-        user,
-        "classroom_visualization_generated",
-        f"生成互动演示：{demo.title}",
-        {"session_id": session.id, "demo_type": demo.demo_type},
-    )
-    db.commit()
-    return _get_session(db, user, session.id)
-
-
 def generate_classroom_voice(
     db: Session,
     user: User,
@@ -828,37 +766,6 @@ def complete_slides(
         f"完成动态课件学习：{item.title}",
         {"session_id": session.id, "total_slides": request.total_slides},
     )
-    db.commit()
-    return _get_session(db, user, session.id)
-
-
-def submit_practice(
-    db: Session,
-    user: User,
-    session_id: int,
-    request: Any,
-) -> ClassroomSession:
-    session = _get_session(db, user, session_id)
-    item = _item_or_404(db, user, session.syllabus_item_id)
-    _add_submission(
-        db,
-        session=session,
-        user=user,
-        item=item,
-        submission_type="practice",
-        content=request.model_dump() if hasattr(request, "model_dump") else {},
-        score=100,
-        passed=True,
-        feedback="实操记录已保存，不再作为课堂完成的阻塞项。",
-    )
-    session.practice_passed = True
-    session.progress_state = _build_progress_state(
-        bool(session.ppt_resource_id),
-        session.slides_completed,
-        session.quiz_passed,
-        session.reflection_passed,
-    )
-    _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
 
@@ -1496,50 +1403,6 @@ def _write_event(db: Session, project: LearningProject, user: User, event_type: 
     )
 
 
-def _generate_visualization_demo(
-    project: LearningProject,
-    item: LearningSyllabusItem,
-    package: _ClassroomPackage,
-    instruction: str,
-) -> _VisualizationDemo:
-    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
-    raw = _qwen_chat_raw_json(
-        (
-            "你是 LegacyVisualizationAgent，此旧分支已被文件末尾的 OpenMAIC 互动演示路由器覆盖。"
-            "可交互 3D 物理演示规格。只输出 JSON，不输出 Markdown、HTML 或 JavaScript。"
-        ),
-        (
-            "请生成一个与学习主题强相关的 3D 物理演示数据规格，后端会把该 JSON 渲染为 Three.js + cannon-es HTML。\n"
-            "顶层字段必须完整包含：title, demo_type, learning_goal, description, variables, frames, controls, "
-            "teaching_points, student_tasks, safety_notes, physics_scene。\n"
-            "demo_type 必须从以下值选择：signal_wave, network_packet, neural_activation, optimization_landscape, "
-            "sorting_collision, graph_diffusion, physics_system。\n"
-            "physics_scene 必须包含 scene_kind, gravity, camera, objects。\n"
-            "scene_kind 必须从以下值选择：signal_wave, network_packet, neural_activation, optimization_landscape, "
-            "sorting_collision, graph_diffusion, general_physics。\n"
-            "camera 必须包含 position 和 target，二者都是 3 个数字的数组。\n"
-            "objects 必须包含 4 到 9 个对象；每个对象必须包含 id, label, role, shape, size, position, velocity, mass, color。\n"
-            "shape 只能使用 sphere, box, cylinder, packet, node；size/position/velocity 都必须是 3 个数字的数组；color 必须是十六进制颜色。\n"
-            "frames 需要 4 到 12 帧；每帧必须包含 label, narrative, metrics；metrics 至少包含 progress, force, activity 三个 0 到 1 或合理正数。\n"
-            "controls 至少 3 个，建议包含 speed, force, damping 或 gravity；每个控制器必须包含 name, label, min_value, max_value, default_value, description。\n"
-            "必须结合课程知识库来源和课堂摘要生成内容，不能输出空数组、占位符、模板化泛泛描述或具体题目无关的演示。\n"
-            f"项目：{project.title}\n"
-            f"研究方向：{project.research_direction}\n"
-            f"学习项：{item.title}\n"
-            f"学习目标：{item.objective}\n"
-            f"知识点：{item.knowledge_points}\n"
-            f"课程知识库来源：\n{knowledge_context}\n"
-            f"课堂摘要：{package.learning_summary}\n"
-            f"补充要求：{instruction}\n"
-        ),
-    )
-    normalized = _normalize_visualization_demo(raw)
-    try:
-        return _VisualizationDemo.model_validate(normalized)
-    except Exception as exc:
-        raise LLMResponseError(f"3D 物理演示 JSON 归一化后仍未通过结构校验：{exc}") from exc
-
-
 def _generate_dialogue_response(
     project: LearningProject,
     item: LearningSyllabusItem,
@@ -1580,51 +1443,6 @@ def _generate_dialogue_response(
         _DialogueAgentResponse,
         user=user,
     )
-
-
-def _normalize_visualization_demo(raw: Any) -> dict:
-    if not isinstance(raw, dict):
-        raise LLMResponseError("3D 物理演示 JSON 顶层必须是对象")
-    data = raw
-    variables = [_normalize_visualization_variable(value) for value in _as_list(data.get("variables"))]
-    variables = [value for value in variables if value]
-    if len(variables) < 2:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 variables，至少需要 2 个变量")
-    frames = [
-        _normalize_visualization_frame(frame, index, variables)
-        for index, frame in enumerate(_as_list(data.get("frames")), start=1)
-    ]
-    if len(frames) < 4:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 frames，至少需要 4 帧")
-    controls = [
-        _normalize_visualization_control(control, index)
-        for index, control in enumerate(_as_list(data.get("controls")), start=1)
-    ]
-    if not controls:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 controls，至少需要 1 个控制器")
-    safety_notes = _as_str_list(data.get("safety_notes"))
-    if not safety_notes:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 safety_notes")
-    teaching_points = _as_str_list(data.get("teaching_points"))
-    if len(teaching_points) < 3:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 teaching_points，至少需要 3 条")
-    student_tasks = _as_str_list(data.get("student_tasks"))
-    if len(student_tasks) < 2:
-        raise LLMResponseError("3D 物理演示 JSON 缺少 student_tasks，至少需要 2 条")
-    demo_type = _normalize_demo_type(_require_text(data.get("demo_type"), "visualization.demo_type"))
-    return {
-        "title": _require_text(data.get("title"), "visualization.title"),
-        "demo_type": demo_type,
-        "learning_goal": _require_text(data.get("learning_goal"), "visualization.learning_goal"),
-        "description": _require_text(data.get("description"), "visualization.description"),
-        "variables": variables[:8],
-        "frames": frames[:12],
-        "controls": controls,
-        "teaching_points": teaching_points[:8],
-        "student_tasks": student_tasks[:6],
-        "safety_notes": safety_notes,
-        "physics_scene": _normalize_physics_scene(data.get("physics_scene"), demo_type),
-    }
 
 
 def _normalize_visualization_variable(raw: Any) -> str:
@@ -1798,15 +1616,6 @@ def _require_metric(value: Any, field_path: str) -> float:
     if metric is None:
         raise LLMResponseError(f"模型 JSON 字段 {field_path} 必须是可解析数值")
     return metric
-
-
-def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo: _VisualizationDemo) -> Path:
-    output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization.html"
-    html_doc = render_three_physics_html(demo.model_dump(mode="json"), demo.title)
-    path.write_text(html_doc, encoding="utf-8")
-    return path
 
 
 def _generate_classroom_package(project: LearningProject, item: LearningSyllabusItem, instruction: str, *, user: Optional[User] = None) -> _ClassroomPackage:
@@ -3147,5 +2956,3 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
         html_doc = render_adaptive_visualization_html(demo.model_dump(mode="json"), demo.title)
     path.write_text(html_doc, encoding="utf-8")
     return path
-
-
