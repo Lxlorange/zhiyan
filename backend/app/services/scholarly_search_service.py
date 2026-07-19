@@ -493,6 +493,24 @@ def _crossref_year(item: dict[str, Any]) -> str:
     return ""
 
 
+def _crossref_abstract(item: dict[str, Any]) -> str:
+    raw_abstract = _text(item.get("abstract"))
+    if raw_abstract:
+        text = _strip_html(raw_abstract)
+        if text:
+            return text
+    subtitle = _text(item.get("subtitle"))
+    if subtitle:
+        return subtitle
+    container_titles = item.get("container-title") or []
+    if container_titles:
+        return _text(container_titles[0])
+    parts = item.get("short-container-title") or []
+    if parts:
+        return _text(parts[0])
+    return ""
+
+
 def _clean_query(value: str) -> str:
     text = re.sub(r"https?://\S+", " ", value)
     text = re.sub(r"\s+", " ", text).strip()
