@@ -43,6 +43,7 @@ from app.services.llm_client import qwen_chat_json
 from app.services.persistence_service import upsert_profile_from_dialogue
 from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 from app.services.taxonomy_service import build_knowledge_link_graph
+from app.services.direction_service import LearningScopeProfile, estimate_learning_scope
 
 
 class _GeneratedSyllabusItem(BaseModel):
@@ -67,7 +68,7 @@ class _GeneratedSyllabus(BaseModel):
     syllabus_agent_summary: str
     path_planner_summary: str
     adaptation_strategy: str
-    items: list[_GeneratedSyllabusItem] = Field(min_length=6, max_length=12)
+    items: list[_GeneratedSyllabusItem] = Field(min_length=2, max_length=10)
 
 
 class _GeneratedAdaptation(BaseModel):
@@ -345,10 +346,21 @@ def _profile_context(profile: Optional[StudentProfileRecord]) -> dict:
 
 
 def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRecord], knowledge: list[dict], funnel_path: str) -> str:
+    scope = estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        project.expected_output,
+        project.foundation_summary,
+        project.related_course,
+        learning_type=project.goal_type or "",
+    )
     return (
         "请为一个高校科研学习项目生成可执行的个性化学习清单。必须输出严格 JSON，不要 Markdown。\n"
         "清单必须围绕科研方向，不要把重点放在展示用户画像；用户画像只作为个性化依据。\n"
-        "学习项类型至少覆盖概念理解、数学基础、代码实践、实验复现、论文阅读、案例分析、可视化演示、练习评估、项目报告、综述写作、拓展阅读、阶段复盘中的多种类型。\n"
+        "学习项类型根据主题复杂度动态收缩或展开，不要机械地拆成 5 阶段或 10 门课。\n"
+        "简单主题（如 SVM、KNN、PCA、线性回归）通常只需要 2-4 个学习项，每项 20-40 分钟；常规主题 4-6 个学习项；复杂研究主题才展开到 6-10 个学习项。\n"
+        "学习项类型至少覆盖概念理解、数学基础、代码实践、实验复现、论文阅读、案例分析、可视化演示、练习评估、项目报告、综述写作、拓展阅读、阶段复盘中的必要子集。\n"
         "每个学习项必须给出推荐理由、关联知识点、可生成课堂内容类型、完成标准和评估方式。\n"
         "如果项目是科研项目，学习清单必须根据用户输入方向和可用资料动态覆盖以下课程模式：\n"
         "1. 文献综述课：提供相关论文摘要、资料来源、阅读矩阵和研究脉络；\n"
@@ -368,6 +380,7 @@ def _project_prompt(project: LearningProject, profile: Optional[StudentProfileRe
         f"推荐周期：{project.recommended_period}\n"
         f"每日学习时长：{project.daily_minutes} 分钟\n"
         f"难度：{project.difficulty}\n"
+        f"主题复杂度判断：{scope.scope}（{scope.summary}），建议学习项数量 {scope.planned_item_count}，单项时长 {scope.item_minutes_min}-{scope.item_minutes_max} 分钟。\n"
         f"教师要求：{project.teacher_notes}\n"
         f"截止时间：{project.deadline.isoformat() if project.deadline else '未设置'}\n"
         f"用户画像：{_profile_context(profile)}\n"
@@ -396,6 +409,16 @@ def generate_syllabus(
     profile = _latest_profile(db, user)
     knowledge = _knowledge_context(db, project)
     funnel_path = _knowledge_funnel_path_context(db, user, project)
+    scope = estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        project.expected_output,
+        project.foundation_summary,
+        project.related_course,
+        request.generation_goal or "",
+        learning_type=project.goal_type or "",
+    )
     started_at = time.perf_counter()
 
     result = qwen_chat_json(
@@ -405,6 +428,7 @@ def generate_syllabus(
         _GeneratedSyllabus,
         user=user,
     )
+    result = _shape_generated_syllabus(result, scope)
     latency_ms = int((time.perf_counter() - started_at) * 1000)
 
     for old_version in db.scalars(
@@ -435,11 +459,11 @@ def generate_syllabus(
     db.flush()
 
     for index, generated in enumerate(result.items, start=1):
-        db.add(_item_from_generated(generated, version=version, project=project, user=user, order=index))
+        db.add(_item_from_generated(generated, version=version, project=project, user=user, order=index, scope=scope))
     db.flush()
     next_order = len(result.items) + 1
     for reading_item in _research_reading_items_from_project(project):
-        db.add(_item_from_research_reading(reading_item, version=version, project=project, user=user, order=next_order))
+        db.add(_item_from_research_reading(reading_item, version=version, project=project, user=user, order=next_order, scope=scope))
         next_order += 1
     db.flush()
 
@@ -490,7 +514,20 @@ def _item_from_generated(
     project: LearningProject,
     user: User,
     order: int,
+    scope: Optional[LearningScopeProfile] = None,
 ) -> LearningSyllabusItem:
+    scope = scope or estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        project.expected_output,
+        project.foundation_summary,
+        project.related_course,
+        generated.title,
+        generated.objective,
+        learning_type=project.goal_type or "",
+    )
+    estimated_minutes = max(scope.item_minutes_min, min(int(generated.estimated_minutes or scope.daily_minutes), scope.item_minutes_max))
     return LearningSyllabusItem(
         syllabus_version_id=version.id,
         project_id=project.id,
@@ -499,7 +536,7 @@ def _item_from_generated(
         item_type=generated.item_type,
         stage=generated.stage,
         difficulty=generated.difficulty,
-        estimated_minutes=generated.estimated_minutes,
+        estimated_minutes=estimated_minutes,
         recommendation_reason=generated.recommendation_reason,
         objective=generated.objective,
         prerequisites=_as_list(generated.prerequisites),
@@ -511,6 +548,15 @@ def _item_from_generated(
         assessment_method=generated.assessment_method,
         user_order=order,
     )
+
+
+def _shape_generated_syllabus(result: _GeneratedSyllabus, scope: LearningScopeProfile) -> _GeneratedSyllabus:
+    result.items = list(result.items or [])[: scope.planned_item_count]
+    if scope.scope == "simple":
+        result.syllabus_agent_summary = result.syllabus_agent_summary + " 已按短周期主题收缩学习项数量。"
+    else:
+        result.syllabus_agent_summary = result.syllabus_agent_summary + " 已按主题复杂度整理学习项结构。"
+    return result
 
 
 def _research_reading_items_from_project(project: LearningProject) -> list[dict]:
@@ -530,6 +576,7 @@ def _item_from_research_reading(
     project: LearningProject,
     user: User,
     order: int,
+    scope: Optional[LearningScopeProfile] = None,
 ) -> LearningSyllabusItem:
     level = str(reading.get("level") or "paper").strip()
     title = str(reading.get("title") or "").strip()
@@ -544,6 +591,18 @@ def _item_from_research_reading(
         "frontier": "科研前沿论文",
     }
     level_label = level_labels.get(level, level)
+    scope = scope or estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        title,
+        level_label,
+        learning_type=project.goal_type or "",
+    )
+    estimated_minutes = max(
+        scope.item_minutes_min,
+        min(max(30, int(project.daily_minutes or scope.daily_minutes) + 10), scope.item_minutes_max),
+    )
     return LearningSyllabusItem(
         syllabus_version_id=version.id,
         project_id=project.id,
@@ -552,7 +611,7 @@ def _item_from_research_reading(
         item_type="paper_reading",
         stage=f"论文精读 · {level_label}",
         difficulty=project.difficulty or "medium",
-        estimated_minutes=max(45, min(180, int(project.daily_minutes or 60) * 2)),
+        estimated_minutes=estimated_minutes,
         recommendation_reason=str(reading.get("why_read") or "科研项目要求按阅读顺序完成论文复盘。"),
         objective=(
             f"围绕论文《{title}》完成一份可评分复盘：核心问题、方法证据、局限、"
@@ -1014,6 +1073,17 @@ def regenerate_stage(
     project = _project_or_404(db, user, source.project_id)
     profile = _latest_profile(db, user)
     funnel_path = _knowledge_funnel_path_context(db, user, project)
+    scope = estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        project.expected_output,
+        project.foundation_summary,
+        project.related_course,
+        request.stage,
+        request.instruction or "",
+        learning_type=project.goal_type or "",
+    )
     current_stage_items = [item for item in source.items if item.stage == request.stage and item.status != "deleted"]
     prompt = (
         _project_prompt(project, profile, _knowledge_context(db, project), funnel_path)
@@ -1027,12 +1097,13 @@ def regenerate_stage(
         _GeneratedAdaptation,
         user=user,
     )
+    result.items = list(result.items or [])[: scope.planned_item_count]
     new_version = copy_syllabus_version(db, user, source.id)
     for item in new_version.items:
         if item.stage == request.stage:
             item.status = "deleted"
     for index, generated in enumerate(result.items, start=max([item.user_order for item in new_version.items] or [0]) + 1):
-        db.add(_item_from_generated(generated, version=new_version, project=project, user=user, order=index))
+        db.add(_item_from_generated(generated, version=new_version, project=project, user=user, order=index, scope=scope))
     new_version.generation_method = "regenerate_stage"
     new_version.generation_reason = result.adjustment_reason
     _log_operation(
@@ -1057,6 +1128,17 @@ def adapt_syllabus(
     source = get_current_syllabus(db, user, project_id)
     profile = _latest_profile(db, user)
     funnel_path = _knowledge_funnel_path_context(db, user, project)
+    scope = estimate_learning_scope(
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        project.expected_output,
+        project.foundation_summary,
+        project.related_course,
+        request.trigger_type,
+        request.evidence,
+        learning_type=project.goal_type or "",
+    )
     prompt = (
         _project_prompt(project, profile, _knowledge_context(db, project), funnel_path)
         + f"\n当前清单：{[{'id': item.id, 'title': item.title, 'stage': item.stage, 'status': item.status} for item in source.items]}\n"
@@ -1070,10 +1152,11 @@ def adapt_syllabus(
         _GeneratedAdaptation,
         user=user,
     )
+    result.items = list(result.items or [])[: scope.planned_item_count]
     new_version = copy_syllabus_version(db, user, source.id)
     max_order = max([item.user_order for item in new_version.items] or [0])
     for index, generated in enumerate(result.items, start=max_order + 1):
-        db.add(_item_from_generated(generated, version=new_version, project=project, user=user, order=index))
+        db.add(_item_from_generated(generated, version=new_version, project=project, user=user, order=index, scope=scope))
     new_version.generation_method = "adaptation"
     new_version.generation_reason = result.adjustment_reason
     new_version.agent_summary = {

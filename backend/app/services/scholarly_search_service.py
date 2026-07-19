@@ -6,7 +6,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
@@ -25,6 +25,9 @@ class ScholarlySearchHit:
     source: str
     reason: str
     abstract: str = ""
+    authors: list[str] = field(default_factory=list)
+    year: str = ""
+    venue: str = ""
 
 
 GENERAL_SEARCH_SITES = [
@@ -150,6 +153,9 @@ def verify_candidate_resource_url(
         source=source or f"{_host(normalized_url)} · Verified",
         reason=reason or "LLM candidate URL verified by server",
         abstract="",
+        authors=[],
+        year="",
+        venue=_host(normalized_url),
     )
 
 
@@ -171,13 +177,22 @@ def _search_openalex(query: str, topic: str = "") -> Optional[ScholarlySearchHit
             continue
         source = "OpenAlex"
         year = item.get("publication_year")
-        authors = _authors(item)
+        authors = _authors_list(item)
         if year:
             source += f" · {year}"
         if authors:
-            source += f" · {authors}"
+            source += f" · {', '.join(authors)}"
         abstract = _text(item.get("abstract") or item.get("summary") or "")
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"OpenAlex result for: {query}", abstract=abstract)
+        return ScholarlySearchHit(
+            title=title,
+            url=url,
+            source=source,
+            reason=f"OpenAlex result for: {query}",
+            abstract=abstract,
+            authors=authors,
+            year=str(year or ""),
+            venue=_openalex_venue(item),
+        )
     return None
 
 
@@ -211,7 +226,16 @@ def _search_semantic_scholar(query: str, topic: str = "") -> Optional[ScholarlyS
         ]
         if author_names:
             source += f" · {', '.join(author_names)}"
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Semantic Scholar result for: {query}", abstract=abstract)
+        return ScholarlySearchHit(
+            title=title,
+            url=url,
+            source=source,
+            reason=f"Semantic Scholar result for: {query}",
+            abstract=abstract,
+            authors=author_names,
+            year=str(year or ""),
+            venue=_semantic_venue(item),
+        )
     return None
 
 
@@ -231,7 +255,16 @@ def _search_arxiv(query: str, topic: str = "") -> Optional[ScholarlySearchHit]:
         url = _text(id_match.group(1))
         if not _is_public_http_url(url):
             continue
-        return ScholarlySearchHit(title=title, url=url, source="arXiv", reason=f"arXiv result for: {query}", abstract=summary)
+        return ScholarlySearchHit(
+            title=title,
+            url=url,
+            source="arXiv",
+            reason=f"arXiv result for: {query}",
+            abstract=summary,
+            authors=_arxiv_authors(entry),
+            year=_arxiv_year(entry),
+            venue="arXiv",
+        )
     return None
 
 
@@ -251,7 +284,19 @@ def _search_crossref(query: str, topic: str = "") -> Optional[ScholarlySearchHit
         year = _crossref_year(item)
         if year:
             source += f" · {year}"
-        return ScholarlySearchHit(title=title, url=url, source=source, reason=f"Crossref result for: {query}", abstract=_crossref_abstract(item))
+        authors = _crossref_authors(item)
+        if authors:
+            source += f" · {', '.join(authors)}"
+        return ScholarlySearchHit(
+            title=title,
+            url=url,
+            source=source,
+            reason=f"Crossref result for: {query}",
+            abstract=_crossref_abstract(item),
+            authors=authors,
+            year=year,
+            venue=_crossref_venue(item),
+        )
     return None
 
 
@@ -273,6 +318,9 @@ def _search_duckduckgo(query: str, topic: str = "") -> Optional[ScholarlySearchH
                 source=f"{_host(url)} · Web",
                 reason=f"Web result for: {search_query}",
                 abstract=snippet,
+                authors=[],
+                year="",
+                venue=_host(url),
             )
     return None
 
@@ -474,6 +522,12 @@ def _openalex_url(item: dict[str, Any]) -> str:
     return _text(item.get("id"))
 
 
+def _openalex_venue(item: dict[str, Any]) -> str:
+    primary = item.get("primary_location") or {}
+    source = primary.get("source") or {}
+    return _text(source.get("display_name"))
+
+
 def _authors(item: dict[str, Any]) -> str:
     names: list[str] = []
     for authorship in item.get("authorships") or []:
@@ -486,12 +540,15 @@ def _authors(item: dict[str, Any]) -> str:
     return ", ".join(names)
 
 
+def _authors_list(item: dict[str, Any]) -> list[str]:
+    return [name for name in _authors(item).split(", ") if name]
+
+
 def _crossref_year(item: dict[str, Any]) -> str:
     parts = (((item.get("published-print") or item.get("published-online") or item.get("issued") or {}).get("date-parts")) or [])
     if parts and parts[0]:
         return str(parts[0][0])
     return ""
-
 
 def _crossref_abstract(item: dict[str, Any]) -> str:
     raw_abstract = _text(item.get("abstract"))
@@ -510,6 +567,57 @@ def _crossref_abstract(item: dict[str, Any]) -> str:
         return _text(parts[0])
     return ""
 
+
+def _crossref_authors(item: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for author in item.get("author") or []:
+        if not isinstance(author, dict):
+            continue
+        given = _text(author.get("given"))
+        family = _text(author.get("family"))
+        full_name = " ".join(part for part in [given, family] if part)
+        if full_name:
+            names.append(full_name)
+        if len(names) >= 2:
+            break
+    return names
+
+
+def _crossref_venue(item: dict[str, Any]) -> str:
+    titles = item.get("container-title") or []
+    if titles:
+        return _text(titles[0])
+    return ""
+
+
+def _semantic_authors(item: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for author in (item.get("authors") or [])[:2]:
+        if isinstance(author, dict):
+            name = _text(author.get("name"))
+            if name:
+                names.append(name)
+    return names
+
+
+def _semantic_venue(item: dict[str, Any]) -> str:
+    venue = _text(item.get("venue"))
+    if venue:
+        return venue
+    journal = item.get("journal") or {}
+    if isinstance(journal, dict):
+        return _text(journal.get("name"))
+    return ""
+
+
+def _arxiv_authors(entry: str) -> list[str]:
+    names = re.findall(r"<author>\s*<name>(.*?)</name>\s*</author>", entry, flags=re.S)
+    return [_strip_html(name) for name in names[:2] if _strip_html(name)]
+
+
+def _arxiv_year(entry: str) -> str:
+    match = re.search(r"<published>(\d{4})-", entry)
+    return match.group(1) if match else ""
 
 def _clean_query(value: str) -> str:
     text = re.sub(r"https?://\S+", " ", value)

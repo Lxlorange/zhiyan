@@ -118,7 +118,19 @@ const FOV = 1400
 const WORLD_HEIGHT = 980
 const SPIN_SPEED = 0.00018
 const MAX_DRAW_EDGES = 900
-const palette = ['#dc8b5e', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#a05a34', '#4f8b78']
+const palette = ['#4f8b78', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#8a6f4d', '#3f7f8f']
+const internalTagSet = new Set([
+  'conceptual_mastery',
+  'procedural_mastery',
+  'representational_mastery',
+  'language_mastery',
+  'meta_mastery',
+  'taxonomy_topic',
+  'legacy_compacted',
+  'imported',
+  'courseware',
+  'platform_feature'
+])
 
 const canvasHost = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -178,7 +190,7 @@ const selectedTags = computed<string[]>(() => {
   if (!selectedNode.value) return []
   const node = selectedNode.value
   const meta = node.meta || {}
-  const tags = Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)).filter(Boolean) : []
+  const tags = Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)).filter((item) => !isInternalTag(item)) : []
   return [categoryLabel(categoryKey(node)), ...tags]
     .filter((item, index, array) => item && array.indexOf(item) === index)
     .slice(0, 7)
@@ -400,13 +412,15 @@ function constrainToFunnel(node: WorldNode) {
 
 function buildCategoryChips(nodes: KnowledgeLinkNode[]): CategoryChip[] {
   const counts = new Map<string, number>()
+  const colors = new Map<string, string>()
   nodes.forEach((node) => {
     if (node.layer === 'document') return
     const key = categoryKey(node)
     counts.set(key, (counts.get(key) || 0) + 1)
+    if (!colors.has(key)) colors.set(key, nodeColor(node))
   })
   return Array.from(counts.entries())
-    .map(([key, count]) => ({ key, label: categoryLabel(key), color: categoryColor(key), count }))
+    .map(([key, count]) => ({ key, label: categoryLabel(key), color: colors.get(key) || categoryColor(key), count }))
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
     .slice(0, 10)
 }
@@ -650,15 +664,14 @@ function drawEdges(ctx: CanvasRenderingContext2D) {
     if (!source.visible || !target.visible) return
 
     const inLineage = lineageEdges.has(worldEdge.index)
-    const sourceNode = worldNodes[worldEdge.source]
     const alpha = edgeAlpha(worldEdge, hasSelection, inLineage)
     if (alpha <= 0.01) return
-    const rgb = inLineage ? sourceNode.rgb : edgeRgb(worldEdge.edge)
+    const rgb = edgeRgb(worldEdge.edge)
     const depth = Math.max(0.35, Math.min(1.15, (source.pf + target.pf) / 2))
 
     const pulse = reduceMotion ? 0 : Math.sin(driftTime * 1.6 + worldEdge.index * 0.37) * 0.16
     ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, alpha * depth + pulse * alpha)})`
-    ctx.lineWidth = inLineage || worldEdge.path ? 1.55 : worldEdge.edge.relation === 'prerequisite' ? 0.9 : 0.64
+    ctx.lineWidth = inLineage ? 1.18 : worldEdge.edge.relation === 'prerequisite' ? 0.86 : 0.6
     ctx.beginPath()
     ctx.moveTo(source.sx, source.sy)
     const midX = (source.sx + target.sx) / 2
@@ -693,15 +706,14 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     const selected = selectedNode.value?.id === node.id
     const hovered = hoverIndex === index
     const lineage = lineageNodes.has(node.id)
-    const path = pathNodeIds.value.has(node.id)
     let dim = 1
-    if (hasSelection && !selected && !lineage && !path) dim = 0.14
+    if (hasSelection && !selected && !lineage) dim = 0.14
 
-    const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : path ? 1.18 : 1)
+    const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : 1)
     const alpha = Math.min(1, dim * (0.62 + 0.38 * Math.min(1, projected.pf * projected.pf)))
     const [red, green, blue] = worldNode.rgb
 
-    ctx.shadowBlur = selected || hovered || lineage || path ? 12 : 4
+    ctx.shadowBlur = selected || hovered || lineage ? 12 : 4
     ctx.shadowColor = `rgba(${red}, ${green}, ${blue}, ${0.26 * alpha})`
     ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`
     ctx.beginPath()
@@ -709,14 +721,14 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     ctx.fill()
 
     ctx.shadowBlur = 0
-    ctx.strokeStyle = selected || hovered || lineage || path ? '#17312c' : `rgba(23, 32, 51, ${0.2 * dim})`
-    ctx.lineWidth = selected || hovered ? 1.3 : lineage || path ? 0.95 : 0.55
+    ctx.strokeStyle = selected || hovered || lineage ? '#17312c' : `rgba(23, 32, 51, ${0.2 * dim})`
+    ctx.lineWidth = selected || hovered ? 1.3 : lineage ? 0.95 : 0.55
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
     ctx.stroke()
 
     if (selected || hovered) {
-      ctx.strokeStyle = selected ? '#dc8b5e' : '#172033'
+      ctx.strokeStyle = '#172033'
       ctx.lineWidth = 1.15
       ctx.beginPath()
       ctx.arc(projected.sx, projected.sy, r + 2.8, 0, Math.PI * 2)
@@ -767,7 +779,7 @@ function dynamicPoint(node: WorldNode): Vec3 {
   const seed = node.driftSeed * 0.01
   const layerFloat = node.node.layer === 'project' ? 0.35 : node.node.layer === 'document' ? 0.72 : 1
   const categoryFloat = 0.72 + (hashString(node.categoryKey) % 28) / 100
-  const strength = (lineageNodes.has(node.node.id) || pathNodeIds.value.has(node.node.id) ? 13 : 8) * layerFloat
+  const strength = (lineageNodes.has(node.node.id) ? 13 : 8) * layerFloat
   return {
     x: node.x + Math.sin(driftTime * 0.74 * categoryFloat + seed) * strength,
     y: node.y + Math.sin(driftTime * 0.48 + seed * 1.7) * strength * 0.42,
@@ -805,8 +817,7 @@ function isNodeVisible(worldNode: WorldNode) {
 }
 
 function edgeAlpha(edge: WorldEdge, hasSelection: boolean, inLineage: boolean) {
-  if (hasSelection) return inLineage ? 0.72 : edge.path ? 0.3 : 0.035
-  if (edge.path) return 0.58
+  if (hasSelection) return inLineage ? 0.58 : 0.035
   if (edge.edge.relation === 'prerequisite') return edge.edge.strength === 'hard' ? 0.16 : 0.1
   if (edge.edge.relation === 'evidence') return 0.07
   return 0.08
@@ -948,20 +959,12 @@ function buildLineage(nodeId: string) {
   lineageNodes = new Set<string>()
   lineageEdges = new Set<number>()
   if (!nodeId) return
-  const queue = [nodeId]
   lineageNodes.add(nodeId)
-  while (queue.length) {
-    const current = queue.shift()
-    if (!current) continue
-    for (const edge of worldEdges) {
-      if (edge.edge.relation !== 'prerequisite') continue
-      if (edge.edge.target !== current) continue
-      lineageEdges.add(edge.index)
-      if (!lineageNodes.has(edge.edge.source)) {
-        lineageNodes.add(edge.edge.source)
-        queue.push(edge.edge.source)
-      }
-    }
+  for (const edge of worldEdges) {
+    if (edge.edge.relation !== 'prerequisite') continue
+    if (edge.edge.target !== nodeId) continue
+    lineageEdges.add(edge.index)
+    lineageNodes.add(edge.edge.source)
   }
 }
 
@@ -1030,20 +1033,18 @@ function resizeCanvas() {
 
 function nodeRadius(node: KnowledgeLinkNode) {
   const weight = Math.max(1, Number(node.weight || 1))
-  const pathBoost = pathNodeIds.value.has(node.id) ? 0.8 : 0
-  if (node.layer === 'project') return 2.8 + pathBoost
+  if (node.layer === 'project') return 2.8
   if (node.layer === 'document') return 1.8 + Math.min(1.1, Math.log(weight + 1) * 0.24)
-  if (node.layer === 'platform') return 1.8 + pathBoost
-  if (node.layer === 'knowledge_base') return 2.1 + Math.min(1.4, Math.log(weight + 1) * 0.28) + pathBoost
+  if (node.layer === 'platform') return 1.8
+  if (node.layer === 'knowledge_base') return 2.1 + Math.min(1.4, Math.log(weight + 1) * 0.28)
   return 1.7 + Math.min(1.2, Math.log(weight + 1) * 0.26)
 }
 
 function nodeColor(node: KnowledgeLinkNode) {
-  if (pathNodeIds.value.has(node.id)) return '#dc8b5e'
   if (node.layer === 'project') return '#dc8b5e'
   if (node.layer === 'document') return '#b99126'
   if (node.layer === 'platform') return '#6f8f49'
-  return categoryColor(categoryKey(node))
+  return categoryColor(categoryKey(node), node.layer)
 }
 
 function categoryKey(node: KnowledgeLinkNode) {
@@ -1064,17 +1065,25 @@ function normalizeCategoryLabel(value: string) {
   const label = value.trim()
   const lower = label.toLowerCase()
   if (!label) return ''
+  if (isInternalTag(label)) return ''
   if (lower === 'pdf' || lower === 'document' || lower === 'doc' || lower === 'ppt' || lower === 'pptx') return ''
   if (label.includes('生成PDF') || label.includes('生成 PDF')) return ''
   return label
 }
 
-function categoryColor(key: string) {
+function categoryColor(key: string, layer = '') {
   if (key === '平台功能介绍') return '#6f8f49'
   if (key.includes('文献') || key.includes('论文')) return '#2f7fa3'
   if (key.includes('项目')) return '#dc8b5e'
   if (key.includes('资料') || key.includes('pdf') || key.includes('document')) return '#b99126'
   return palette[hashString(key) % palette.length]
+}
+
+function isInternalTag(value: string) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return true
+  if (internalTagSet.has(normalized)) return true
+  return normalized.endsWith('_mastery') || normalized.startsWith('taxonomy_')
 }
 
 function edgeRgb(edge: KnowledgeLinkEdge): [number, number, number] {

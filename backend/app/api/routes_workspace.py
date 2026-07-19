@@ -19,6 +19,7 @@ from app.schemas import (
 from app.services.llm_client import LLMConfigurationError, LLMResponseError
 from app.services.workspace_service import (
     create_literature,
+    delete_literature,
     delete_profile_entry,
     get_profile_center,
     get_workspace_overview,
@@ -72,10 +73,11 @@ def profile_entry_delete(
 
 @router.get("/literature", response_model=list[LiteraturePaperRead])
 def literature_list(
+    query: str = "",
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[LiteraturePaperRead]:
-    return list_literature(db, user)
+    return list_literature(db, user, query=query)
 
 
 @router.post("/literature", response_model=LiteraturePaperRead)
@@ -103,6 +105,18 @@ def literature_update(
 ) -> LiteraturePaperRead:
     try:
         return update_literature(db, user, paper_id, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/literature/{paper_id}")
+def literature_delete(
+    paper_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        delete_literature(db, user, paper_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

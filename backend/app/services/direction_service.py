@@ -62,6 +62,19 @@ class ProjectSuggestion(BaseModel):
     next_step: str
 
 
+class LearningScopeProfile(BaseModel):
+    scope: str
+    complexity_score: int
+    target_breakdown_count: int = Field(ge=2, le=8)
+    milestone_count: int = Field(ge=2, le=8)
+    planned_item_count: int = Field(ge=2, le=10)
+    recommended_period: str
+    daily_minutes: int = Field(ge=10, le=300)
+    item_minutes_min: int = Field(ge=10, le=180)
+    item_minutes_max: int = Field(ge=10, le=240)
+    summary: str
+
+
 class DirectionAgentResult(BaseModel):
     normalized_title: str
     description: str
@@ -226,6 +239,121 @@ def _merge_ordered(primary: list[str], secondary: list[str]) -> list[str]:
     return result
 
 
+_SIMPLE_SCOPE_KEYWORDS = {
+    "svm",
+    "支持向量机",
+    "knn",
+    "k近邻",
+    "pca",
+    "主成分分析",
+    "线性回归",
+    "逻辑回归",
+    "朴素贝叶斯",
+    "决策树",
+    "k-means",
+    "kmeans",
+    "fft",
+    "傅里叶",
+    "tf-idf",
+    "word2vec",
+}
+
+_COMPLEX_SCOPE_KEYWORDS = {
+    "研究",
+    "论文",
+    "实验",
+    "系统",
+    "综述",
+    "开题",
+    "答辩",
+    "部署",
+    "训练",
+    "优化",
+    "多模态",
+    "大模型",
+    "深度学习",
+    "强化学习",
+    "数据集",
+    "benchmark",
+    "评估",
+}
+
+
+def estimate_learning_scope(*parts: str, learning_type: str = "") -> LearningScopeProfile:
+    text = " ".join(str(part or "") for part in parts).lower()
+    simple_hits = sum(1 for keyword in _SIMPLE_SCOPE_KEYWORDS if keyword in text)
+    complex_hits = sum(1 for keyword in _COMPLEX_SCOPE_KEYWORDS if keyword in text)
+    score = complex_hits * 2 - simple_hits
+    if learning_type == "research_project":
+        score += 2
+    if len(text) > 160:
+        score += 1
+    if len(text) < 60:
+        score -= 1
+
+    if score <= -1:
+        scope = "simple"
+        return LearningScopeProfile(
+            scope=scope,
+            complexity_score=score,
+            target_breakdown_count=3,
+            milestone_count=2,
+            planned_item_count=2,
+            recommended_period="1-3 天",
+            daily_minutes=30,
+            item_minutes_min=15,
+            item_minutes_max=40,
+            summary="单点知识或基础算法，适合压缩成少量课程节点。",
+        )
+    if score <= 2:
+        scope = "standard"
+        return LearningScopeProfile(
+            scope=scope,
+            complexity_score=score,
+            target_breakdown_count=4,
+            milestone_count=3,
+            planned_item_count=4,
+            recommended_period="3-7 天",
+            daily_minutes=45,
+            item_minutes_min=25,
+            item_minutes_max=60,
+            summary="常规主题，需要适度拆分，但不必过度展开。",
+        )
+    scope = "complex"
+    return LearningScopeProfile(
+        scope=scope,
+        complexity_score=score,
+        target_breakdown_count=6,
+        milestone_count=4,
+        planned_item_count=6,
+        recommended_period="1-3 周",
+        daily_minutes=60,
+        item_minutes_min=35,
+        item_minutes_max=90,
+        summary="系统性学习或科研主题，需要较完整的阶段规划。",
+    )
+
+
+def shape_project_suggestion(project: ProjectSuggestion, scope: LearningScopeProfile) -> ProjectSuggestion:
+    lower, upper = {
+        "simple": (20, 40),
+        "standard": (30, 60),
+        "complex": (45, 90),
+    }[scope.scope]
+    minutes = int(project.daily_minutes or scope.daily_minutes)
+    project.daily_minutes = max(lower, min(minutes, upper))
+    if scope.scope == "simple" or not str(project.recommended_period or "").strip():
+        project.recommended_period = scope.recommended_period
+    project.today_recommendations = list(project.today_recommendations or [])[: scope.target_breakdown_count]
+    project.current_weak_points = list(project.current_weak_points or [])[:4]
+    project.output_checklist = list(project.output_checklist or [])[: max(3, scope.milestone_count)]
+    project.personalization_strategy = list(project.personalization_strategy or [])[:4]
+    if scope.scope == "simple" and not str(project.next_step or "").strip():
+        first_point = project.related_knowledge_points[0] if project.related_knowledge_points else project.learning_goal
+        project.next_step = f"先把 {first_point} 学透，再做一个小练习。"
+    return project
+
+
 def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optional[User] = None) -> DirectionAnalyzeResponse:
     seed_direction_templates(db)
     template = None
@@ -255,6 +383,8 @@ def analyze_direction(db: Session, request: DirectionAnalyzeRequest, user: Optio
 4. 对作业代写、论文代写、虚构实验结果、虚构引用必须给出 risk_notes。
 5. 不要让画像成为用户可见中心，项目建议应围绕科研方向学习。
 6. 如果 Knowledge funnel path 命中 RAG 资料，suggested_project.related_knowledge_points 必须按该路径顺序组织，并在 today_recommendations / next_step 中体现“先学前置节点，再学核心节点”的课程安排。
+7. 规划必须按主题复杂度自动收缩或展开。像 SVM、KNN、PCA、线性回归这类单点知识，通常只需要 2-4 个学习节点、1-2 天或少量课次、每日 20-40 分钟，不要硬拆成 5 个阶段或 10 门课程。
+8. 只有系统性研究、论文综述、实验项目才展开成更长周期的方案。
 
 schema:
 {json.dumps(DirectionAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
@@ -283,6 +413,16 @@ Additional personalization context:
             + " -> ".join(project.related_knowledge_points[:6])
             + "。"
         )
+    scope = estimate_learning_scope(
+        request.message,
+        request.extra_context or "",
+        response.title,
+        response.summary,
+        response.suggested_project.learning_goal,
+        response.suggested_project.expected_output,
+        learning_type="direction",
+    )
+    response.suggested_project = shape_project_suggestion(response.suggested_project, scope)
     return response
 
 

@@ -1167,8 +1167,10 @@ export function deleteProfileEntry(key: string) {
   return api.delete<ProfileCenterResponse>(`/workspace/profile/entries/${encodeURIComponent(key)}`)
 }
 
-export function listLiterature() {
-  return api.get<LiteraturePaperRead[]>('/workspace/literature')
+export function listLiterature(query = '') {
+  return api.get<LiteraturePaperRead[]>('/workspace/literature', {
+    params: query ? { query } : undefined
+  })
 }
 
 export function createLiterature(payload: {
@@ -1198,6 +1200,10 @@ export function updateLiterature(paperId: number, payload: Partial<{
   notes: string
 }>) {
   return api.patch<LiteraturePaperRead>(`/workspace/literature/${paperId}`, payload)
+}
+
+export function deleteLiterature(paperId: number) {
+  return api.delete<void>(`/workspace/literature/${paperId}`)
 }
 
 export function listResearchToolRuns() {

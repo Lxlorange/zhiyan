@@ -26,7 +26,7 @@ from app.schemas import (
     ProjectPlanRead,
     ProjectPlanRequest,
 )
-from app.services.direction_service import ProjectSuggestion
+from app.services.direction_service import ProjectSuggestion, estimate_learning_scope, shape_project_suggestion
 from app.services.knowledge_ingestion_service import build_rag_context
 from app.services.llm_client import LLMResponseError, qwen_chat_json, qwen_chat_stream_text
 from app.services.scholarly_search_service import ScholarlySearchError, verify_candidate_resource_url
@@ -241,6 +241,14 @@ def _build_project_plan_prompt(
     profile_context: str,
     current_plan: Optional[dict] = None,
 ) -> str:
+    scope = estimate_learning_scope(
+        learning_goal,
+        extra_requirements or "",
+        knowledge_context,
+        funnel_context,
+        json.dumps(messages, ensure_ascii=False),
+        learning_type=learning_type,
+    )
     return f"""
 你是高校 AI 个性化学习平台中的 ProjectPlannerAgent。
 你的任务是围绕用户的学习目标生成可调整的项目计划，而不是展示用户画像。
@@ -288,18 +296,23 @@ def _build_project_plan_prompt(
 {json.dumps(current_plan or {}, ensure_ascii=False)}
 
 要求：
-1. target_breakdown 用 4-7 条拆解用户目标。
+1. target_breakdown 根据主题复杂度拆解用户目标，不要机械固定为同一种阶段数。
 2. key_questions 给出还需要澄清的问题，但不能阻止生成计划。
 3. milestones 形成用户能理解的学习/项目推进阶段。
 4. resource_plan 覆盖文档、例题、实操、可视化、课堂对话等资源类型。
 5. suggested_project 必须完整，可直接用于创建 LearningProject。
 6. 不要给出预设模板答案，不要声称已完成真实实验或已引用不存在论文。
-7. 如果用户要求代写、虚构实验、虚构引用，必须写入 risk_notes 并改成合规学习支持方案。
+7. 需要按主题复杂度动态收缩或展开：
+   - simple：target_breakdown 2-4 条，milestones 2-3 个，daily_minutes 20-40，recommended_period 1-3 天；
+   - standard：target_breakdown 4-6 条，milestones 3-4 个，daily_minutes 30-60，recommended_period 3-7 天；
+   - complex：target_breakdown 5-7 条，milestones 4-5 个，daily_minutes 45-90，recommended_period 1-3 周。
+   像 SVM、KNN、PCA、线性回归这类单点知识不要硬拆成 5 个阶段或 10 门课程。
+8. 如果用户要求代写、虚构实验、虚构引用，必须写入 risk_notes 并改成合规学习支持方案。
 {FORMULA_OUTPUT_INSTRUCTIONS}
 
-8. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；url 必须是你确信真实存在且与学习目标直接相关的 http/https 链接，例如官方文档、课程主页、arXiv/DOI/Semantic Scholar/OpenAlex、教材官网、权威教程或用户上传/知识库来源。不得只给资源标题让后端猜链接，不得编造 DOI、论文链接或官网链接；没有可靠链接时不要放入 recommended_resources，改写入 risk_notes。
-9. 对通用技能学习目标优先推荐官方文档、权威教程、课程主页和实践项目；只有用户明确要求论文、综述、科研选题、实验或引用时，才推荐论文数据库链接。
-10. 当 learning_type 为 research_project 时，必须启用 research_training.enabled=true，并返回四级阅读清单：
+9. recommended_resources 必须返回资源对象列表，每项包含 title、url、source、reason；url 必须是你确信真实存在且与学习目标直接相关的 http/https 链接，例如官方文档、课程主页、arXiv/DOI/Semantic Scholar/OpenAlex、教材官网、权威教程或用户上传/知识库来源。不得只给资源标题让后端猜链接，不得编造 DOI、论文链接或官网链接；没有可靠链接时不要放入 recommended_resources，改写入 risk_notes。
+10. 对通用技能学习目标优先推荐官方文档、权威教程、课程主页和实践项目；只有用户明确要求论文、综述、科研选题、实验或引用时，才推荐论文数据库链接。
+11. 当 learning_type 为 research_project 时，必须启用 research_training.enabled=true，并返回四级阅读清单：
     - foundation：基础论文/教程
     - classic：领域经典论文
     - seminal：开山论文
@@ -310,6 +323,8 @@ def _build_project_plan_prompt(
     planning_requirements 必须要求学生按周期提交“论文复盘总结 + 下一步计划”。
 schema:
 {json.dumps(ProjectPlanAgentResult.model_json_schema(mode="validation"), ensure_ascii=False)}
+主题复杂度判断：{scope.scope}（{scope.summary}）
+建议学习安排：target_breakdown {scope.target_breakdown_count} 条，milestones {scope.milestone_count} 个，daily_minutes 约 {scope.daily_minutes} 分钟，recommended_period 参考 {scope.recommended_period}。
 """
 
 
@@ -330,6 +345,11 @@ def _stream_prompt_from_json_prompt(json_prompt: str) -> str:
 
 def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) -> ProjectPlanRead:
     messages = [_message("user", request.learning_goal)]
+    scope = estimate_learning_scope(
+        request.learning_goal,
+        request.extra_requirements or "",
+        learning_type=request.learning_type,
+    )
     started = time.perf_counter()
     result = _run_project_plan_agent(
         db,
@@ -339,6 +359,7 @@ def create_project_plan(db: Session, user: User, request: ProjectPlanRequest) ->
         request.extra_requirements,
         messages,
     )
+    result = _shape_project_plan_result(result, scope)
     latency_ms = int((time.perf_counter() - started) * 1000)
     messages.append(_message("assistant", result.assistant_message))
     session = ProjectPlanSession(
@@ -374,6 +395,13 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
     knowledge_context = _knowledge_context(db, f"{request.learning_goal}\n{request.extra_requirements}")
     funnel_context, funnel_steps = _knowledge_funnel_context(db, user, f"{request.learning_goal}\n{request.extra_requirements}")
     profile_context = _profile_context(db, user)
+    scope = estimate_learning_scope(
+        request.learning_goal,
+        request.extra_requirements or "",
+        knowledge_context,
+        funnel_context,
+        learning_type=request.learning_type,
+    )
     json_prompt = _build_project_plan_prompt(
         request.learning_type,
         request.learning_goal,
@@ -401,6 +429,7 @@ def stream_create_project_plan(db: Session, user: User, request: ProjectPlanRequ
     result = _verify_recommended_resources(result, request.learning_goal)
     result = _apply_funnel_path_to_plan(result, funnel_steps)
     result = _verify_research_training(result, request.learning_type, request.learning_goal)
+    result = _shape_project_plan_result(result, scope)
     latency_ms = int((time.perf_counter() - started) * 1000)
     assistant_content = streamed_text.strip() or result.assistant_message
     messages.append(_message("assistant", assistant_content))
@@ -452,6 +481,13 @@ def adjust_project_plan(
     display_message, model_message = _split_display_and_model_message(request.message)
     messages = [*session.messages, _message("user", display_message)]
     started = time.perf_counter()
+    scope = estimate_learning_scope(
+        session.learning_goal,
+        session.extra_requirements or "",
+        _knowledge_context(db, session.learning_goal),
+        "",
+        learning_type=session.learning_type,
+    )
     result = _run_project_plan_agent(
         db,
         user,
@@ -461,6 +497,7 @@ def adjust_project_plan(
         [*session.messages, _message("user", model_message)],
         session.plan_data,
     )
+    result = _shape_project_plan_result(result, scope)
     latency_ms = int((time.perf_counter() - started) * 1000)
     messages.append(_message("assistant", result.assistant_message))
     session.title = result.title
@@ -503,6 +540,14 @@ def stream_adjust_project_plan(
         f"{session.learning_goal}\n{session.extra_requirements}\n{model_message}",
     )
     profile_context = _profile_context(db, user)
+    scope = estimate_learning_scope(
+        session.learning_goal,
+        session.extra_requirements or "",
+        knowledge_context,
+        funnel_context,
+        model_message,
+        learning_type=session.learning_type,
+    )
     json_prompt = _build_project_plan_prompt(
         session.learning_type,
         session.learning_goal,
@@ -531,6 +576,7 @@ def stream_adjust_project_plan(
     result = _verify_recommended_resources(result, session.learning_goal)
     result = _apply_funnel_path_to_plan(result, funnel_steps)
     result = _verify_research_training(result, session.learning_type, session.learning_goal)
+    result = _shape_project_plan_result(result, scope)
     latency_ms = int((time.perf_counter() - started) * 1000)
     messages.append(_message("assistant", streamed_text.strip() or result.assistant_message))
     session.title = result.title
@@ -566,6 +612,13 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         )
 
     result = ProjectPlanAgentResult.model_validate(session.plan_data)
+    scope = estimate_learning_scope(
+        session.learning_goal,
+        session.extra_requirements or "",
+        json.dumps(session.plan_data, ensure_ascii=False),
+        learning_type=session.learning_type,
+    )
+    result = _shape_project_plan_result(result, scope)
     suggestion = result.suggested_project
     funnel_path = _funnel_path_from_plan_data(session.plan_data)
     related_points = _merge_ordered(
@@ -643,6 +696,23 @@ def build_project_from_plan(db: Session, user: User, plan_id: int) -> ProjectPla
         plan=ProjectPlanRead.model_validate(session),
         project=LearningProjectRead.model_validate(project),
     )
+
+
+def _shape_project_plan_result(result: ProjectPlanAgentResult, scope) -> ProjectPlanAgentResult:
+    result.target_breakdown = list(result.target_breakdown or [])[: scope.target_breakdown_count]
+    result.key_questions = list(result.key_questions or [])[: max(3, scope.target_breakdown_count)]
+    result.milestones = list(result.milestones or [])[: scope.milestone_count]
+    result.resource_plan = list(result.resource_plan or [])[: max(4, scope.target_breakdown_count)]
+    result.expected_outputs = list(result.expected_outputs or [])[: max(2, scope.milestone_count)]
+    result.next_questions = list(result.next_questions or [])[:4 if scope.scope == "simple" else 5]
+    result.risk_notes = list(result.risk_notes or [])[:6]
+    result.recommended_resources = list(result.recommended_resources or [])[:6]
+    result.suggested_project = shape_project_suggestion(result.suggested_project, scope)
+    if scope.scope == "simple":
+        result.assistant_message = result.assistant_message + "\n\n系统已按主题复杂度收缩为短周期学习方案。"
+    else:
+        result.assistant_message = result.assistant_message + "\n\n系统已按主题复杂度整理为可执行学习方案。"
+    return result
 
 
 def _apply_funnel_path_to_plan(result: ProjectPlanAgentResult, funnel_steps: list[dict[str, object]]) -> ProjectPlanAgentResult:

@@ -6,7 +6,7 @@
         <h2>{{ currentMeta.title }}</h2>
         <p>{{ currentMeta.description }}</p>
       </div>
-      <el-button :loading="loading" @click="loadOverview">刷新数据</el-button>
+      <el-button :loading="loading" @click="refreshWorkspace">刷新数据</el-button>
     </section>
 
     <section v-if="loading" class="panel-like workspace-loading">正在加载模块数据...</section>
@@ -70,13 +70,47 @@
         </article>
 
         <article class="panel-like workspace-panel">
-          <header><strong>文献列表</strong><span>{{ overview?.literature.length || 0 }} items</span></header>
-          <div class="literature-list">
-            <div v-for="paper in overview?.literature || []" :key="paper.id">
-              <strong>{{ paper.title }}</strong>
-              <p>{{ paper.abstract || paper.citation_text }}</p>
-              <small>{{ readingStatusLabel(paper.reading_status) }} · {{ paper.source_uri || paper.citation_text }}</small>
+          <header class="literature-panel-header">
+            <div>
+              <strong>文献列表</strong>
+              <span>{{ literatureItems.length }} items</span>
             </div>
+            <div class="literature-panel-actions">
+              <el-input
+                v-model="literatureQuery"
+                clearable
+                placeholder="搜索标题、作者、摘要、来源、笔记"
+                @clear="handleResetLiteratureQuery"
+                @keyup.enter="handleSearchLiterature"
+              >
+                <template #append>
+                  <el-button :icon="Search" :loading="literatureLoading" @click="handleSearchLiterature">搜索</el-button>
+                </template>
+              </el-input>
+              <el-button :icon="RefreshLeft" text @click="handleResetLiteratureQuery">重置</el-button>
+            </div>
+          </header>
+
+          <div class="literature-list">
+            <div v-if="literatureLoading" class="literature-empty">正在加载文献列表...</div>
+            <template v-else>
+              <article v-for="paper in literatureItems" :key="paper.id" class="literature-item">
+                <div class="literature-item-head">
+                  <div>
+                    <strong>{{ paper.title }}</strong>
+                    <p>{{ literatureMetaLine(paper) }}</p>
+                  </div>
+                  <el-button :icon="Delete" text type="danger" @click="handleDeleteLiterature(paper)">
+                    删除
+                  </el-button>
+                </div>
+                <p>{{ paper.abstract || paper.notes || paper.citation_text }}</p>
+                <small>{{ readingStatusLabel(paper.reading_status) }} · {{ paper.source_uri || paper.citation_text }}</small>
+              </article>
+              <div v-if="!literatureItems.length" class="literature-empty">
+                暂无匹配文献
+              </div>
+            </template>
           </div>
         </article>
       </section>
@@ -126,13 +160,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, RefreshLeft, Search } from '@element-plus/icons-vue'
 import {
   createLiterature,
+  deleteLiterature,
   getWorkspaceOverview,
+  listLiterature,
   runResearchTool,
   suggestLiteratureMetadata,
+  type LiteraturePaperRead,
   type WorkspaceOverviewResponse
 } from '../services/apiClient'
 
@@ -140,21 +178,51 @@ type Mode = 'profile' | 'literature' | 'methods'
 type ToolType = 'topic' | 'paper_reading' | 'review' | 'polish' | 'format' | 'citation' | 'method' | 'experiment' | 'reproduce' | 'defense'
 
 const props = defineProps<{ mode: Mode }>()
+
 const loading = ref(false)
 const savingLiterature = ref(false)
 const suggestingLiterature = ref(false)
 const runningTool = ref(false)
+const literatureLoading = ref(false)
 const overview = ref<WorkspaceOverviewResponse | null>(null)
-const literatureForm = reactive({ title: '', authors: '', venue: '', year: '', source_uri: '', abstract: '' })
+const literatureItems = ref<LiteraturePaperRead[]>([])
+const literatureQuery = ref('')
 const literatureSuggestionTip = ref('')
 const literatureSummaryRef = ref<HTMLElement | null>(null)
-const toolForm = reactive({ tool_type: 'method' as ToolType, input_text: '', extra_requirement: '' })
+
+const literatureForm = reactive({
+  title: '',
+  authors: '',
+  venue: '',
+  year: '',
+  source_uri: '',
+  abstract: ''
+})
+
+const toolForm = reactive({
+  tool_type: 'method' as ToolType,
+  input_text: '',
+  extra_requirement: ''
+})
 
 const metaMap: Record<Mode, { eyebrow: string; title: string; description: string }> = {
-  profile: { eyebrow: 'Profile', title: '学习画像', description: '维护学习画像条目，支持个性化推荐。' },
-  literature: { eyebrow: 'Literature', title: '文献知识库', description: '输入论文标题后可自动抓取作者、来源和摘要。' },
-  methods: { eyebrow: 'Methods', title: '科研方法', description: '保留轻量方法工具，删除难理解的复杂导航。' }
+  profile: {
+    eyebrow: 'Profile',
+    title: '学习画像',
+    description: '维护学习画像条目，支撑个性化推荐。'
+  },
+  literature: {
+    eyebrow: 'Literature',
+    title: '文献知识库',
+    description: '输入论文标题后可自动抓取作者、来源和摘要。'
+  },
+  methods: {
+    eyebrow: 'Methods',
+    title: '科研方法',
+    description: '保留轻量方法工具，帮助快速生成研究辅助内容。'
+  }
 }
+
 const currentMeta = computed(() => metaMap[props.mode])
 
 const metrics = computed(() => {
@@ -178,19 +246,51 @@ const visibleToolOptions = [
   { label: '选题', value: 'topic' as ToolType, agent: 'TopicAgent', description: '把宽泛方向收紧成问题。', placeholder: '输入研究方向或题目' },
   { label: '方法', value: 'method' as ToolType, agent: 'MethodAgent', description: '解释研究设计与步骤。', placeholder: '输入研究问题或方法困惑' },
   { label: '复现', value: 'reproduce' as ToolType, agent: 'ReproduceAgent', description: '整理复现步骤和验证项。', placeholder: '输入论文或项目链接' },
-  { label: '答辩', value: 'defense' as ToolType, agent: 'DefenseAgent', description: '生成追问和修改建议。', placeholder: '输入题目或摘要' }
+  { label: '答辩', value: 'defense' as ToolType, agent: 'DefenseAgent', description: '生成追问与修改建议。', placeholder: '输入题目或摘要' }
 ]
+
 const selectedTool = computed(() => visibleToolOptions.find((item) => item.value === toolForm.tool_type))
 const visibleToolRuns = computed(() => (overview.value?.tool_runs || []).filter((run) => run.tool_type === toolForm.tool_type))
 
 async function loadOverview() {
+  const { data } = await getWorkspaceOverview()
+  overview.value = data
+}
+
+async function loadLiterature(query = literatureQuery.value) {
+  if (props.mode !== 'literature') {
+    literatureItems.value = []
+    return
+  }
+  literatureLoading.value = true
+  try {
+    const { data } = await listLiterature(query.trim())
+    literatureItems.value = data
+  } finally {
+    literatureLoading.value = false
+  }
+}
+
+async function refreshWorkspace() {
   loading.value = true
   try {
-    const { data } = await getWorkspaceOverview()
-    overview.value = data
+    await loadOverview()
+    if (props.mode === 'literature') {
+      await loadLiterature()
+    }
   } finally {
     loading.value = false
   }
+}
+
+async function handleSearchLiterature() {
+  literatureQuery.value = literatureQuery.value.trim()
+  await loadLiterature(literatureQuery.value)
+}
+
+async function handleResetLiteratureQuery() {
+  literatureQuery.value = ''
+  await loadLiterature('')
 }
 
 async function handleSuggestLiterature() {
@@ -199,6 +299,7 @@ async function handleSuggestLiterature() {
     ElMessage.warning('请先输入论文标题')
     return
   }
+
   suggestingLiterature.value = true
   literatureSuggestionTip.value = ''
   try {
@@ -238,10 +339,26 @@ async function handleCreateLiterature() {
     Object.assign(literatureForm, { title: '', authors: '', venue: '', year: '', source_uri: '', abstract: '' })
     literatureSuggestionTip.value = ''
     ElMessage.success('文献已保存')
-    await loadOverview()
+    await refreshWorkspace()
   } finally {
     savingLiterature.value = false
   }
+}
+
+async function handleDeleteLiterature(paper: LiteraturePaperRead) {
+  try {
+    await ElMessageBox.confirm(`确认删除文献“${paper.title}”吗？`, '删除文献', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+
+  await deleteLiterature(paper.id)
+  ElMessage.success('已删除文献')
+  await refreshWorkspace()
 }
 
 async function handleRunTool() {
@@ -269,15 +386,100 @@ function splitList(value: string) {
   return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean)
 }
 
+function literatureMetaLine(paper: LiteraturePaperRead) {
+  const authors = paper.authors.length ? paper.authors.join('，') : '未填写作者'
+  const year = paper.year || '未填写年份'
+  const venue = paper.venue || '未填写来源'
+  return `${authors} · ${year} · ${venue}`
+}
+
 function buildLiteratureSuggestionFailureMessage() {
   const title = literatureForm.title.trim()
   if (!title) return '请先输入论文标题。'
   if (/doi/i.test(title)) return 'DOI 没有匹配到结果，可以改用英文题名再试。'
   if (/[\u4e00-\u9fa5]/.test(title)) return '中文题名没有抓到结果，建议补充英文题名或 DOI。'
-  return '没有抓到匹配结果，可能是题名不完整或外部来源暂时不可用。'
+  return '没有抓到匹配结果，可能是题名不完整或外部源暂时不可用。'
 }
 
+watch(
+  () => props.mode,
+  () => {
+    void refreshWorkspace()
+  }
+)
+
 onMounted(() => {
-  void loadOverview()
+  void refreshWorkspace()
 })
 </script>
+
+<style scoped>
+.literature-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.literature-panel-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.literature-panel-actions {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.literature-panel-actions :deep(.el-input) {
+  min-width: 280px;
+  flex: 1 1 280px;
+}
+
+.literature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.literature-item {
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.literature-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.literature-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.literature-item-head p {
+  margin: 4px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.literature-item > p {
+  margin: 8px 0 6px;
+  color: var(--el-text-color-primary);
+  line-height: 1.65;
+}
+
+.literature-empty {
+  padding: 16px 0;
+  color: var(--el-text-color-secondary);
+}
+</style>

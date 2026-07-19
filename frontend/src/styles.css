@@ -9398,6 +9398,18 @@ body::after {
   width: 100%;
 }
 
+.knowledge-documents-panel {
+  grid-column: 1 / -1;
+}
+
+.knowledge-document-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
 .knowledge-import-progress {
   display: grid;
   gap: 6px;
@@ -9824,6 +9836,10 @@ body::after {
 @media (max-width: 1100px) {
   .knowledge-upload-layout,
   .knowledge-content-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-document-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -12780,16 +12796,18 @@ small,
 
 .methods-toolbox-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .methods-toolbox-card {
   display: grid;
+  grid-template-rows: auto auto 1fr auto;
   gap: 12px;
+  min-height: 214px;
   padding: 18px;
   border: 1px solid var(--study-rule);
-  border-radius: 18px;
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(255, 255, 255, 0.98));
   color: var(--study-ink);
   text-align: left;
@@ -12805,6 +12823,7 @@ small,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .methods-toolbox-badge {
@@ -12837,6 +12856,7 @@ small,
   color: var(--study-green);
   font-size: 13px;
   font-weight: 700;
+  margin-top: auto;
 }
 
 .methods-guide-strip {
@@ -13335,6 +13355,10 @@ small,
   .methods-page .methods-tool-list,
   .methods-page .methods-course-grid,
   .methods-page .methods-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .methods-toolbox-grid {
     grid-template-columns: 1fr;
   }
 }

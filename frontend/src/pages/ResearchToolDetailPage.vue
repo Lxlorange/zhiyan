@@ -400,7 +400,10 @@ watch(
 
 async function askAgent() {
   const value = question.value.trim()
-  if (!value) return void ElMessage.warning('请输入内容')
+  if (!value) {
+    ElMessage.warning('请输入内容')
+    return
+  }
   running.value = true
   try {
     const { data } = await runResearchTool({

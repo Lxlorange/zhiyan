@@ -1888,9 +1888,10 @@ def _repair_classroom_package_json(
         "source 可以是课程知识库文档名、上传资料页码、官方文档或真实公开链接；不得编造 DOI、论文链接或不存在的网页。\n"
         "4. slides 必须 4 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
         "side_panel, takeaways, source_refs, example, misconception, interaction_prompt。\n"
-        "5. quiz 必须是选择题，至少 2 道；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
-        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；reflection_prompts 至少 3 条。\n"
-        "7. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
+        "5. quiz 必须是选择题，至少 2 道；如果原始内容缺少 quiz，请补出最小可用版本；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
+        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；如果原始内容缺少 practice，请补出最小可用版本。\n"
+        "7. reflection_prompts 至少 3 条；如果原始内容缺少 reflection_prompts，请根据学习项生成 3 条具体复盘问题。\n"
+        "8. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
         f"校验错误：{validation_error}\n"
         f"原始任务要求：{_truncate_for_prompt(original_prompt, 5000)}\n"
         f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 9000)}\n"
@@ -1994,21 +1995,32 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
     slides = slides[:6]
 
     quiz_raw = data.get("quiz") or data.get("quizzes") or data.get("questions") or data.get("exercises")
-    quiz = [_normalize_quiz(question, index, item) for index, question in enumerate(_as_list(quiz_raw), start=1)]
+    quiz = []
+    for index, question in enumerate(_as_list(quiz_raw), start=1):
+        try:
+            quiz.append(_normalize_quiz(question, index, item))
+        except LLMResponseError:
+            continue
     if len(quiz) < 2:
-        raise LLMResponseError("课堂包 JSON 缺少 quiz，至少需要 2 道题")
+        quiz.extend(_fallback_quiz_for_classroom(project, item, 2 - len(quiz)))
     quiz = quiz[:5]
 
     practice_source = data.get("practice") or data.get("interactive") or data.get("lab")
     if practice_source is None:
-        raise LLMResponseError("课堂包 JSON 缺少 practice")
-    practice = _normalize_practice(practice_source, item)
+        practice = _fallback_practice_for_classroom(project, item)
+    else:
+        try:
+            practice = _normalize_practice(practice_source, item)
+        except LLMResponseError:
+            practice = _fallback_practice_for_classroom(project, item)
     reflection_prompts = _as_str_list(data.get("reflection_prompts") or data.get("reflection") or data.get("pbl"))
+    if len(reflection_prompts) < 3:
+        reflection_prompts.extend(_fallback_reflection_prompts_for_classroom(project, item, 3 - len(reflection_prompts)))
     if len(reflection_prompts) < 3:
         raise LLMResponseError("课堂包 JSON 缺少 reflection_prompts，至少需要 3 条")
     safety_notes = _as_str_list(data.get("safety_notes") or data.get("notes"))
     if not safety_notes:
-        raise LLMResponseError("课堂包 JSON 缺少 safety_notes")
+        safety_notes = _fallback_safety_notes_for_classroom(project, item)
     return {
         "title": _require_text(data.get("title"), "classroom.title"),
         "learning_summary": _require_text(data.get("learning_summary") or data.get("summary"), "classroom.learning_summary"),
@@ -2382,6 +2394,94 @@ def _fallback_readings_for_classroom(data: dict[str, Any], project: LearningProj
         if len(candidates) >= needed:
             break
     return candidates
+
+
+def _fallback_quiz_for_classroom(project: LearningProject, item: LearningSyllabusItem, needed: int) -> list[dict[str, Any]]:
+    points = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    focus = points[0] if points else item.title
+    templates = [
+        {
+            "prompt": f"学习 {item.title} 时，最应该先确认哪一项？",
+            "options": [
+                {"label": "A", "text": f"核心概念：{focus}"},
+                {"label": "B", "text": "随机记忆所有材料原文"},
+                {"label": "C", "text": "跳过前置条件直接做综合项目"},
+            ],
+            "answer": "A",
+            "explanation": f"课堂包缺少完整测验时，系统用学习项知识点生成最小检测题；本题用于确认学生是否抓住 {focus}。",
+            "hint": "先找本节课最核心的知识点。",
+            "knowledge_point": focus,
+        },
+        {
+            "prompt": f"完成 {item.title} 后，哪种产出最能证明你已经理解？",
+            "options": [
+                {"label": "A", "text": "能用自己的话说明概念、步骤和一个例子"},
+                {"label": "B", "text": "只保存课件截图"},
+                {"label": "C", "text": "只记住课程标题"},
+            ],
+            "answer": "A",
+            "explanation": "理解需要可复述、可举例、可操作的证据，而不是只保留材料表面信息。",
+            "hint": "看哪一项能形成可检查的学习证据。",
+            "knowledge_point": focus,
+        },
+    ]
+    result: list[dict[str, Any]] = []
+    for index, template in enumerate(templates[: max(0, needed)], start=1):
+        result.append(
+            {
+                "id": f"Q{index}",
+                "prompt": template["prompt"],
+                "question_type": "single",
+                "options": template["options"],
+                "answer": template["answer"],
+                "explanation": template["explanation"],
+                "hint": template["hint"],
+                "difficulty": "easy",
+                "knowledge_point": template["knowledge_point"],
+            }
+        )
+    return result
+
+
+def _fallback_practice_for_classroom(project: LearningProject, item: LearningSyllabusItem) -> dict[str, Any]:
+    points = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    focus = points[0] if points else item.title
+    return {
+        "title": f"{item.title} 最小实践任务",
+        "steps": [
+            f"用 3-5 句话概括 {focus} 的定义、用途和适用边界。",
+            f"结合 {project.research_direction or project.title} 写出一个具体例子。",
+            "列出一个容易混淆的点，并说明如何检查自己没有误用。",
+        ],
+        "expected_artifact": "一段可提交的学习小结或课堂笔记。",
+        "acceptance_criteria": [
+            "包含核心概念、例子和边界条件。",
+            "能对应本节学习项的完成标准，而不是泛泛复述。",
+        ],
+    }
+
+
+def _fallback_reflection_prompts_for_classroom(project: LearningProject, item: LearningSyllabusItem, needed: int) -> list[str]:
+    focus = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    lead = focus[0] if focus else item.title
+    prompts = [
+        f"今天学到的 {lead} 用一句话怎么解释给同学听？",
+        f"这个知识点最容易和什么概念混淆，你会怎么区分？",
+        f"如果要继续学习 {project.research_direction or project.title}，下一步你最想补哪一块？",
+    ]
+    return prompts[: max(0, needed)]
+
+
+def _fallback_safety_notes_for_classroom(project: LearningProject, item: LearningSyllabusItem) -> list[str]:
+    focus = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    lead = focus[0] if focus else item.title
+    return [
+        f"先确认 {lead} 的前置条件，再做练习。",
+        "不要把课件里的示例直接当成全部结论。",
+        "遇到不确定的地方，先回看知识库来源再提交。",
+    ]
+
+
 def _truncate_for_prompt(value: str, max_length: int) -> str:
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", "", value)
     if len(text) <= max_length:
