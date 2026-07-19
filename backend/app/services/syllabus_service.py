@@ -25,6 +25,7 @@ from app.schemas import (
     DailyPlanCoachResponse,
     DailyPlanGenerateRequest,
     DailyPlanMoveItemRequest,
+    DailyPlanReorderItemRequest,
     DailyPlanShiftItemRequest,
     SyllabusAdaptRequest,
     SyllabusCompareResponse,
@@ -1382,6 +1383,42 @@ def shift_daily_plan_item(
             return get_daily_plan(db, user, plan.id)
         target = _date_floor(target + timedelta(days=step))
     raise ValueError("cannot find an available study date")
+
+
+def reorder_daily_plan_item(
+    db: Session,
+    user: User,
+    item_id: int,
+    request: DailyPlanReorderItemRequest,
+) -> DailyLearningPlan:
+    item = _daily_plan_item_or_404(db, user, item_id)
+    target_date = _date_floor(item.planned_date)
+    next_date = target_date + timedelta(days=1)
+    day_items = list(
+        db.scalars(
+            select(DailyLearningPlanItem)
+            .join(DailyLearningPlan, DailyLearningPlanItem.daily_plan_id == DailyLearningPlan.id)
+            .where(
+                DailyLearningPlanItem.user_id == user.id,
+                DailyLearningPlanItem.planned_date >= target_date,
+                DailyLearningPlanItem.planned_date < next_date,
+                DailyLearningPlanItem.status.notin_(["removed", "deleted"]),
+                DailyLearningPlan.status == "active",
+            )
+            .order_by(DailyLearningPlanItem.user_order, DailyLearningPlanItem.id)
+        )
+    )
+    current_index = next((index for index, candidate in enumerate(day_items) if candidate.id == item.id), None)
+    if current_index is None:
+        raise KeyError("daily plan item not found")
+    target_index = current_index - 1 if request.direction == "up" else current_index + 1
+    if target_index < 0 or target_index >= len(day_items):
+        return get_daily_plan(db, user, item.daily_plan_id)
+    day_items[current_index], day_items[target_index] = day_items[target_index], day_items[current_index]
+    for order, candidate in enumerate(day_items, start=1):
+        candidate.user_order = order
+    db.commit()
+    return get_daily_plan(db, user, item.daily_plan_id)
 
 
 def coach_daily_plan(

@@ -6761,13 +6761,31 @@ textarea {
   line-height: 1.65;
 }
 
+.visualization-frame-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dbe4ff;
+  border-radius: 16px;
+  background: #f7f6f1;
+}
+
 .om-visual-panel iframe {
   width: 100%;
   height: min(650px, calc(100vh - 238px));
   min-height: 520px;
-  border: 1px solid #dbe4ff;
-  border-radius: 16px;
-  background: #0f172a;
+  border: 0;
+  background: #f7f6f1;
+}
+
+.visualization-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(247, 246, 241, 0.86);
+  color: #315f50;
+  font-size: 14px;
+  font-weight: 850;
 }
 
 .om-empty-tool {
@@ -13875,4 +13893,112 @@ body::after {
   color: var(--study-coral, #c45f45);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.95em;
+}
+/* ===== Daily Plan TODO list card styles ===== */
+.todo-focus-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5em 1em;
+  border-bottom: 1px solid var(--border-muted, #e8e8e8);
+  background: var(--fill-soft, #fafafa);
+}
+.todo-focus-filter-bar .el-radio-group {
+  --el-radio-button-checked-bg-color: var(--study-blue, #4a6fa5);
+  --el-radio-button-checked-border-color: var(--study-blue, #4a6fa5);
+}
+.todo-focus-filter-hint {
+  font-size: 0.85em;
+  color: var(--text-dim, #888);
+}
+.todo-groups-stack {
+  padding: 0.75em 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+.todo-date-group {
+  display: flex;
+  flex-direction: column;
+}
+.todo-date-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding: 0.3em 1em;
+  border-bottom: 2px solid var(--study-blue, #4a6fa5);
+  margin: 0 0.5em 0.25em;
+}
+.todo-date-head > span {
+  font-weight: 650;
+  font-size: 0.95em;
+  color: var(--text-heading, #222);
+}
+.todo-date-badge {
+  font-size: 0.75em;
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  background: var(--fill-hover, #eef2f7);
+  color: var(--text-dim, #666);
+}
+.todo-item-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: 0.6em 1em;
+  margin: 0 0.5em 0.15em;
+  border-radius: 6px;
+  background: var(--fill-base, #fff);
+  border: 1px solid var(--border-light, #eee);
+  transition: box-shadow 0.15s;
+}
+.todo-item-card:hover {
+  border-color: var(--border-accent, #d0d7e5);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.todo-item-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  font-size: 0.8em;
+}
+.todo-item-time {
+  margin-left: auto;
+  font-size: 0.8em;
+  color: var(--text-dim, #888);
+  white-space: nowrap;
+}
+.todo-item-title {
+  font-weight: 600;
+  font-size: 0.95em;
+  color: var(--text-heading, #222);
+  line-height: 1.35;
+}
+.todo-item-focus {
+  font-size: 0.82em;
+  color: var(--text-body, #444);
+  line-height: 1.35;
+  opacity: 0.8;
+}
+.todo-item-card .todo-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-top: 0.15em;
+  flex-wrap: wrap;
+}
+.todo-item-card .todo-item-actions .el-date-editor.el-input {
+  width: 8em;
+}
+.todo-item-card .todo-item-actions .el-date-editor.el-input .el-input__wrapper {
+  padding: 0 0.5em;
+}
+.todo-issue-list small {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.72em;
+  color: var(--text-dim, #888);
+  margin-top: 0.1em;
 }

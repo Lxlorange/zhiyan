@@ -19,7 +19,7 @@
       <aside v-if="!isDeckFocusMode" class="unified-sidebar panel-like">
         <div class="classroom-mini-card">
           <span>学习进度</span>
-          <strong>{{ completedGateCount }}/4</strong>
+          <strong>{{ completedGateCount }}/3</strong>
           <el-progress :percentage="gateProgress" :stroke-width="10" />
         </div>
 
@@ -115,8 +115,8 @@
                     </div>
                     <div class="om-player-actions">
                       <el-button v-if="pptResource" @click="downloadPpt">下载 PPT</el-button>
-                      <el-button type="success" :disabled="!allSlidesViewed || classroom?.slides_completed" @click="handleCompleteSlides">
-                        {{ classroom?.slides_completed ? '课件已完成' : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
+                      <el-button type="success" :disabled="!allSlidesViewed && !classroom?.slides_completed" @click="handleCompleteSlides">
+                        {{ classroom?.slides_completed ? nextGateButtonLabel : `完成课件 ${slidesVisitedCount}/${slideList.length}` }}
                       </el-button>
                     </div>
                   </header>
@@ -227,7 +227,10 @@
                               {{ visualizationResource ? '重新生成' : '生成演示' }}
                             </el-button>
                           </header>
-                          <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
+                          <div v-if="visualizationUrl || loadingVisualizationView" class="visualization-frame-shell">
+                            <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
+                            <div v-if="loadingVisualizationView" class="visualization-loading">正在加载演示...</div>
+                          </div>
                           <div v-else class="om-empty-tool">
                             <p>根据当前页内容生成合适的动态演示，不固定为 3D。</p>
                             <el-input v-model="visualizationInstruction" type="textarea" :rows="5" :placeholder="currentVisualizationPlaceholder" />
@@ -308,7 +311,7 @@
                     <p>{{ result.explanation }}</p>
                   </article>
                 </div>
-                <div class="classroom-action-row is-sticky"><el-button type="primary" @click="activeGate = 'practice'">进入实操</el-button></div>
+                <div class="classroom-action-row is-sticky">              <el-button type="primary" @click="activeGate = 'reflection'">进入复盘</el-button></div>
               </div>
               <div v-else key="quiz-form" class="classroom-form-stack">
                 <el-alert v-if="!classroom?.slides_completed" title="请先翻完动态课件并完成课件学习" type="warning" :closable="false" />
@@ -348,28 +351,6 @@
             </Transition>
           </section>
 
-          <section v-else-if="activeGate === 'practice'" key="practice" class="classroom-pane">
-            <Transition name="panel-swap" mode="out-in">
-              <div v-if="classroom?.practice_passed" key="practice-done" class="gate-complete-panel">
-                <strong>实操已通过</strong>
-                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
-                <div class="classroom-action-row"><el-button type="primary" @click="activeGate = 'reflection'">进入复盘</el-button></div>
-              </div>
-              <div v-else key="practice-form" class="classroom-form-stack">
-                <h4>{{ practiceSpec?.title || '完成实操任务' }}</h4>
-                <div v-if="practiceSpec" class="classroom-point-list">
-                  <div v-for="step in practiceSteps" :key="step"><span>{{ step }}</span></div>
-                </div>
-                <el-input v-model="practiceForm.artifact_url" placeholder="产物链接或文件路径，可选" />
-                <el-input v-model="practiceForm.key_result" type="textarea" :rows="3" placeholder="关键结果，例如指标、截图描述、运行结果" />
-                <el-input v-model="practiceForm.report" type="textarea" :rows="7" placeholder="实操报告：说明你做了什么、如何验证、遇到什么问题、结果是否达标" />
-                <p v-if="latestPracticeFeedback" class="task-feedback">{{ latestPracticeFeedback }}</p>
-                <div class="classroom-action-row">
-                  <el-button type="primary" :disabled="!pptPackage" :loading="submittingPractice" @click="handleSubmitPractice">提交实操</el-button>
-                </div>
-              </div>
-            </Transition>
-          </section>
 
           <section v-else key="reflection" class="classroom-pane">
             <Transition name="panel-swap" mode="out-in">
@@ -444,7 +425,7 @@ import {
   type SyllabusVersionRead
 } from '../services/apiClient'
 
-type GateKey = 'ppt' | 'quiz' | 'practice' | 'reflection'
+type GateKey = 'ppt' | 'quiz' | 'reflection'
 type ToolKey = 'lecture' | 'visualization' | 'note' | 'mindmap'
 type AssistantTabKey = 'lecture' | 'interactive' | 'workspace'
 
@@ -477,7 +458,6 @@ const noteMarkdown = ref('')
 const chatMessage = ref('')
 const unresolvedQuestionsText = ref('')
 const quizAnswers = reactive<Record<string, string | string[]>>({})
-const practiceForm = reactive({ report: '', artifact_url: '', key_result: '' })
 const reflectionForm = reactive({ reflection: '', next_action: '' })
 const quickActions = ['讲简单点', '举例', '出一道题', '联系科研方向', '总结本页']
 const assistantTabs = [
@@ -588,23 +568,21 @@ const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
 const conceptCards = computed<any[]>(() => pptPackage.value?.concept_cards || [])
 const voiceScript = computed<Record<string, any>>(() => pptPackage.value?.voice_script || {})
-const practiceSpec = computed(() => pptPackage.value?.practice || null)
-const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
 const reflectionPrompts = computed<string[]>(() => pptPackage.value?.reflection_prompts || [])
 const gates = computed(() => [
   { key: 'ppt' as GateKey, title: '课件学习', kind: '集成课堂', done: Boolean(classroom.value?.slides_completed) },
   { key: 'quiz' as GateKey, title: '回答例题', kind: '测验', done: Boolean(classroom.value?.quiz_passed) },
-  { key: 'practice' as GateKey, title: '完成实操', kind: '实践', done: Boolean(classroom.value?.practice_passed) },
   { key: 'reflection' as GateKey, title: '提交复盘', kind: '复盘', done: Boolean(classroom.value?.reflection_passed) }
 ])
 const activeGateMeta = computed(() => gates.value.find((gate) => gate.key === activeGate.value) || gates.value[0])
 const completedGateCount = computed(() => gates.value.filter((gate) => gate.done).length)
-const gateProgress = computed(() => Math.round((completedGateCount.value / 4) * 100))
+const gateProgress = computed(() => Math.round((completedGateCount.value / 3) * 100))
+const nextGateButtonLabel = computed(() => classroom.value?.quiz_passed ? '进入复盘' : '进入例题')
 const slideReadPercent = computed(() => {
   if (!slideList.value.length) return 0
   return Math.round((slidesVisitedCount.value / slideList.value.length) * 100)
 })
-const isDeckFocusMode = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value))
+const isDeckFocusMode = computed(() => activeGate.value === 'ppt' && Boolean(pptPackage.value) && !classroom.value?.slides_completed)
 const voiceText = computed(() => {
   if (!voiceScript.value && !currentSlide.value) return ''
   const title = currentSlide.value?.title ? `现在讲解：${currentSlide.value.title}。` : ''
@@ -653,7 +631,6 @@ const latestQuizResults = computed<Array<Record<string, any>>>(() => {
 })
 const quizResultMap = computed<Record<string, Record<string, any>>>(() => Object.fromEntries(latestQuizResults.value.map((result) => [String(result.question_id), result])))
 const quizMistakes = computed(() => latestQuizResults.value.filter((result) => !result.correct))
-const latestPracticeFeedback = computed(() => latestSubmissionByType('practice')?.feedback || '')
 const latestReflectionFeedback = computed(() => latestSubmissionByType('reflection')?.feedback || '')
 const latestReflectionRubric = computed(() => {
   const scores = latestSubmissionByType('reflection')?.content?.rubric_scores
@@ -934,7 +911,7 @@ async function handleSubmitQuiz() {
     const answers = Object.fromEntries(Object.entries(quizAnswers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]))
     const { data } = await submitClassroomQuiz(classroom.value.id, answers)
     classroom.value = data
-    if (data.quiz_passed) activeGate.value = 'practice'
+    if (data.quiz_passed) activeGate.value = 'reflection'
     ElMessage.success(data.quiz_passed ? '例题已通过' : '例题未通过，请修改后再提交')
   } finally {
     submittingQuiz.value = false
@@ -958,6 +935,10 @@ function goToSlide(index: number) {
 
 async function handleCompleteSlides() {
   if (!classroom.value || !slideList.value.length) return
+  if (classroom.value.slides_completed) {
+    activeGate.value = classroom.value.quiz_passed ? 'reflection' : 'quiz'
+    return
+  }
   const { data } = await completeClassroomSlides(classroom.value.id, {
     current_index: activeSlideIndex.value,
     total_slides: slideList.value.length,
@@ -972,10 +953,7 @@ async function handleSubmitPractice() {
   if (!classroom.value) return
   submittingPractice.value = true
   try {
-    const { data } = await submitClassroomPractice(classroom.value.id, { ...practiceForm })
-    classroom.value = data
-    if (data.practice_passed) activeGate.value = 'reflection'
-    ElMessage.success(data.practice_passed ? '实操已通过' : '实操未通过，请根据反馈补充')
+    // noop
   } finally {
     submittingPractice.value = false
   }
@@ -1100,7 +1078,7 @@ function hydrateMindmap() {
   const groups = [
     { id: 'points', label: '知识点', items: currentItem.value?.knowledge_points || [] },
     { id: 'concepts', label: '概念', items: conceptCards.value.map((card) => String(card.name || '')).filter(Boolean) },
-    { id: 'practice', label: '实践', items: practiceSpec.value?.title ? [practiceSpec.value.title] : [] },
+
     { id: 'reflection', label: '复盘', items: reflectionPrompts.value.slice(0, 3) }
   ]
   const anchors = [

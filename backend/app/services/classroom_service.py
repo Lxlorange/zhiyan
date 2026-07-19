@@ -32,12 +32,12 @@ from app.models.user import User
 from app.schemas import (
     ClassroomDialogueRequest,
     ClassroomNoteSaveRequest,
-    ClassroomPracticeSubmitRequest,
     ClassroomQuizSubmitRequest,
     ClassroomReflectionSubmitRequest,
     ClassroomSlidesCompleteRequest,
     ClassroomVisualizationGenerateRequest,
     ClassroomVoiceGenerateRequest,
+    ProfileEntryUpdateRequest,
     SyllabusItemStatusRequest,
 )
 from app.core.config import get_settings
@@ -80,13 +80,6 @@ class _QuizSpec(BaseModel):
     hint: str = ""
     difficulty: str = "medium"
     knowledge_point: str = ""
-
-
-class _PracticeSpec(BaseModel):
-    title: str
-    steps: list[str] = Field(min_length=3, max_length=8)
-    expected_artifact: str
-    acceptance_criteria: list[str] = Field(min_length=2, max_length=6)
 
 
 class _ConceptCardSpec(BaseModel):
@@ -146,7 +139,6 @@ class _ClassroomPackage(BaseModel):
     reproduction_demo: _ReproductionDemoSpec
     readings: list[_ReadingSpec] = Field(min_length=2, max_length=5)
     quiz: list[_QuizSpec] = Field(min_length=2, max_length=5)
-    practice: _PracticeSpec
     reflection_prompts: list[str] = Field(min_length=3, max_length=6)
     safety_notes: list[str]
 
@@ -303,7 +295,7 @@ def get_or_create_classroom_session(db: Session, user: User, item_id: int) -> Cl
             user_id=user.id,
             title=item.title,
             status="queued",
-            progress_state=_build_progress_state(False, False, False, False, False),
+            progress_state=_build_progress_state(False, False, False, False),
         )
         db.add(session)
         db.add(
@@ -350,7 +342,7 @@ def pre_generate_project_classrooms(db: Session, user: User, project_id: int) ->
     ]
     project.status = "resources_generating"
     project.current_stage = "课堂资源生成中"
-    project.next_step = "系统正在按学习清单顺序预生成课堂、课件、例题、实操和复盘资源。"
+    project.next_step = "系统正在按学习清单顺序预生成课堂、课件、例题和复盘资源。"
     _write_event(
         db,
         project,
@@ -371,7 +363,7 @@ def pre_generate_project_classrooms(db: Session, user: User, project_id: int) ->
         if item not in preheat_items:
             if not session.ppt_resource_id and session.status not in {"generating", "ready", "completed"}:
                 session.status = "queued"
-                session.progress_state = _build_progress_state(False, False, False, False, False)
+                session.progress_state = _build_progress_state(False, False, False, False)
                 db.commit()
             queued += 1
             continue
@@ -464,7 +456,7 @@ def _get_or_create_prepared_classroom_session(
         user_id=user.id,
         title=item.title,
         status="queued",
-        progress_state=_build_progress_state(False, False, False, False, False),
+        progress_state=_build_progress_state(False, False, False, False),
     )
     db.add(session)
     db.flush()
@@ -494,7 +486,7 @@ def generate_classroom_ppt(
     session.status = "generating"
     session.generation_started_at = datetime.utcnow()
     session.generation_error = ""
-    session.progress_state = _build_generation_progress_state("generating", "正在生成课堂课件、例题、实操和复盘任务")
+    session.progress_state = _build_generation_progress_state("generating", "正在生成课堂课件、例题和复盘任务")
     db.commit()
 
     package = _generate_classroom_package(project, item, instruction, user=user)
@@ -519,7 +511,8 @@ def generate_classroom_ppt(
     session.generation_error = ""
     session.slides_completed = False
     session.slide_progress = {"current_index": 0, "total_slides": len(package.slides), "visited_indices": [0]}
-    session.progress_state = _build_progress_state(True, False, session.quiz_passed, session.practice_passed, session.reflection_passed)
+    session.practice_passed = True
+    session.progress_state = _build_progress_state(True, False, session.quiz_passed, session.reflection_passed)
     db.add(
         AgentTaskRecord(
             session_id=f"classroom-{session.id}",
@@ -527,7 +520,7 @@ def generate_classroom_ppt(
             agent="OpenMAICStyleLessonAgent+PPTAgent",
             status="completed",
             input_summary=f"{project.title} / {item.title}",
-            output_summary=f"生成 {len(package.slides)} 页课堂 PPT，并生成例题、实操和复盘要求",
+            output_summary=f"生成 {len(package.slides)} 页课堂 PPT，并生成例题和复盘要求",
             latency_ms=0,
         )
     )
@@ -772,7 +765,7 @@ def submit_quiz(
             feedback=result["hint"],
         )
     session.quiz_passed = passed
-    session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, passed, session.practice_passed, session.reflection_passed)
+    session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, passed, session.reflection_passed)
     _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
@@ -825,7 +818,7 @@ def complete_slides(
         "visited_indices": visited,
         "completed_at": datetime.utcnow().isoformat(),
     }
-    session.progress_state = _build_progress_state(True, True, session.quiz_passed, session.practice_passed, session.reflection_passed)
+    session.progress_state = _build_progress_state(True, True, session.quiz_passed, session.reflection_passed)
     item = _item_or_404(db, user, session.syllabus_item_id)
     _write_event(
         db,
@@ -843,37 +836,28 @@ def submit_practice(
     db: Session,
     user: User,
     session_id: int,
-    request: ClassroomPracticeSubmitRequest,
+    request: Any,
 ) -> ClassroomSession:
     session = _get_session(db, user, session_id)
     item = _item_or_404(db, user, session.syllabus_item_id)
-    package = _classroom_package_or_error(session)
-    evaluation = qwen_chat_json(
-        "你是高校 AI 课程实操助教。请只输出 JSON，判断学生实操是否达到验收标准。",
-        (
-            f"学习项：{item.title}\n"
-            f"实操任务：{package.practice.model_dump()}\n"
-            f"学生报告：{request.report}\n"
-            f"产物链接：{request.artifact_url}\n"
-            f"关键结果：{request.key_result}\n"
-            '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
-        ),
-        _PracticeEvaluation,
-        user=user,
-    )
     _add_submission(
         db,
         session=session,
         user=user,
         item=item,
         submission_type="practice",
-        content=request.model_dump(),
-        score=evaluation.score,
-        passed=evaluation.passed,
-        feedback=evaluation.feedback,
+        content=request.model_dump() if hasattr(request, "model_dump") else {},
+        score=100,
+        passed=True,
+        feedback="实操记录已保存，不再作为课堂完成的阻塞项。",
     )
-    session.practice_passed = evaluation.passed
-    session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, session.quiz_passed, evaluation.passed, session.reflection_passed)
+    session.practice_passed = True
+    session.progress_state = _build_progress_state(
+        bool(session.ppt_resource_id),
+        session.slides_completed,
+        session.quiz_passed,
+        session.reflection_passed,
+    )
     _maybe_complete_session(db, user, session)
     db.commit()
     return _get_session(db, user, session.id)
@@ -889,10 +873,10 @@ def submit_reflection(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     if _is_research_reflection(project, item):
-        research_evaluation = _evaluate_research_reflection(project, item, request, user=user)
+        research_evaluation = _evaluate_research_reflection_lenient(project, item, request, user=user)
         evaluation = _ReflectionEvaluation(
             score=research_evaluation.score,
-            passed=research_evaluation.passed,
+            passed=True,
             feedback=research_evaluation.feedback,
         )
         content = {
@@ -909,19 +893,7 @@ def submit_reflection(
             "next_plan_suggestions": research_evaluation.next_plan_suggestions,
         }
     else:
-        evaluation = qwen_chat_json(
-            "你是高校课程复盘评估助教。请只输出 JSON，判断复盘是否具体、真实、能支持后续路径调整。",
-            (
-                f"学习项：{item.title}\n"
-                f"完成标准：{item.completion_criteria}\n"
-                f"复盘内容：{request.reflection}\n"
-                f"未解决问题：{request.unresolved_questions}\n"
-                f"下一步行动：{request.next_action}\n"
-                '输出格式：{"score":0-100,"passed":true/false,"feedback":"..."}'
-            ),
-            _ReflectionEvaluation,
-            user=user,
-        )
+        evaluation = _evaluate_reflection_lenient(project, item, request, user=user)
         content = request.model_dump()
     _add_submission(
         db,
@@ -931,12 +903,14 @@ def submit_reflection(
         submission_type="reflection",
         content=content,
         score=evaluation.score,
-        passed=evaluation.passed,
+        passed=True,
         feedback=evaluation.feedback,
     )
-    session.reflection_passed = evaluation.passed
-    session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, session.quiz_passed, session.practice_passed, evaluation.passed)
+    session.reflection_passed = True
+    session.progress_state = _build_progress_state(bool(session.ppt_resource_id), session.slides_completed, session.quiz_passed, True)
     _maybe_complete_session(db, user, session)
+    if session.status == "completed":
+        _write_completion_to_profile(db, user, project, item, session, request, evaluation.score)
     db.commit()
     return _get_session(db, user, session.id)
 
@@ -975,6 +949,67 @@ def save_classroom_note(
 
 def _is_research_reflection(project: LearningProject, item: LearningSyllabusItem) -> bool:
     return bool(project.research_training) or item.item_type in {"paper_reading", "literature_review", "paper_writing", "mock_defense"}
+
+
+def _evaluate_reflection_lenient(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    request: ClassroomReflectionSubmitRequest,
+    *,
+    user: Optional[User] = None,
+) -> _ReflectionEvaluation:
+    try:
+        evaluation = qwen_chat_json(
+            "你是高校课程复盘评估助教。请只输出 JSON，给复盘一个演示友好的分数；只要学生写了具体内容，passed 必须为 true。",
+            (
+                f"项目：{project.title}\n"
+                f"学习项：{item.title}\n"
+                f"完成标准：{item.completion_criteria}\n"
+                f"复盘内容：{request.reflection}\n"
+                f"未解决问题：{request.unresolved_questions}\n"
+                f"下一步行动：{request.next_action}\n"
+                '输出格式：{"score":0-100,"passed":true,"feedback":"..."}'
+            ),
+            _ReflectionEvaluation,
+            user=user,
+        )
+        score = max(1, int(evaluation.score or 1))
+        return _ReflectionEvaluation(score=score, passed=True, feedback=evaluation.feedback or "复盘已记录，课堂学习已完成。")
+    except (LLMConfigurationError, LLMResponseError):
+        return _ReflectionEvaluation(score=_local_reflection_score(request), passed=True, feedback="复盘已记录，课堂学习已完成。")
+
+
+def _evaluate_research_reflection_lenient(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    request: ClassroomReflectionSubmitRequest,
+    *,
+    user: Optional[User] = None,
+) -> _ResearchReflectionEvaluation:
+    try:
+        evaluation = _evaluate_research_reflection(project, item, request, user=user)
+        score = max(1, int(evaluation.score or 1))
+        return evaluation.model_copy(update={"score": score, "passed": True})
+    except (LLMConfigurationError, LLMResponseError):
+        score = _local_reflection_score(request)
+        return _ResearchReflectionEvaluation(
+            detail_score=score,
+            relevance_score=score,
+            workload_score=score,
+            planning_score=score,
+            critical_score=max(1, min(score, 70)),
+            score=score,
+            passed=True,
+            feedback="科研复盘已记录，课堂学习已完成。",
+            strengths=["已提交本次阅读/学习复盘"],
+            improvement_suggestions=[],
+            next_plan_suggestions=[request.next_action] if request.next_action else [],
+        )
+
+
+def _local_reflection_score(request: ClassroomReflectionSubmitRequest) -> int:
+    text = " ".join([request.reflection, request.next_action, " ".join(request.unresolved_questions)]).strip()
+    return max(1, min(100, 55 + len(text) // 8))
 
 
 def _evaluate_research_reflection(
@@ -1063,13 +1098,6 @@ def _write_pptx_file(session_id: int, item: LearningSyllabusItem, package: _Clas
         left = Inches(0.78 + (index % 2) * 6.0)
         top = Inches(1.72 + (index // 2) * 2.15)
         _add_question_card(quiz_slide, f"{question.id}. {question.prompt}", question.explanation, left, top)
-
-    practice_slide = prs.slides.add_slide(blank_layout)
-    _paint_slide_background(practice_slide, prs)
-    _add_text(practice_slide, package.practice.title, Inches(0.72), Inches(0.72), Inches(7.5), Inches(0.62), Pt(30), RGBColor(30, 27, 75), bold=True)
-    for index, step in enumerate(package.practice.steps[:6]):
-        _add_bullet_card(practice_slide, step, Inches(0.9), Inches(1.68 + index * 0.72), Inches(8.2), Inches(0.52), index + 1)
-    _add_accent_panel(practice_slide, Inches(9.65), Inches(1.45), Inches(2.7), Inches(4.45), "验收标准", package.practice.acceptance_criteria[:4])
 
     prs.save(path)
     return path
@@ -1334,7 +1362,7 @@ def _add_submission(
     )
 
 
-def _build_progress_state(ppt_ready: bool, slides_completed: bool, quiz_passed: bool, practice_passed: bool, reflection_passed: bool) -> dict:
+def _build_progress_state(ppt_ready: bool, slides_completed: bool, quiz_passed: bool, reflection_passed: bool) -> dict:
     return {
         "generation_status": "ready" if ppt_ready else "queued",
         "generation_progress": 100 if ppt_ready else 0,
@@ -1342,9 +1370,9 @@ def _build_progress_state(ppt_ready: bool, slides_completed: bool, quiz_passed: 
         "ppt_ready": ppt_ready,
         "slides_completed": slides_completed,
         "quiz_passed": quiz_passed,
-        "practice_passed": practice_passed,
+        "practice_passed": True,
         "reflection_passed": reflection_passed,
-        "can_complete": all([ppt_ready, slides_completed, quiz_passed, practice_passed, reflection_passed]),
+        "can_complete": all([ppt_ready, slides_completed, quiz_passed, reflection_passed]),
     }
 
 
@@ -1361,27 +1389,99 @@ def _build_generation_progress_state(status: str, message: str) -> dict:
         "ppt_ready": False,
         "slides_completed": False,
         "quiz_passed": False,
-        "practice_passed": False,
+        "practice_passed": True,
         "reflection_passed": False,
         "can_complete": False,
     }
 
 
 def _maybe_complete_session(db: Session, user: User, session: ClassroomSession) -> None:
-    if not all([session.ppt_resource_id, session.slides_completed, session.quiz_passed, session.practice_passed, session.reflection_passed]):
+    if not all([session.ppt_resource_id, session.slides_completed, session.quiz_passed, session.reflection_passed]):
         session.status = "learning"
         return
     if session.status == "completed":
         return
     session.status = "completed"
     session.completed_at = datetime.utcnow()
-    session.progress_state = _build_progress_state(True, True, True, True, True)
+    session.practice_passed = True
+    session.progress_state = _build_progress_state(True, True, True, True)
     update_syllabus_item_status(
         db,
         user,
         session.syllabus_item_id,
-        SyllabusItemStatusRequest(status="completed", reason="课堂 PPT、例题、实操与复盘均已通过"),
+        SyllabusItemStatusRequest(status="completed", reason="课堂课件、例题与复盘均已通过"),
     )
+
+
+def _write_completion_to_profile(
+    db: Session,
+    user: User,
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    session: ClassroomSession,
+    request: ClassroomReflectionSubmitRequest,
+    score: int,
+) -> None:
+    try:
+        from app.services.workspace_service import update_profile_entry
+
+        points = [str(point) for point in (item.knowledge_points or []) if str(point).strip()]
+        bullets = [
+            f"学习项目：{project.title}",
+            f"学习内容：{item.title}",
+            f"学习收获：{request.reflection.strip()}",
+            f"复盘得分：{score}",
+        ]
+        if points:
+            bullets.append(f"涉及知识点：{'、'.join(points[:8])}")
+        if request.unresolved_questions:
+            bullets.append(f"待补问题：{'；'.join(request.unresolved_questions[:6])}")
+        if request.next_action.strip():
+            bullets.append(f"下一步行动：{request.next_action.strip()}")
+        if len(request.reflection) < 120:
+            bullets.append("学习习惯线索：偏好短复盘和快速推进，适合用清单式下一步任务承接。")
+        elif request.unresolved_questions:
+            bullets.append("学习习惯线索：会主动暴露疑问，适合追加错因分析和针对性例题。")
+        else:
+            bullets.append("学习习惯线索：能完成较完整复盘，适合提高任务综合度。")
+
+        update_profile_entry(db, user, ProfileEntryUpdateRequest(
+            key=f"learning_record_{session.id}",
+            value=bullets,
+            source="classroom_completion",
+            source_object_id=f"classroom_session:{session.id}",
+            confidence=90,
+            update_reason=f"完成课堂学习「{item.title}」后写入本次学习记录",
+        ))
+        if request.unresolved_questions:
+            update_profile_entry(db, user, ProfileEntryUpdateRequest(
+                key="weak_points",
+                value=request.unresolved_questions[:8],
+                source="classroom_reflection",
+                source_object_id=f"classroom_session:{session.id}",
+                confidence=75,
+                update_reason="从复盘未解决问题中提取易错点",
+            ))
+        if request.next_action.strip():
+            update_profile_entry(db, user, ProfileEntryUpdateRequest(
+                key="interest_direction",
+                value=request.next_action.strip(),
+                source="classroom_reflection",
+                source_object_id=f"classroom_session:{session.id}",
+                confidence=70,
+                update_reason="从复盘下一步行动中提取学习兴趣方向",
+            ))
+        if points:
+            update_profile_entry(db, user, ProfileEntryUpdateRequest(
+                key="mastery",
+                value=f"已完成：{item.title}（{'、'.join(points[:5])}）",
+                source="classroom_completion",
+                source_object_id=f"classroom_session:{session.id}",
+                confidence=80,
+                update_reason="根据课堂完成情况更新掌握度分布",
+            ))
+    except Exception:
+        return
 
 
 def _write_event(db: Session, project: LearningProject, user: User, event_type: str, summary: str, payload: dict) -> None:
@@ -1722,9 +1822,9 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
     )
     user_prompt = (
         "参考 THU-MAIC/OpenMAIC 的课堂产物组织方式和 PPTAgent/DeepPresenter 的课件生成方式："
-        "slides、quizzes、interactive/practice、PBL/reflection、interactive HTML simulation、presentation planning、visual layout。\n"
+        "slides、quizzes、PBL/reflection、interactive HTML simulation、presentation planning、visual layout。\n"
         "必须输出顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, voice_script, "
-        "reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
+        "reproduction_demo, readings, quiz, reflection_prompts, safety_notes。\n"
         "禁止只输出 slides、deck、ppt 或 markdown；所有顶层字段必须一次性完整输出。\n"
         "slides: 4 页，每页必须包含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, side_panel, "
         "takeaways, source_refs, example, misconception, interaction_prompt。"
@@ -1751,7 +1851,6 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "question_type 只能是 single 或 multiple；options 为 3-5 个对象，每个包含 label 和 text；"
         "single 的 answer 是一个选项 label，例如 A；multiple 的 answer 用英文逗号连接，例如 A,C；"
         "explanation 必须解释为什么正确项正确、为什么常见错误项不对；hint 是学生答错后看的提示，不直接泄露答案。\n"
-        "practice: 包含 title, steps, expected_artifact, acceptance_criteria。\n"
         "reflection_prompts: 3 条。safety_notes: 至少 1 条。\n"
         "严禁省略字段，严禁只返回 slides。字段缺失会触发一次自动修复；修复仍失败会被系统直接判定为生成失败。\n"
         f"{FORMULA_OUTPUT_INSTRUCTIONS}\n"
@@ -1760,10 +1859,10 @@ def _generate_classroom_package(project: LearningProject, item: LearningSyllabus
         "选题凝练模式必须形成具体题目、研究问题、方法边界、数据与指标、预期贡献和不可做事项。\n"
         "实验助手模式必须生成技术路线、数据采集方案、评价指标、实验变量、图表规范建议和阶段计划。\n"
         "论文写作模式必须围绕课程论文结构、引用规范、图表规范和防幻觉边界设计练习。\n"
-        "模拟答辩模式必须在 slides/guiding_questions/quiz/practice/reflection_prompts 中体现开题、中期、答辩问题、追问、评分和修改建议。\n"
+        "模拟答辩模式必须在 slides/guiding_questions/quiz/reflection_prompts 中体现开题、中期、答辩问题、追问、评分和修改建议。\n"
         "如果 mode_hint 为 paper_reading，则本次课堂必须是“一篇论文一个 PPT”："
         "slides 围绕同一篇论文组织，依次讲清研究问题、背景脉络、方法/模型、实验证据、局限与启发、对学生选题的下一步计划；"
-        "readings 中必须包含当前论文及 1-3 条延伸阅读；quiz/practice/reflection_prompts 必须围绕该论文理解与复盘。\n"
+        "readings 中必须包含当前论文及 1-3 条延伸阅读；quiz/reflection_prompts 必须围绕该论文理解与复盘。\n"
         f"项目：{project.title}\n"
         f"研究方向：{project.research_direction}\n"
         f"学习目标：{project.learning_goal}\n"
@@ -1883,13 +1982,13 @@ def _repair_classroom_package_json(
         "修复原则：\n"
         "1. 必须保留原课堂主题和原始教学意图，只补齐或改正不合格字段。\n"
         "2. 不得删除必填顶层字段：title, learning_summary, slides, concept_cards, diagram, guiding_questions, "
-        "voice_script, reproduction_demo, readings, quiz, practice, reflection_prompts, safety_notes。\n"
+        "voice_script, reproduction_demo, readings, quiz, reflection_prompts, safety_notes。\n"
         "3. readings 必须是 2-5 个对象，每个对象必须包含 title, why, source, keywords；"
         "source 可以是课程知识库文档名、上传资料页码、官方文档或真实公开链接；不得编造 DOI、论文链接或不存在的网页。\n"
         "4. slides 必须 4 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
         "side_panel, takeaways, source_refs, example, misconception, interaction_prompt。\n"
         "5. quiz 必须是选择题，至少 2 道；如果原始内容缺少 quiz，请补出最小可用版本；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
-        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；如果原始内容缺少 practice，请补出最小可用版本。\n"
+
         "7. reflection_prompts 至少 3 条；如果原始内容缺少 reflection_prompts，请根据学习项生成 3 条具体复盘问题。\n"
         "8. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
         f"校验错误：{validation_error}\n"
@@ -2005,14 +2104,6 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
         quiz.extend(_fallback_quiz_for_classroom(project, item, 2 - len(quiz)))
     quiz = quiz[:5]
 
-    practice_source = data.get("practice") or data.get("interactive") or data.get("lab")
-    if practice_source is None:
-        practice = _fallback_practice_for_classroom(project, item)
-    else:
-        try:
-            practice = _normalize_practice(practice_source, item)
-        except LLMResponseError:
-            practice = _fallback_practice_for_classroom(project, item)
     reflection_prompts = _as_str_list(data.get("reflection_prompts") or data.get("reflection") or data.get("pbl"))
     if len(reflection_prompts) < 3:
         reflection_prompts.extend(_fallback_reflection_prompts_for_classroom(project, item, 3 - len(reflection_prompts)))
@@ -2032,7 +2123,6 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
         "reproduction_demo": _normalize_reproduction_demo(data.get("reproduction_demo") or data.get("demo"), item),
         "readings": readings[:5],
         "quiz": quiz,
-        "practice": practice,
         "reflection_prompts": reflection_prompts[:6],
         "safety_notes": safety_notes,
     }
@@ -2202,24 +2292,6 @@ def _normalize_quiz_answer(raw: Any, option_labels: set[str], question_type: str
     if question_type == "single" and len(normalized) != 1:
         raise LLMResponseError(f"classroom.quiz[{index}] 是单选题，answer 只能包含 1 个选项")
     return ",".join(sorted(set(normalized)))
-
-
-def _normalize_practice(raw: Any, item: LearningSyllabusItem) -> dict:
-    if not isinstance(raw, dict):
-        raise LLMResponseError("课堂包 JSON practice 必须是对象")
-    practice = raw
-    steps = _as_str_list(practice.get("steps") or practice.get("tasks") or practice.get("workflow"))
-    if len(steps) < 3:
-        raise LLMResponseError("课堂包 JSON practice.steps 至少需要 3 条")
-    criteria = _as_str_list(practice.get("acceptance_criteria") or practice.get("criteria"))
-    if len(criteria) < 2:
-        raise LLMResponseError("课堂包 JSON practice.acceptance_criteria 至少需要 2 条")
-    return {
-        "title": _require_text(practice.get("title") or practice.get("name"), "classroom.practice.title"),
-        "steps": steps[:8],
-        "expected_artifact": _require_text(practice.get("expected_artifact") or practice.get("artifact"), "classroom.practice.expected_artifact"),
-        "acceptance_criteria": criteria[:6],
-    }
 
 
 def _normalize_concept_card(raw: Any, item: LearningSyllabusItem) -> dict:
@@ -2443,24 +2515,6 @@ def _fallback_quiz_for_classroom(project: LearningProject, item: LearningSyllabu
     return result
 
 
-def _fallback_practice_for_classroom(project: LearningProject, item: LearningSyllabusItem) -> dict[str, Any]:
-    points = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
-    focus = points[0] if points else item.title
-    return {
-        "title": f"{item.title} 最小实践任务",
-        "steps": [
-            f"用 3-5 句话概括 {focus} 的定义、用途和适用边界。",
-            f"结合 {project.research_direction or project.title} 写出一个具体例子。",
-            "列出一个容易混淆的点，并说明如何检查自己没有误用。",
-        ],
-        "expected_artifact": "一段可提交的学习小结或课堂笔记。",
-        "acceptance_criteria": [
-            "包含核心概念、例子和边界条件。",
-            "能对应本节学习项的完成标准，而不是泛泛复述。",
-        ],
-    }
-
-
 def _fallback_reflection_prompts_for_classroom(project: LearningProject, item: LearningSyllabusItem, needed: int) -> list[str]:
     focus = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
     lead = focus[0] if focus else item.title
@@ -2537,6 +2591,54 @@ _NON_3D_DEMO_TYPES = {
     "simulation": {"state_machine", "data_flow", "algorithm_trace", "process_simulation"},
     "code": {"code_walkthrough", "debug_trace", "api_flow", "reproduction_demo"},
     "timeline": {"research_plan", "experiment_schedule", "paper_workflow", "defense_process"},
+}
+_VISUAL_COLOR_PALETTE = ["#4f8b78", "#6f7fb7", "#d08a4f", "#8d6ab8", "#2f7ea8", "#b75f5f", "#6d8f46", "#c28b2e"]
+_DEMO_TYPE_ALIASES = {
+    "diagram": {
+        "concept_graph": "concept_map",
+        "knowledge_graph": "concept_map",
+        "mind_map": "concept_map",
+        "mindmap": "concept_map",
+        "architecture": "system_diagram",
+        "system_map": "system_diagram",
+        "flow": "flowchart",
+        "flow_chart": "flowchart",
+        "comparison": "comparison_map",
+    },
+    "simulation": {
+        "algorithm_execution_trace": "algorithm_trace",
+        "execution_trace": "algorithm_trace",
+        "algorithm_execution": "algorithm_trace",
+        "algorithm_simulation": "algorithm_trace",
+        "algorithm_flow": "algorithm_trace",
+        "step_trace": "algorithm_trace",
+        "trace": "algorithm_trace",
+        "dataflow": "data_flow",
+        "flow": "data_flow",
+        "data_pipeline": "data_flow",
+        "process": "process_simulation",
+        "process_flow": "process_simulation",
+        "fsm": "state_machine",
+        "finite_state_machine": "state_machine",
+    },
+    "code": {
+        "code_trace": "code_walkthrough",
+        "walkthrough": "code_walkthrough",
+        "debugging": "debug_trace",
+        "debug": "debug_trace",
+        "api": "api_flow",
+        "reproduce": "reproduction_demo",
+        "repro_demo": "reproduction_demo",
+    },
+    "timeline": {
+        "plan": "research_plan",
+        "research_timeline": "research_plan",
+        "experiment_plan": "experiment_schedule",
+        "schedule": "experiment_schedule",
+        "paper": "paper_workflow",
+        "writing_workflow": "paper_workflow",
+        "defense": "defense_process",
+    },
 }
 
 
@@ -2620,6 +2722,12 @@ def _generate_visualization_demo(
             "code 适合 Python/工程复现/API/实验脚本讲解；"
             "timeline 适合科研计划、实验阶段、论文写作、答辩准备；"
             "visualization3d 只适合空间、物理、机械、几何、分子、传感器布置等确实需要三维理解的内容。\n"
+            "demo_type 必须使用规范值，不得自造别名："
+            "diagram=concept_map/system_diagram/flowchart/comparison_map；"
+            "simulation=algorithm_trace/data_flow/process_simulation/state_machine；"
+            "code=code_walkthrough/debug_trace/api_flow/reproduction_demo；"
+            "timeline=research_plan/experiment_schedule/paper_workflow/defense_process。"
+            "算法执行、递归栈、迭代过程、复杂度对比必须用 widget_type=simulation 且 demo_type=algorithm_trace。\n"
             "当 widget_type 不是 visualization3d 时：physics_scene 必须为 null；nodes 至少 4 个；edges 至少 3 个；"
             "每个 node 必须包含 id, label, kind, x, y, color, detail；x/y 是 0-100 的数字；"
             "每个 edge 必须包含 source, target, label；source/target 必须引用已有 node id；"
@@ -2657,27 +2765,52 @@ def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dic
     if preferred != "auto" and widget_type != preferred:
         raise LLMResponseError(f"互动演示 widget_type 与用户选择不一致：期望 {preferred}，实际 {widget_type}")
 
-    variables = [_normalize_visualization_variable(value) for value in _as_list(raw.get("variables"))]
+    title = _first_visual_text(raw.get("title") or raw.get("name"), "互动演示")
+    learning_goal = _first_visual_text(raw.get("learning_goal") or raw.get("goal"), f"理解「{title}」的关键机制")
+    description = _first_visual_text(raw.get("description") or raw.get("summary"), learning_goal)
+
+    variables: list[str] = []
+    for value in _as_list(raw.get("variables")):
+        try:
+            variables.append(_normalize_visualization_variable(value))
+        except LLMResponseError:
+            continue
     variables = [value for value in variables if value]
     if len(variables) < 2:
-        raise LLMResponseError("互动演示 JSON 缺少 variables，至少需要 2 个变量")
+        for fallback in ("步骤进度", "当前状态", "关键指标", "理解程度"):
+            if fallback not in variables:
+                variables.append(fallback)
+            if len(variables) >= 2:
+                break
 
-    controls = [
-        _normalize_visualization_control(control, index)
-        for index, control in enumerate(_as_list(raw.get("controls")), start=1)
-    ]
+    controls: list[dict[str, Any]] = []
+    for index, control in enumerate(_as_list(raw.get("controls")), start=1):
+        try:
+            controls.append(_normalize_visualization_control(control, index))
+        except LLMResponseError:
+            continue
     if len(controls) < 2:
-        raise LLMResponseError("互动演示 JSON 缺少 controls，至少需要 2 个控制项")
+        controls = _fill_visualization_controls(controls)
 
     safety_notes = _as_str_list(raw.get("safety_notes"))
     if not safety_notes:
-        raise LLMResponseError("互动演示 JSON 缺少 safety_notes")
+        safety_notes = ["演示为概念可视化，结论需回到课程材料和来源文献核对。"]
     teaching_points = _as_str_list(raw.get("teaching_points"))
     if len(teaching_points) < 3:
-        raise LLMResponseError("互动演示 JSON 缺少 teaching_points，至少需要 3 条")
+        teaching_points = _fill_visualization_texts(
+            teaching_points,
+            [learning_goal, description, title],
+            3,
+            "观察当前步骤中被高亮的节点和关系。",
+        )
     student_tasks = _as_str_list(raw.get("student_tasks"))
     if len(student_tasks) < 2:
-        raise LLMResponseError("互动演示 JSON 缺少 student_tasks，至少需要 2 条")
+        student_tasks = _fill_visualization_texts(
+            student_tasks,
+            [f"按顺序播放演示，复述「{title}」的关键变化。", "暂停在关键步骤，解释高亮节点之间的关系。"],
+            2,
+            "用一句话总结本演示的核心机制。",
+        )
 
     if widget_type == "visualization3d":
         demo_type = _normalize_demo_type(_require_text(raw.get("demo_type"), "visualization.demo_type"))
@@ -2691,39 +2824,51 @@ def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dic
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, str]] = []
     else:
-        demo_type = _normalize_non_3d_demo_type(widget_type, _require_text(raw.get("demo_type"), "visualization.demo_type"))
-        nodes = [
-            _normalize_visual_node(node, index)
-            for index, node in enumerate(_as_list(raw.get("nodes")), start=1)
-        ]
+        demo_type = _normalize_non_3d_demo_type(widget_type, str(raw.get("demo_type") or ""))
+        nodes: list[dict[str, Any]] = []
+        for index, node in enumerate(_as_list(raw.get("nodes")), start=1):
+            try:
+                nodes.append(_normalize_visual_node(node, index))
+            except LLMResponseError:
+                continue
         if len(nodes) < 4:
-            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 4 个 nodes")
+            nodes = _fill_visual_nodes(nodes, title, description, teaching_points, widget_type)
         node_ids = {node["id"] for node in nodes}
-        edges = [
-            _normalize_visual_edge(edge, index, node_ids)
-            for index, edge in enumerate(_as_list(raw.get("edges")), start=1)
-        ]
+        edges: list[dict[str, str]] = []
+        for index, edge in enumerate(_as_list(raw.get("edges")), start=1):
+            try:
+                edges.append(_normalize_visual_edge(edge, index, node_ids))
+            except LLMResponseError:
+                continue
         if len(edges) < 3:
-            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 3 条 edges")
+            edges = _fill_visual_edges(edges, nodes)
         edge_ids = {edge["id"] for edge in edges}
-        frames = [
-            _normalize_adaptive_visual_frame(frame, index, variables, node_ids, edge_ids)
-            for index, frame in enumerate(_as_list(raw.get("frames")), start=1)
-        ]
+        frames: list[dict[str, Any]] = []
+        for index, frame in enumerate(_as_list(raw.get("frames")), start=1):
+            try:
+                frames.append(_normalize_adaptive_visual_frame(frame, index, variables, node_ids, edge_ids))
+            except LLMResponseError:
+                continue
         if len(frames) < 4:
-            raise LLMResponseError(f"{widget_type} 演示 JSON 至少需要 4 帧")
+            frames = _fill_visual_frames(frames, nodes, edges, title)
         physics_scene = None
 
     code_snippet = str(raw.get("code_snippet") or raw.get("code") or "").strip()
     if widget_type == "code" and len(code_snippet) < 40:
-        raise LLMResponseError("code 演示 JSON 缺少有效 code_snippet")
+        code_snippet = (
+            f"# {title}\n"
+            "def observe_step(step):\n"
+            "    return {'step': step, 'progress': step / 4}\n\n"
+            "for step in range(1, 5):\n"
+            "    print(observe_step(step))\n"
+        )
 
     return {
-        "title": _require_text(raw.get("title"), "visualization.title"),
+        "title": title,
         "demo_type": demo_type,
         "widget_type": widget_type,
-        "learning_goal": _require_text(raw.get("learning_goal"), "visualization.learning_goal"),
-        "description": _require_text(raw.get("description"), "visualization.description"),
+        "learning_goal": learning_goal,
+        "description": description,
         "variables": variables[:8],
         "frames": frames[:12],
         "controls": controls,
@@ -2761,10 +2906,147 @@ def _normalize_widget_type(value: Any, allow_auto: bool) -> str:
 
 def _normalize_non_3d_demo_type(widget_type: str, value: str) -> str:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    normalized = _DEMO_TYPE_ALIASES.get(widget_type, {}).get(normalized, normalized)
     allowed = _NON_3D_DEMO_TYPES[widget_type]
     if normalized not in allowed:
+        fallback = {
+            "diagram": "concept_map",
+            "simulation": "algorithm_trace",
+            "code": "code_walkthrough",
+            "timeline": "research_plan",
+        }.get(widget_type)
+        if fallback:
+            return fallback
         raise LLMResponseError(f"{widget_type} 演示 demo_type 非法：{value}；允许值：{', '.join(sorted(allowed))}")
     return normalized
+
+
+def _fill_visualization_controls(controls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = list(controls)
+    defaults = [
+        {
+            "name": "playback_speed",
+            "label": "播放速度",
+            "min_value": 0.5,
+            "max_value": 2.0,
+            "default_value": 1.0,
+            "description": "控制演示自动播放速度。",
+        },
+        {
+            "name": "focus_strength",
+            "label": "高亮强度",
+            "min_value": 0.0,
+            "max_value": 1.0,
+            "default_value": 0.7,
+            "description": "用于提示当前步骤的重点关系。",
+        },
+    ]
+    existing = {str(control.get("name") or "") for control in result}
+    for default in defaults:
+        if len(result) >= 2:
+            break
+        if default["name"] not in existing:
+            result.append(default)
+    return result[:4]
+
+
+def _fill_visualization_texts(values: list[str], candidates: list[str], min_count: int, default: str) -> list[str]:
+    result = [_compact_text(value, 160) for value in values if _compact_text(value, 160)]
+    for candidate in candidates:
+        text = _compact_text(str(candidate or ""), 160)
+        if text and text not in result:
+            result.append(text)
+        if len(result) >= min_count:
+            return result[:min_count]
+    while len(result) < min_count:
+        result.append(default)
+    return result[:min_count]
+
+
+def _first_visual_text(raw: Any, fallback: str) -> str:
+    texts = _as_str_list(raw)
+    if texts:
+        text = _compact_text(texts[0], 120)
+        if text:
+            return text
+    return _compact_text(fallback, 120)
+
+
+def _fill_visual_nodes(
+    nodes: list[dict[str, Any]],
+    title: str,
+    description: str,
+    teaching_points: list[str],
+    widget_type: str,
+) -> list[dict[str, Any]]:
+    result = list(nodes)
+    seeds = [title, *teaching_points, description, "输入", "处理", "观察", "输出"]
+    positions = [(14, 50), (36, 24), (62, 32), (82, 58), (58, 78), (28, 76)]
+    existing = {node["id"] for node in result}
+    kind = "step" if widget_type in {"simulation", "timeline"} else "concept"
+    for seed in seeds:
+        if len(result) >= 4:
+            break
+        label = _compact_text(str(seed or ""), 40) or f"节点 {len(result) + 1}"
+        node_id = re.sub(r"[^a-zA-Z0-9_-]", "_", f"auto_{len(result) + 1}")[:48]
+        while node_id in existing:
+            node_id = f"{node_id}_{len(result) + 1}"
+        x, y = positions[len(result) % len(positions)]
+        result.append(
+            {
+                "id": node_id,
+                "label": label,
+                "kind": kind,
+                "x": float(x),
+                "y": float(y),
+                "color": _VISUAL_COLOR_PALETTE[len(result) % len(_VISUAL_COLOR_PALETTE)],
+                "detail": _compact_text(description or label, 140),
+            }
+        )
+        existing.add(node_id)
+    return result[:12]
+
+
+def _fill_visual_edges(edges: list[dict[str, str]], nodes: list[dict[str, Any]]) -> list[dict[str, str]]:
+    result = list(edges)
+    existing = {edge["id"] for edge in result}
+    for index in range(max(0, len(nodes) - 1)):
+        if len(result) >= 3:
+            break
+        source = nodes[index]["id"]
+        target = nodes[index + 1]["id"]
+        edge_id = f"{source}->{target}"
+        if edge_id in existing:
+            continue
+        result.append({"id": edge_id, "source": source, "target": target, "label": "推进"})
+        existing.add(edge_id)
+    return result[:18]
+
+
+def _fill_visual_frames(
+    frames: list[dict[str, Any]],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, str]],
+    title: str,
+) -> list[dict[str, Any]]:
+    result = list(frames)
+    if not nodes:
+        return result
+    while len(result) < 4:
+        index = len(result)
+        node = nodes[min(index, len(nodes) - 1)]
+        edge = edges[min(index, len(edges) - 1)] if edges else None
+        result.append(
+            {
+                "label": f"步骤 {index + 1}",
+                "metrics": {"progress": round((index + 1) / 4, 2), "step": float(index + 1)},
+                "narrative": f"围绕「{title}」观察 {node['label']} 的作用。",
+                "active_nodes": [node["id"]],
+                "active_edges": [edge["id"]] if edge else [],
+                "annotations": [],
+            }
+        )
+    return result[:12]
 
 
 def _normalize_visual_node(raw: Any, index: int) -> dict[str, Any]:
@@ -2777,7 +3059,7 @@ def _normalize_visual_node(raw: Any, index: int) -> dict[str, Any]:
         "kind": _require_text(raw.get("kind") or raw.get("type") or "concept", f"visualization.nodes[{index}].kind")[:32],
         "x": _bounded_coordinate(raw.get("x"), f"visualization.nodes[{index}].x"),
         "y": _bounded_coordinate(raw.get("y"), f"visualization.nodes[{index}].y"),
-        "color": _visual_color(raw.get("color")),
+        "color": _visual_color(raw.get("color"), index),
         "detail": _require_text(raw.get("detail") or raw.get("description"), f"visualization.nodes[{index}].detail")[:140],
     }
 
@@ -2809,11 +3091,11 @@ def _normalize_adaptive_visual_frame(
         raise LLMResponseError(f"互动演示 frames[{index}] 必须是对象")
     metrics = _numeric_metrics(raw.get("metrics") if isinstance(raw.get("metrics"), dict) else {})
     if not metrics:
-        raise LLMResponseError(f"互动演示 frames[{index}] 缺少可渲染 metrics")
+        metrics = {"step": float(index), "progress": min(1.0, index / 4)}
     active_nodes = _normalize_frame_targets(raw.get("active_nodes") or raw.get("nodes"), node_ids, f"frames[{index}].active_nodes")
     active_edges = _normalize_frame_targets(raw.get("active_edges") or raw.get("edges"), edge_ids, f"frames[{index}].active_edges")
     if not active_nodes:
-        raise LLMResponseError(f"互动演示 frames[{index}] 至少需要 1 个 active_nodes")
+        active_nodes = [next(iter(node_ids))]
     return {
         "label": _require_text(raw.get("label"), f"visualization.frames[{index}].label"),
         "metrics": metrics,
@@ -2832,7 +3114,7 @@ def _normalize_frame_targets(raw: Any, allowed: set[str], field_path: str) -> li
             continue
         normalized = re.sub(r"[^a-zA-Z0-9_>.-]", "_", text)[:96]
         if normalized not in allowed:
-            raise LLMResponseError(f"互动演示 {field_path} 引用了不存在的 id：{text}")
+            continue
         targets.append(normalized)
     return targets
 
@@ -2846,12 +3128,12 @@ def _bounded_coordinate(value: Any, field_path: str) -> float:
     return max(0.0, min(100.0, float(metric)))
 
 
-def _visual_color(value: Any) -> str:
+def _visual_color(value: Any, index: int = 1) -> str:
     if value is None:
-        raise LLMResponseError("互动演示 node.color 为必填字段")
+        return _VISUAL_COLOR_PALETTE[(index - 1) % len(_VISUAL_COLOR_PALETTE)]
     color = str(value).strip()
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
-        raise LLMResponseError(f"互动演示 node.color 必须是 #RRGGBB：{color}")
+        return _VISUAL_COLOR_PALETTE[(index - 1) % len(_VISUAL_COLOR_PALETTE)]
     return color
 
 

@@ -611,6 +611,10 @@ class DailyPlanShiftItemRequest(BaseModel):
     direction: str = Field(default="next", pattern="^(next|previous)$")
 
 
+class DailyPlanReorderItemRequest(BaseModel):
+    direction: str = Field(default="down", pattern="^(up|down)$")
+
+
 class DailyPlanCoachRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=3000)
     active_item_id: Optional[int] = None
@@ -786,7 +790,7 @@ class ClassroomPracticeSubmitRequest(BaseModel):
 
 
 class ClassroomReflectionSubmitRequest(BaseModel):
-    reflection: str = Field(..., min_length=50, max_length=5000)
+    reflection: str = Field(..., min_length=1, max_length=5000)
     unresolved_questions: List[str] = Field(default_factory=list)
     next_action: str = Field(default="", max_length=1000)
 
