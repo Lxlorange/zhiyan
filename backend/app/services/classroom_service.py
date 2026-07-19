@@ -1889,8 +1889,9 @@ def _repair_classroom_package_json(
         "4. slides 必须 4 页；每页必须含 title, layout, bullets, speaker_notes, visual_hint, visual_blocks, "
         "side_panel, takeaways, source_refs, example, misconception, interaction_prompt。\n"
         "5. quiz 必须是选择题，至少 2 道；如果原始内容缺少 quiz，请补出最小可用版本；每题必须含 id, prompt, question_type, options, answer, explanation, hint, difficulty, knowledge_point。\n"
-        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；如果原始内容缺少 practice，请补出最小可用版本；reflection_prompts 至少 3 条。\n"
-        "7. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
+        "6. practice.steps 至少 3 条，practice.acceptance_criteria 至少 2 条；如果原始内容缺少 practice，请补出最小可用版本。\n"
+        "7. reflection_prompts 至少 3 条；如果原始内容缺少 reflection_prompts，请根据学习项生成 3 条具体复盘问题。\n"
+        "8. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n"
         f"校验错误：{validation_error}\n"
         f"原始任务要求：{_truncate_for_prompt(original_prompt, 5000)}\n"
         f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 9000)}\n"
@@ -2014,10 +2015,12 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
             practice = _fallback_practice_for_classroom(project, item)
     reflection_prompts = _as_str_list(data.get("reflection_prompts") or data.get("reflection") or data.get("pbl"))
     if len(reflection_prompts) < 3:
+        reflection_prompts.extend(_fallback_reflection_prompts_for_classroom(project, item, 3 - len(reflection_prompts)))
+    if len(reflection_prompts) < 3:
         raise LLMResponseError("课堂包 JSON 缺少 reflection_prompts，至少需要 3 条")
     safety_notes = _as_str_list(data.get("safety_notes") or data.get("notes"))
     if not safety_notes:
-        raise LLMResponseError("课堂包 JSON 缺少 safety_notes")
+        safety_notes = _fallback_safety_notes_for_classroom(project, item)
     return {
         "title": _require_text(data.get("title"), "classroom.title"),
         "learning_summary": _require_text(data.get("learning_summary") or data.get("summary"), "classroom.learning_summary"),
@@ -2456,6 +2459,27 @@ def _fallback_practice_for_classroom(project: LearningProject, item: LearningSyl
             "能对应本节学习项的完成标准，而不是泛泛复述。",
         ],
     }
+
+
+def _fallback_reflection_prompts_for_classroom(project: LearningProject, item: LearningSyllabusItem, needed: int) -> list[str]:
+    focus = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    lead = focus[0] if focus else item.title
+    prompts = [
+        f"今天学到的 {lead} 用一句话怎么解释给同学听？",
+        f"这个知识点最容易和什么概念混淆，你会怎么区分？",
+        f"如果要继续学习 {project.research_direction or project.title}，下一步你最想补哪一块？",
+    ]
+    return prompts[: max(0, needed)]
+
+
+def _fallback_safety_notes_for_classroom(project: LearningProject, item: LearningSyllabusItem) -> list[str]:
+    focus = [str(value).strip() for value in (item.knowledge_points or []) if str(value).strip()]
+    lead = focus[0] if focus else item.title
+    return [
+        f"先确认 {lead} 的前置条件，再做练习。",
+        "不要把课件里的示例直接当成全部结论。",
+        "遇到不确定的地方，先回看知识库来源再提交。",
+    ]
 
 
 def _truncate_for_prompt(value: str, max_length: int) -> str:
