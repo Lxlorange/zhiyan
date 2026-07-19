@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -1239,12 +1239,12 @@ def _add_source_refs(slide: Any, refs: list[Any], left: Any, top: Any, width: An
     _add_label(slide, "SOURCES", left, top, width, Inches(0.22), Pt(8), RGBColor(100, 116, 139), bold=True)
     for index, ref in enumerate(refs[:4]):
         if isinstance(ref, dict):
-            label = f"{index + 1}. {ref.get('title', '')} ({ref.get('url', '')})"
+            title = str(ref.get("title", "")).strip()
+            url = str(ref.get("url", "")).strip()
+            label = f"{index + 1}. {title}" if not url else f"{index + 1}. {title} ({url})"
         else:
             label = f"{index + 1}. {ref}"
         _add_text(slide, label, left, top + Inches(0.3 + index * 0.24), width, Inches(0.2), Pt(8), RGBColor(71, 85, 105))
-
-
 def _add_speaker_panel(slide: Any, notes: str, interaction_prompt: str = "") -> None:
     panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.15), Inches(1.6), Inches(3.35), Inches(4.55))
     panel.fill.solid()
@@ -1985,6 +1985,8 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
         )
     readings = [_normalize_reading(value, item) for value in _as_list(readings_source)]
     if len(readings) < 2:
+        readings.extend(_fallback_readings_for_classroom(data, project, item, 2 - len(readings)))
+    if len(readings) < 2:
         raise LLMResponseError("课堂包 JSON 缺少 readings，至少需要 2 条阅读资源")
     slides = [_normalize_slide(slide, index) for index, slide in enumerate(_as_list(data.get("slides") or data.get("ppt") or data.get("deck")), start=1)]
     if len(slides) < 4:
@@ -2022,8 +2024,6 @@ def _normalize_classroom_package(raw: Any, project: LearningProject, item: Learn
         "reflection_prompts": reflection_prompts[:6],
         "safety_notes": safety_notes,
     }
-
-
 def _normalize_slide(raw: Any, index: int) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"课堂包 JSON slides[{index}] 必须是对象")
@@ -2113,15 +2113,16 @@ def _normalize_slide_side_panel(raw: Any, slide_index: int) -> dict[str, Any]:
 
 
 def _normalize_slide_source_ref(raw: Any, slide_index: int, ref_index: int) -> dict[str, str]:
-    if not isinstance(raw, dict):
+    if isinstance(raw, dict):
+        title = _require_text(raw.get("title") or raw.get("name"), f"classroom.slides[{slide_index}].source_refs[{ref_index}].title")
+        url = str(raw.get("url") or raw.get("source") or raw.get("uri") or "").strip()
+        if url and not re.match(r"^https?://", url, flags=re.IGNORECASE):
+            url = ""
+        return {"title": title, "url": url}
+    text = _compact_text(str(raw), 120)
+    if not text:
         raise LLMResponseError(f"classroom.slides[{slide_index}].source_refs[{ref_index}] 必须是对象")
-    title = _require_text(raw.get("title") or raw.get("name"), f"classroom.slides[{slide_index}].source_refs[{ref_index}].title")
-    url = str(raw.get("url") or raw.get("source") or raw.get("uri") or "").strip()
-    if url and not re.match(r"^https?://", url, flags=re.IGNORECASE):
-        raise LLMResponseError(f"classroom.slides[{slide_index}].source_refs[{ref_index}].url 必须是真实 http/https 链接")
-    return {"title": title, "url": url}
-
-
+    return {"title": text, "url": ""}
 def _normalize_quiz(raw: Any, index: int, item: LearningSyllabusItem) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"课堂包 JSON quiz[{index}] 必须是对象")
@@ -2305,6 +2306,82 @@ def _normalize_reading(raw: Any, item: LearningSyllabusItem) -> dict:
     }
 
 
+def _collect_slide_source_refs(data: dict[str, Any]) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    for slide in _as_list(data.get("slides") or data.get("ppt") or data.get("deck")):
+        if not isinstance(slide, dict):
+            continue
+        for raw in _as_list(slide.get("source_refs") or slide.get("sources")):
+            if isinstance(raw, dict):
+                title = _compact_text(str(raw.get("title") or raw.get("name") or ""), 90)
+                url = str(raw.get("url") or raw.get("source") or raw.get("uri") or "").strip()
+            else:
+                title = _compact_text(str(raw), 90)
+                url = ""
+            if not title and not url:
+                continue
+            refs.append({"title": title or url, "source": title or url, "url": url})
+    return refs
+
+
+def _fallback_keywords(project: LearningProject, item: LearningSyllabusItem, title: str) -> list[str]:
+    values = [
+        item.title,
+        item.item_type,
+        project.title,
+        project.research_direction,
+        project.learning_goal,
+        title,
+        *list(item.knowledge_points or []),
+        *list(item.related_documents or []),
+    ]
+    keywords: list[str] = []
+    for value in values:
+        for token in re.split(r"[、,，/|;；\s]+", str(value or "")):
+            text = _compact_text(token, 30)
+            if text and text not in keywords:
+                keywords.append(text)
+    return (keywords or [_compact_text(item.title, 20) or "课堂导读"])[:8]
+
+
+def _fallback_readings_for_classroom(data: dict[str, Any], project: LearningProject, item: LearningSyllabusItem, needed: int) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for ref in _collect_slide_source_refs(data):
+        key = (ref.get("title") or ref.get("source") or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        title = ref.get("title") or item.title
+        source = ref.get("url") or ref.get("source") or title
+        candidates.append(
+            {
+                "title": _compact_text(title, 90),
+                "why": _compact_text(f"用于补齐课堂包阅读资源，帮助学生先理解 {item.title} 的课件来源。", 180),
+                "source": _compact_text(source, 180),
+                "keywords": _fallback_keywords(project, item, title),
+            }
+        )
+        if len(candidates) >= needed:
+            return candidates
+
+    for title in [f"{item.title} 导读", f"{project.title or item.title} 延伸阅读", project.research_direction]:
+        text = _compact_text(str(title or ""), 90)
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        candidates.append(
+            {
+                "title": text,
+                "why": _compact_text(f"用于为 {item.title} 补齐最小阅读资源并支撑课堂讲解。", 180),
+                "source": _compact_text(project.title or item.title or "课堂知识库", 180),
+                "keywords": _fallback_keywords(project, item, text),
+            }
+        )
+        if len(candidates) >= needed:
+            break
+    return candidates
 def _truncate_for_prompt(value: str, max_length: int) -> str:
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", "", value)
     if len(text) <= max_length:
@@ -2688,4 +2765,5 @@ def _write_visualization_html(session_id: int, item: LearningSyllabusItem, demo:
         html_doc = render_adaptive_visualization_html(demo.model_dump(mode="json"), demo.title)
     path.write_text(html_doc, encoding="utf-8")
     return path
+
 

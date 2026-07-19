@@ -13,6 +13,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
 from app.models.user import User
+from app.services.grounding_guidance import GROUNDING_SYSTEM_SUFFIX
 from app.services.json_repair_service import LLMJsonParseError, parse_llm_json
 
 T = TypeVar("T", bound=BaseModel)
@@ -72,7 +73,7 @@ def qwen_chat_json(system_prompt: str, user_prompt: str, schema_model: Type[T], 
     payload = {
         "model": config.model,
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": f"{system_prompt}\n\n{GROUNDING_SYSTEM_SUFFIX}".strip()},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.3,
@@ -119,7 +120,7 @@ def qwen_chat_stream_text(system_prompt: str, user_prompt: str, user: Optional[U
     payload = {
         "model": config.model,
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": f"{system_prompt}\n\n{GROUNDING_SYSTEM_SUFFIX}".strip()},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.3,

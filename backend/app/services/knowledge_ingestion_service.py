@@ -33,6 +33,7 @@ from app.models.learning import (
 )
 from app.models.user import User
 from app.schemas import KnowledgeChunkRead, KnowledgeDocumentRead
+from app.services.grounding_guidance import default_source_weight, hybrid_grounding_score
 from app.services.llm_client import LLMResponseError, qwen_chat_json, validate_qwen_config
 
 
@@ -1578,7 +1579,7 @@ def search_knowledge_enhanced(db: Session, query: str, limit: int = 8) -> list[d
             "kd.title ILIKE :pattern",
             "kd.summary ILIKE :pattern",
         ]
-    )
+    ) or "FALSE"
     pattern = f"%{terms[0] if terms else query}%"
     sql = text(
         f"""
@@ -1593,22 +1594,80 @@ def search_knowledge_enhanced(db: Session, query: str, limit: int = 8) -> list[d
             dc.page_no AS page_no,
             dc.slide_no AS slide_no,
             dc.section_title AS section_title,
-            CASE WHEN dc.embedding IS NULL THEN NULL ELSE dc.embedding <=> CAST(:embedding AS vector) END AS distance,
-            CASE WHEN ({keyword_filters}) THEN 1 ELSE 0 END AS keyword_hit
+            dc.retrieval_weight AS retrieval_weight,
+            CASE WHEN dc.embedding IS NULL THEN 0.0 ELSE GREATEST(0.0, 1.0 - (dc.embedding <=> CAST(:embedding AS vector))) END AS sim_vector,
+            CASE WHEN ({keyword_filters}) THEN 1.0 ELSE 0.0 END AS sim_keyword,
+            (
+                1.0
+                + CASE
+                    WHEN lower(COALESCE(kd.doc_type, '')) IN ('ppt', 'pptx') THEN 0.18
+                    WHEN lower(COALESCE(kd.doc_type, '')) IN ('pdf', 'doc', 'docx') THEN 0.12
+                    WHEN lower(COALESCE(kd.doc_type, '')) IN ('md', 'txt') THEN 0.05
+                    ELSE 0.0
+                  END
+                + CASE WHEN kd.source_uri ILIKE 'http%' THEN 0.08 ELSE 0.0 END
+                + CASE WHEN lower(COALESCE(kd.parse_status, '')) = 'ready' THEN 0.08 ELSE 0.0 END
+                + LEAST(GREATEST(COALESCE(dc.retrieval_weight, 1.0), 0.0), 2.0) * 0.05
+            ) AS source_weight,
+            (
+                0.68 * CASE WHEN dc.embedding IS NULL THEN 0.0 ELSE GREATEST(0.0, 1.0 - (dc.embedding <=> CAST(:embedding AS vector))) END
+                + 0.32 * CASE WHEN ({keyword_filters}) THEN 1.0 ELSE 0.0 END
+                + 0.16 * (
+                    1.0
+                    + CASE
+                        WHEN lower(COALESCE(kd.doc_type, '')) IN ('ppt', 'pptx') THEN 0.18
+                        WHEN lower(COALESCE(kd.doc_type, '')) IN ('pdf', 'doc', 'docx') THEN 0.12
+                        WHEN lower(COALESCE(kd.doc_type, '')) IN ('md', 'txt') THEN 0.05
+                        ELSE 0.0
+                      END
+                    + CASE WHEN kd.source_uri ILIKE 'http%' THEN 0.08 ELSE 0.0 END
+                    + CASE WHEN lower(COALESCE(kd.parse_status, '')) = 'ready' THEN 0.08 ELSE 0.0 END
+                    + LEAST(GREATEST(COALESCE(dc.retrieval_weight, 1.0), 0.0), 2.0) * 0.05
+                )
+            ) AS score
         FROM document_chunks dc
         JOIN knowledge_documents kd ON dc.document_id = kd.id
         LEFT JOIN knowledge_points kp ON dc.knowledge_point_id = kp.id
         ORDER BY
-            keyword_hit DESC,
-            CASE WHEN dc.embedding IS NULL THEN 1 ELSE 0 END ASC,
-            distance ASC NULLS LAST,
+            score DESC,
+            sim_keyword DESC,
+            sim_vector DESC,
+            source_weight DESC,
             dc.retrieval_weight DESC,
             dc.id DESC
         LIMIT :limit
         """
     )
     rows = db.execute(sql, {"embedding": _vector_literal(vector), "pattern": pattern, "limit": limit}).mappings().all()
-    return [dict(row) for row in rows]
+    results: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        item["source_weight"] = float(
+            item.get("source_weight")
+            or default_source_weight(
+                doc_type=str(item.get("document_type") or ""),
+                source_uri=str(item.get("source_uri") or ""),
+                parse_status="ready",
+                retrieval_weight=float(item.get("retrieval_weight") or 1.0),
+            )
+        )
+        item["score"] = hybrid_grounding_score(
+            float(item.get("sim_vector") or 0.0),
+            float(item.get("sim_keyword") or 0.0),
+            float(item.get("source_weight") or 0.0),
+        )
+        results.append(item)
+    results.sort(
+        key=lambda item: (
+            -float(item.get("score") or 0.0),
+            -float(item.get("sim_keyword") or 0.0),
+            -float(item.get("sim_vector") or 0.0),
+            -float(item.get("source_weight") or 0.0),
+            -float(item.get("retrieval_weight") or 0.0),
+            -int(item.get("chunk_id") or 0),
+        )
+    )
+    return results[:limit]
 
 
 def build_rag_context(db: Session, query: str, limit: int = 8) -> str:
