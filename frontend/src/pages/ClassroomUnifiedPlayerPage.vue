@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page classroom-page classroom-unified-page" :class="{ 'deck-focus-mode': isDeckFocusMode }">
     <section class="page-hero classroom-hero">
       <div>
@@ -251,32 +251,31 @@
                             </div>
                           </header>
                           <template v-if="activeTool === 'mindmap'">
-                            <div class="classroom-mindmap-flow">
-                              <div class="classroom-mindmap-canvas">
-                                <article
-                                  v-for="node in mindmapNodes"
-                                  :key="node.id"
-                                  class="classroom-mindmap-node"
-                                  :class="node.kind"
-                                  :style="{ left: `${node.x}px`, top: `${node.y}px` }"
-                                >
-                                  <span v-if="node.group" class="classroom-mindmap-group">{{ node.group }}</span>
-                                  <strong>{{ node.label }}</strong>
-                                  <p v-if="node.detail">{{ node.detail }}</p>
-                                </article>
-
-                                <svg class="classroom-mindmap-links" viewBox="0 0 1200 860" preserveAspectRatio="none" aria-hidden="true">
-                                  <line
-                                    v-for="edge in mindmapEdges"
-                                    :key="edge.id"
-                                    :x1="edge.from.x"
-                                    :y1="edge.from.y"
-                                    :x2="edge.to.x"
-                                    :y2="edge.to.y"
-                                  />
-                                </svg>
-                              </div>
-                            </div>
+                            <VueFlow
+                              :key="mindmapFlowKey"
+                              v-model:nodes="mindmapNodes"
+                              v-model:edges="mindmapEdges"
+                              class="classroom-mindmap-flow"
+                              :fit-view-on-init="true"
+                              :nodes-draggable="true"
+                              :nodes-connectable="false"
+                              :elements-selectable="false"
+                              :pan-on-drag="true"
+                              :zoom-on-scroll="true"
+                              :min-zoom="0.45"
+                              :max-zoom="1.6"
+                            >
+                              <template #node-mindmap="nodeProps">
+                                <div class="classroom-mindmap-node" :class="nodeProps.data.kind">
+                                  <Handle type="target" :position="Position.Top" />
+                                  <span v-if="nodeProps.data.group" class="classroom-mindmap-group">{{ nodeProps.data.group }}</span>
+                                  <strong>{{ nodeProps.data.label }}</strong>
+                                  <p v-if="nodeProps.data.detail">{{ nodeProps.data.detail }}</p>
+                                  <p v-if="nodeProps.data.summary">{{ nodeProps.data.summary }}</p>
+                                  <Handle type="source" :position="Position.Bottom" />
+                                </div>
+                              </template>
+                            </VueFlow>
                           </template>
                           <template v-else>
                             <el-input v-model="noteMarkdown" type="textarea" :rows="13" placeholder="用 Markdown 写下当前页笔记" />
@@ -404,6 +403,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Handle, Position, VueFlow, type Edge as FlowEdge, type Node as FlowNode } from '@vue-flow/core'
 import {
   completeClassroomSlides,
   downloadClassroomResource,
@@ -599,27 +599,33 @@ const currentVisualizationPlaceholder = computed(() => {
   const points = currentSlideKnowledgePoints.value.join('、') || '当前知识点'
   return `围绕「${title}」生成动态演示。可补充希望展示的机制，例如：${points} 的流程、信号传播、状态变化、数据流、交互动画或必要时的 3D 类比。`
 })
-type MindmapNode = {
-  id: string
+type MindmapNodeKind = 'center' | 'group' | 'leaf'
+type MindmapNodeData = {
   label: string
   detail?: string
   group?: string
-  kind?: string
-  x: number
-  y: number
+  kind: MindmapNodeKind
+  summary?: string
 }
-
-type MindmapEdge = {
-  id: string
-  from: { x: number; y: number }
-  to: { x: number; y: number }
-}
-
+type MindmapNode = FlowNode<MindmapNodeData, any, 'mindmap'>
+type MindmapEdge = FlowEdge
 const mindmapNodes = ref<MindmapNode[]>([])
 const mindmapEdges = ref<MindmapEdge[]>([])
-watch(() => [activeSlideIndex.value, activeTool.value] as const, () => {
-  if (activeTool.value === 'mindmap') hydrateMindmap()
-})
+const mindmapFlowKey = computed(() => `${activeTool.value}-${activeSlideIndex.value}-${currentSlide.value?.title || 'slide'}`)
+watch(
+  () => [
+    activeSlideIndex.value,
+    activeTool.value,
+    currentSlideKnowledgePoints.value.join('|'),
+    currentSlideTakeaways.value.join('|'),
+    noteMarkdown.value,
+    visualizationResource.value?.id,
+    reflectionPrompts.value.join('|')
+  ] as const,
+  () => {
+    if (activeTool.value === 'mindmap') hydrateMindmap()
+  }
+)
 const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
@@ -1063,15 +1069,29 @@ function hydrateNote() {
 }
 
 function hydrateMindmap() {
-  const center = currentSlide.value?.title || currentItem.value?.title || pptPackage.value?.title || '当前内容'
-  const nodes: MindmapNode[] = [{ id: 'center', label: center, kind: 'center', x: 548, y: 284 }]
+  const centerLabel = currentSlide.value?.title || currentItem.value?.title || pptPackage.value?.title || '当前内容'
+  const nodes: MindmapNode[] = [
+    {
+      id: 'mindmap-center',
+      type: 'mindmap',
+      position: { x: 420, y: 250 },
+      data: {
+        label: centerLabel,
+        detail: currentSlideExplanation.value.slice(0, 120),
+        kind: 'center',
+        summary: currentSlideTakeaways.value[0] || currentSlideKnowledgePoints.value[0] || '核心主题'
+      },
+      draggable: true,
+      selectable: false
+    }
+  ]
   const edges: MindmapEdge[] = []
   const groups = [
     {
       id: 'knowledge',
       label: '知识点',
       detail: '本页核心信息',
-      items: (currentSlideKnowledgePoints.value.length ? currentSlideKnowledgePoints.value : (currentItem.value?.knowledge_points || [])).slice(0, 6)
+      items: (currentSlideKnowledgePoints.value.length ? currentSlideKnowledgePoints.value : (currentItem.value?.knowledge_points || [])).slice(0, 5)
     },
     {
       id: 'lecture',
@@ -1101,43 +1121,59 @@ function hydrateMindmap() {
     }
   ]
   const anchors = [
-    { x: 86, y: 64, entryX: 230, entryY: 108 },
-    { x: 876, y: 64, entryX: 790, entryY: 108 },
-    { x: 86, y: 378, entryX: 230, entryY: 428 },
-    { x: 876, y: 378, entryX: 790, entryY: 428 }
+    { x: 140, y: 70 },
+    { x: 770, y: 70 },
+    { x: 140, y: 410 },
+    { x: 770, y: 410 }
   ]
   groups.forEach((group, groupIndex) => {
     const anchor = anchors[groupIndex] || anchors[groupIndex % anchors.length]
+    const groupId = `group-${group.id}`
     nodes.push({
-      id: `group-${group.id}`,
-      label: group.label,
-      detail: group.detail,
-      kind: 'group',
-      group: group.label,
-      x: anchor.x,
-      y: anchor.y
+      id: groupId,
+      type: 'mindmap',
+      position: anchor,
+      data: {
+        label: group.label,
+        detail: group.detail,
+        group: '板块',
+        kind: 'group',
+        summary: `${group.items.length} 项`
+      },
+      draggable: true,
+      selectable: false
     })
-    edges.push({ id: `edge-center-${group.id}`, from: { x: 568, y: 316 }, to: { x: anchor.entryX, y: anchor.entryY } })
+    edges.push({ id: `edge-center-${group.id}`, source: 'mindmap-center', target: groupId, type: 'smoothstep' })
     group.items.forEach((item, itemIndex) => {
       const row = Math.floor(itemIndex / 2)
       const column = itemIndex % 2
-      const nodeX = anchor.x + column * 170
-      const nodeY = anchor.y + 108 + row * 98
+      const nodeId = `${group.id}-${itemIndex}`
+      const nodePosition = {
+        x: anchor.x + column * 180,
+        y: anchor.y + 110 + row * 106
+      }
       nodes.push({
-        id: `${group.id}-${itemIndex}`,
-        label: String(item),
-        detail: group.label,
-        kind: 'leaf',
-        group: group.label,
-        x: nodeX,
-        y: nodeY
+        id: nodeId,
+        type: 'mindmap',
+        position: nodePosition,
+        data: {
+          label: String(item),
+          detail: group.detail,
+          group: group.label,
+          kind: 'leaf',
+          summary: group.label
+        },
+        draggable: true,
+        selectable: false
       })
-      edges.push({ id: `edge-${group.id}-${itemIndex}`, from: { x: anchor.entryX, y: anchor.entryY }, to: { x: nodeX + 86, y: nodeY + 24 } })
+      edges.push({ id: `edge-${group.id}-${itemIndex}`, source: groupId, target: nodeId, type: 'smoothstep' })
     })
   })
   mindmapNodes.value = nodes
   mindmapEdges.value = edges
-}async function goBackToSyllabus() {
+}
+
+async function goBackToSyllabus() {
   if (!props.projectId) return
   await router.push({ name: 'project-syllabus', params: { projectId: props.projectId } })
 }

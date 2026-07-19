@@ -3947,21 +3947,30 @@ textarea {
   border: 1px solid #dbe4ff;
   border-radius: 18px;
   background:
-    linear-gradient(rgba(219, 228, 255, 0.32) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(219, 228, 255, 0.32) 1px, transparent 1px),
+    linear-gradient(rgba(219, 228, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(219, 228, 255, 0.22) 1px, transparent 1px),
     #ffffff;
   background-size: 28px 28px;
 }
 
-.classroom-mindmap-flow .vue-flow__node {
-  max-width: 180px;
-  padding: 10px 12px;
-  border: 1px solid #99f6e4;
-  border-radius: 14px;
+.classroom-mindmap-flow .vue-flow__node-mindmap {
+  width: auto;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.classroom-mindmap-flow .vue-flow__controls {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.classroom-mindmap-flow .vue-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #0f766e;
   background: #ffffff;
-  color: #134e4a;
-  font-weight: 800;
-  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
 }
 
 .classroom-unified-page .visualization-stage iframe {
