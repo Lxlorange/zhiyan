@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import cast, desc, or_, select, String
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.learning import (
@@ -39,7 +39,7 @@ from app.schemas import (
     WorkspaceOverviewResponse,
 )
 from app.services.llm_client import qwen_chat_json
-from app.services.scholarly_search_service import resolve_scholarly_resource
+from app.services.scholarly_search_service import ScholarlySearchError, resolve_scholarly_resource
 from app.services.knowledge_service import search_knowledge
 from app.services.formula_guidance import FORMULA_OUTPUT_INSTRUCTIONS
 
@@ -326,10 +326,27 @@ def _build_profile_entries(record: StudentProfileRecord) -> list[ProfileEntryRea
     return entries
 
 
-def list_literature(db: Session, user: User) -> list[LiteraturePaperRead]:
+def list_literature(db: Session, user: User, query: str = "") -> list[LiteraturePaperRead]:
+    stmt = select(LiteraturePaper).where(LiteraturePaper.user_id == user.id)
+    cleaned_query = query.strip()
+    if cleaned_query:
+        escaped_query = cleaned_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        stmt = stmt.where(
+            or_(
+                cast(LiteraturePaper.title, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.authors, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.venue, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.year, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.abstract, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.notes, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.citation_text, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.keywords, String).ilike(pattern, escape="\\"),
+                cast(LiteraturePaper.source_uri, String).ilike(pattern, escape="\\"),
+            )
+        )
     papers = db.scalars(
-        select(LiteraturePaper)
-        .where(LiteraturePaper.user_id == user.id)
+        stmt
         .order_by(desc(LiteraturePaper.updated_at))
         .limit(100)
     )
@@ -358,7 +375,20 @@ def create_literature(db: Session, user: User, request: LiteraturePaperCreateReq
 
 
 def suggest_literature_metadata(request: LiteraturePaperSuggestRequest) -> LiteraturePaperSuggestResponse:
-    hit = resolve_scholarly_resource(request.title, request.title)
+    try:
+        hit = resolve_scholarly_resource(request.title, request.title)
+    except ScholarlySearchError as exc:
+        return LiteraturePaperSuggestResponse(
+            title=request.title,
+            authors=[],
+            venue='',
+            year='',
+            source_uri='',
+            abstract='',
+            keywords=[request.title] if request.title else [],
+            source_name='manual',
+            reason=f'自动检索暂时不可用：{exc}',
+        )
     if hit is None:
         return LiteraturePaperSuggestResponse(
             title=request.title,
@@ -379,15 +409,23 @@ def suggest_literature_metadata(request: LiteraturePaperSuggestRequest) -> Liter
 
     return LiteraturePaperSuggestResponse(
         title=hit.title or request.title,
-        authors=[],
-        venue='',
-        year='',
+        authors=hit.authors or [],
+        venue=hit.venue or '',
+        year=hit.year or '',
         source_uri=hit.url,
         abstract=abstract,
-        keywords=[request.title],
+        keywords=[hit.title or request.title] if (hit.title or request.title) else [],
         source_name=source_name,
         reason=hit.reason,
     )
+
+
+def delete_literature(db: Session, user: User, paper_id: int) -> None:
+    paper = db.scalar(select(LiteraturePaper).where(LiteraturePaper.id == paper_id, LiteraturePaper.user_id == user.id))
+    if paper is None:
+        raise KeyError("literature paper not found")
+    db.delete(paper)
+    db.commit()
 
 
 def _fetch_page_abstract(url: str) -> str:

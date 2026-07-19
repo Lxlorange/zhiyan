@@ -306,6 +306,32 @@ def _job_id_from_document_path(value: str) -> Optional[int]:
     return int(match.group(1))
 
 
+def _normalize_course_code(value: str) -> str:
+    code = _clean_text(value).upper()[:64]
+    if not code:
+        raise KnowledgeIngestionError("课程代码为必填项，请先填写课程代码。", 400)
+    return code
+
+
+def _normalize_course_title(value: str) -> str:
+    title = _clean_text(value)[:255]
+    if not title:
+        raise KnowledgeIngestionError("课程名称为必填项，请先填写课程名称。", 400)
+    return title
+
+
+def _validate_course_identity(db: Session, code: str, title: str) -> None:
+    course = db.scalar(select(Course).where(Course.code == code))
+    if course is None:
+        return
+    existing_title = _normalize_course_title(course.title)
+    if existing_title != title:
+        raise KnowledgeIngestionError(
+            f"课程代码 {code} 已绑定课程名称「{course.title}」，不能改用「{title}」。请使用原课程名称或更换课程代码。",
+            400,
+        )
+
+
 async def import_knowledge_upload(
     db: Session,
     user: User,
@@ -318,6 +344,9 @@ async def import_knowledge_upload(
 ) -> KnowledgeImportJobRead:
     if not file.filename:
         raise KnowledgeIngestionError("上传文件缺少文件名", 400)
+    course_code = _normalize_course_code(course_code)
+    course_title = _normalize_course_title(course_title)
+    _validate_course_identity(db, course_code, course_title)
     settings = get_settings()
     content = await file.read()
     if not content:
@@ -338,8 +367,6 @@ async def import_knowledge_upload(
     upload_root.mkdir(parents=True, exist_ok=True)
 
     source_name = _safe_filename(file.filename)
-    course_code = _clean_text(course_code)[:64] or "PERSONAL-KNOWLEDGE"
-    course_title = _clean_text(course_title)[:255] or "个人知识库"
     job = KnowledgeImportJob(
         user_id=user.id,
         course_code=course_code,
@@ -803,7 +830,12 @@ def _ensure_course(db: Session, code: str, title: str) -> Course:
         db.add(course)
         db.flush()
     else:
-        course.title = title
+        existing_title = _normalize_course_title(course.title)
+        if existing_title != title:
+            raise KnowledgeIngestionError(
+                f"课程代码 {code} 已绑定课程名称「{course.title}」，不能改用「{title}」。请使用原课程名称或更换课程代码。",
+                400,
+            )
     return course
 
 

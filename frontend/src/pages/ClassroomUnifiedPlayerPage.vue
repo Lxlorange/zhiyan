@@ -43,16 +43,6 @@
               <el-tag v-for="point in currentItem.knowledge_points" :key="point" effect="plain">{{ point }}</el-tag>
             </div>
           </div>
-          <div class="classroom-mini-card">
-            <span>引导问题</span>
-            <button v-for="question in guidingQuestions" :key="question.prompt" type="button" @click="askGuidingQuestion(question.prompt)">
-              {{ question.prompt }}
-            </button>
-          </div>
-          <div class="classroom-mini-card">
-            <span>最近反馈</span>
-            <p>{{ latestFeedback || '暂无提交反馈。' }}</p>
-          </div>
         </section>
 
         <section class="classroom-chat">
@@ -597,7 +587,6 @@ const currentSlideExplanation = computed(() => {
 const slidesVisitedCount = computed(() => visitedSlideIndices.value.size)
 const allSlidesViewed = computed(() => Boolean(slideList.value.length) && slidesVisitedCount.value >= slideList.value.length)
 const conceptCards = computed<any[]>(() => pptPackage.value?.concept_cards || [])
-const guidingQuestions = computed<any[]>(() => pptPackage.value?.guiding_questions || [])
 const voiceScript = computed<Record<string, any>>(() => pptPackage.value?.voice_script || {})
 const practiceSpec = computed(() => pptPackage.value?.practice || null)
 const practiceSteps = computed<string[]>(() => practiceSpec.value?.steps || [])
@@ -656,7 +645,6 @@ const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
 })
-const latestFeedback = computed(() => latestSubmission.value?.feedback || '')
 const latestQuizFeedback = computed(() => latestSubmissionByType('quiz')?.feedback || '')
 const latestQuizSubmission = computed(() => latestSubmissionByType('quiz'))
 const latestQuizResults = computed<Array<Record<string, any>>>(() => {
@@ -898,11 +886,6 @@ async function handleSendDialogue() {
 function sendQuickAction(action: string) {
   if (!pptPackage.value) return
   chatMessage.value = action
-  void handleSendDialogue()
-}
-
-function askGuidingQuestion(question: string) {
-  chatMessage.value = question
   void handleSendDialogue()
 }
 

@@ -4,7 +4,7 @@
       <div class="methods-page-hero-copy">
         <p class="methods-eyebrow eyebrow">METHODS</p>
         <h1>科研工具箱</h1>
-        <p>每个工具都可以点进去直接使用，优先复用已有页面，不够的再补通用详情页。</p>
+        <p>四个常用工具直接进入对应链路，优先保证可用，再慢慢补细节。</p>
       </div>
       <el-button class="methods-ghost-btn" :loading="reloading" @click="reload">
         <el-icon><Refresh /></el-icon>
@@ -36,9 +36,9 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Aim, ArrowRight, Collection, DocumentChecked, Refresh, Search, TrendCharts } from '@element-plus/icons-vue'
+import { Aim, Collection, DocumentChecked, Refresh, TrendCharts } from '@element-plus/icons-vue'
 
-type ToolKey = 'literature' | 'topic' | 'experiment' | 'reproduce' | 'assessment' | 'knowledge'
+type ToolKey = 'literature' | 'topic' | 'experiment' | 'reproduce'
 
 const router = useRouter()
 const reloading = ref(false)
@@ -75,19 +75,10 @@ const toolbox = [
     key: 'reproduce' as ToolKey,
     badge: '复现',
     title: '论文复现',
-    description: '用于拆解论文复现路径、验证步骤和代码入口。',
+    description: '用于拆解复现路径、验证步骤和代码入口。',
     action: '进入方法详情',
     icon: DocumentChecked,
     route: { name: 'research-tool-detail', params: { tool: 'reproduce' } }
-  },
-  {
-    key: 'assessment' as ToolKey,
-    badge: '测评',
-    title: '练习试卷',
-    description: '直接进入已有试卷页面，用于题目生成和作答查看。',
-    action: '打开试卷页',
-    icon: Search,
-    route: { name: 'assessment' }
   }
 ] as const
 

@@ -24,7 +24,6 @@
         <el-input v-model="question" type="textarea" :rows="4" placeholder="告诉我你的研究方向，我来帮你收敛选题" />
         <div class="research-tool-action-row">
           <el-button type="primary" :loading="running" @click="askAgent">生成建议</el-button>
-          <el-button @click="fillExample">填充示例</el-button>
         </div>
         <div class="research-tool-answer">
           <strong>{{ answerTitle }}</strong>
@@ -49,10 +48,9 @@
       </article>
       <aside class="panel-like research-tool-card research-tool-assistant">
         <header><strong>Agent 建议</strong><span>Plan</span></header>
-        <el-input v-model="question" type="textarea" :rows="4" placeholder="输入实验问题，生成下一步操作建议" />
+        <el-input v-model="question" type="textarea" :rows="4" placeholder="输入实验问题，生成下一步计划" />
         <div class="research-tool-action-row">
           <el-button type="primary" :loading="running" @click="askAgent">生成建议</el-button>
-          <el-button @click="fillExample">填充示例</el-button>
         </div>
         <ul class="research-tool-result-list">
           <li v-for="item in answerBullets" :key="item">{{ item }}</li>
@@ -69,10 +67,9 @@
       </article>
       <aside class="panel-like research-tool-card research-tool-assistant">
         <header><strong>Agent 建议</strong><span>Checklist</span></header>
-        <el-input v-model="question" type="textarea" :rows="4" placeholder="输入论文名或方法名，得到复现清单" />
+        <el-input v-model="question" type="textarea" :rows="4" placeholder="输入论文名或方法名，生成复现清单" />
         <div class="research-tool-action-row">
           <el-button type="primary" :loading="running" @click="askAgent">生成建议</el-button>
-          <el-button @click="fillExample">填充示例</el-button>
         </div>
         <div class="research-tool-answer">
           <strong>{{ answerTitle }}</strong>
@@ -112,13 +109,13 @@ const configs = {
     example: '乡村旅游与地方产业振兴',
     assistantPrompt: '帮我把这个研究方向收敛成3个可执行选题，并给出创新点和风险提醒。',
     roadmap: [
-      { title: '方向收敛', desc: '先把宽方向缩成一个明确问题。' },
-      { title: '创新判断', desc: '检查是否有可展示的差异化贡献。' },
-      { title: '风险确认', desc: '看看数据、时间和实现难度。' }
+      { title: '方向收敛', desc: '先把宽方向压缩成一个明确问题。' },
+      { title: '创新判断', desc: '检查是否有可展开的差异化证据。' },
+      { title: '风险确认', desc: '看数据、时间和实现难度。' }
     ],
     links: [
       { label: '打开文献知识库', hint: '找参考论文', to: { name: 'literature' } },
-      { label: '打开练习试卷', hint: '用题目辅助收敛方向', to: { name: 'assessment' } }
+      { label: '打开知识上传', hint: '补充研究资料', to: { name: 'knowledge-upload' } }
     ]
   },
   experiment: {
@@ -128,30 +125,29 @@ const configs = {
     assistantPrompt: '请给我一个包含变量、对照组、评价指标和流程的实验设计建议。',
     experimentMatrix: [
       { variable: '自变量', control: '控制实验条件', metric: '结果变化' },
-      { variable: '因变量', control: '统一采集方式', metric: '满意度/准确率' },
+      { variable: '因变量', control: '统一采集方式', metric: '满意度准确率' },
       { variable: '控制变量', control: '保持环境一致', metric: '干扰最小化' }
     ],
     links: [
       { label: '打开知识上传', hint: '把材料整理进知识库', to: { name: 'knowledge-upload' } },
-      { label: '打开文献知识库', hint: '先看类似实验', to: { name: 'literature' } }
+      { label: '打开文献知识库', hint: '查看相关论文', to: { name: 'literature' } }
     ]
   },
   reproduce: {
     title: '论文复现',
     description: '拆解路径、验证步骤和代码入口。',
     example: '基于Transformer的文本分类复现',
-    assistantPrompt: '请输出这个论文的复现步骤、优先查看的模块和验证清单。',
+    assistantPrompt: '请输出这篇论文的复现步骤、优先查看的模块和验证清单。',
     timeline: ['准备数据', '定位代码入口', '确认参数', '跑通基线', '核对结果'],
     links: [
       { label: '打开文献知识库', hint: '确认原论文信息', to: { name: 'literature' } },
-      { label: '打开练习试卷', hint: '用试卷帮助拆解步骤', to: { name: 'assessment' } }
+      { label: '打开知识上传', hint: '补充复现资料', to: { name: 'knowledge-upload' } }
     ]
   }
 } as const
 
 const key = computed(() => String(route.params.tool || 'topic') as keyof typeof configs)
 const current = computed(() => configs[key.value] || configs.topic)
-
 const roadmap = computed(() => (current.value as { roadmap?: Array<{ title: string; desc: string }> }).roadmap || [])
 const experimentMatrix = computed(() => (current.value as { experimentMatrix?: Array<{ variable: string; control: string; metric: string }> }).experimentMatrix || [])
 const timeline = computed(() => (current.value as { timeline?: string[] }).timeline || [])
@@ -170,7 +166,7 @@ watch(
 async function askAgent() {
   const value = question.value.trim()
   if (!value) {
-    ElMessage.warning('请输入内容')
+    ElMessage.warning('请先输入内容')
     return
   }
   running.value = true
@@ -184,15 +180,11 @@ async function askAgent() {
     answerText.value = current.value.assistantPrompt
     answerBullets.value = [
       '先整理输入内容',
-      '再选择一个可执行方向',
-      '最后用右侧跳转页继续推进'
+      '再选一个可执行方向',
+      '最后进入下一页继续推进'
     ]
   } finally {
     running.value = false
   }
-}
-
-function fillExample() {
-  question.value = current.value.example
 }
 </script>
