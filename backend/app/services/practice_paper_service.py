@@ -109,7 +109,7 @@ def create_practice_paper(
 
     source_context = _source_context(db, selected_points, request.project_id)
     started = time.perf_counter()
-    generated = _generate_paper_with_llm(request, selected_points, source_context)
+    generated = _generate_paper_with_llm(request, selected_points, source_context, user)
     if not generated.questions:
         raise ValueError("模型没有返回题目")
 
@@ -354,6 +354,7 @@ def _generate_paper_with_llm(
     request: PracticePaperCreateRequest,
     points: list[str],
     source_context: list[dict[str, Any]],
+    user: User,
 ) -> _GeneratedPaper:
     context = "\n\n".join(
         f"[{index}] {item.get('document_title', '')} / {item.get('knowledge_point', '')}\n{item.get('content', '')}"
