@@ -1060,37 +1060,66 @@ function hydrateNote() {
 }
 
 function hydrateMindmap() {
-  const center = currentItem.value?.title || pptPackage.value?.title || '当前页'
-  const nodes: MindmapNode[] = [{ id: 'center', label: center, kind: 'center', x: 510, y: 320 }]
+  const center = currentSlide.value?.title || currentItem.value?.title || pptPackage.value?.title || '当前内容'
+  const nodes: MindmapNode[] = [{ id: 'center', label: center, kind: 'center', x: 548, y: 284 }]
   const edges: MindmapEdge[] = []
   const groups = [
-    { id: 'points', label: '知识点', items: currentItem.value?.knowledge_points || [] },
-    { id: 'concepts', label: '概念', items: conceptCards.value.map((card) => String(card.name || '')).filter(Boolean) },
-
-    { id: 'reflection', label: '复盘', items: reflectionPrompts.value.slice(0, 3) }
+    {
+      id: 'knowledge',
+      label: '知识点',
+      detail: '本页核心信息',
+      items: (currentSlideKnowledgePoints.value.length ? currentSlideKnowledgePoints.value : (currentItem.value?.knowledge_points || [])).slice(0, 6)
+    },
+    {
+      id: 'lecture',
+      label: '讲解',
+      detail: '课堂说明与示例',
+      items: [
+        currentSlide.value?.example,
+        currentSlide.value?.misconception,
+        currentSlide.value?.interaction_prompt
+      ].filter(Boolean) as string[]
+    },
+    {
+      id: 'output',
+      label: '产物',
+      detail: '可沉淀内容',
+      items: [
+        noteMarkdown.value ? '笔记已生成' : '可记录 Markdown 笔记',
+        visualizationResource.value ? '动态演示已生成' : '可生成动态演示',
+        currentSlideTakeaways.value[0] || ''
+      ].filter(Boolean) as string[]
+    },
+    {
+      id: 'reflection',
+      label: '复盘',
+      detail: '下一步改进',
+      items: reflectionPrompts.value.slice(0, 4)
+    }
   ]
   const anchors = [
-    { x: 220, y: 150 },
-    { x: 770, y: 150 },
-    { x: 220, y: 530 },
-    { x: 770, y: 530 }
+    { x: 86, y: 64, entryX: 230, entryY: 108 },
+    { x: 876, y: 64, entryX: 790, entryY: 108 },
+    { x: 86, y: 378, entryX: 230, entryY: 428 },
+    { x: 876, y: 378, entryX: 790, entryY: 428 }
   ]
   groups.forEach((group, groupIndex) => {
-    const anchor = anchors[groupIndex] || { x: 220 + groupIndex * 180, y: 150 }
+    const anchor = anchors[groupIndex] || anchors[groupIndex % anchors.length]
     nodes.push({
       id: `group-${group.id}`,
       label: group.label,
+      detail: group.detail,
       kind: 'group',
       group: group.label,
       x: anchor.x,
       y: anchor.y
     })
-    edges.push({ id: `edge-center-${group.id}`, from: { x: 555, y: 355 }, to: { x: anchor.x + 84, y: anchor.y + 30 } })
-    group.items.slice(0, 5).forEach((item, itemIndex) => {
-      const column = itemIndex % 2
+    edges.push({ id: `edge-center-${group.id}`, from: { x: 568, y: 316 }, to: { x: anchor.entryX, y: anchor.entryY } })
+    group.items.forEach((item, itemIndex) => {
       const row = Math.floor(itemIndex / 2)
-      const nodeX = anchor.x + column * 180
-      const nodeY = anchor.y + 88 + row * 92
+      const column = itemIndex % 2
+      const nodeX = anchor.x + column * 170
+      const nodeY = anchor.y + 108 + row * 98
       nodes.push({
         id: `${group.id}-${itemIndex}`,
         label: String(item),
@@ -1100,14 +1129,12 @@ function hydrateMindmap() {
         x: nodeX,
         y: nodeY
       })
-      edges.push({ id: `edge-${group.id}-${itemIndex}`, from: { x: anchor.x + 84, y: anchor.y + 30 }, to: { x: nodeX + 80, y: nodeY + 22 } })
+      edges.push({ id: `edge-${group.id}-${itemIndex}`, from: { x: anchor.entryX, y: anchor.entryY }, to: { x: nodeX + 86, y: nodeY + 24 } })
     })
   })
   mindmapNodes.value = nodes
   mindmapEdges.value = edges
-}
-
-async function goBackToSyllabus() {
+}async function goBackToSyllabus() {
   if (!props.projectId) return
   await router.push({ name: 'project-syllabus', params: { projectId: props.projectId } })
 }
