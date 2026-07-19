@@ -1,0 +1,48 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="orange" x1="260" y1="240" x2="740" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F2A15D"/>
+      <stop offset="1" stop-color="#D97843"/>
+    </linearGradient>
+    <linearGradient id="green" x1="260" y1="760" x2="820" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#CADAB2"/>
+      <stop offset="1" stop-color="#8FAD78"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="230" y1="680" x2="620" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#214E78"/>
+      <stop offset="1" stop-color="#3F76A5"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M315 527C309 423 369 324 462 281C536 247 621 249 693 286"
+        stroke="url(#orange)" stroke-width="34" stroke-linecap="round"/>
+  <path d="M717 299C789 342 823 424 798 501"
+        stroke="url(#green)" stroke-width="34" stroke-linecap="round"/>
+  <path d="M761 505C679 622 536 696 382 677"
+        stroke="url(#green)" stroke-width="52" stroke-linecap="round"/>
+  <path d="M314 527C375 652 488 739 623 735"
+        stroke="url(#orange)" stroke-width="36" stroke-linecap="round"/>
+  <path d="M277 612C333 703 446 762 571 748"
+        stroke="url(#blue)" stroke-width="34" stroke-linecap="round"/>
+  <path d="M748 522C735 624 671 713 573 758"
+        stroke="url(#green)" stroke-width="34" stroke-linecap="round"/>
+  <path d="M267 587C273 532 310 486 362 470"
+        stroke="url(#orange)" stroke-width="34" stroke-linecap="round"/>
+
+  <circle cx="362" cy="470" r="44" fill="url(#orange)"/>
+  <circle cx="716" cy="300" r="44" fill="url(#green)"/>
+  <circle cx="277" cy="612" r="42" fill="url(#blue)"/>
+  <circle cx="574" cy="748" r="42" fill="url(#blue)"/>
+  <circle cx="562" cy="258" r="43" fill="url(#orange)"/>
+
+  <path d="M535 307C526 381 479 436 420 450C477 466 523 524 535 596C546 523 593 467 652 450C594 434 547 381 535 307Z"
+        fill="url(#orange)"/>
+  <text x="535" y="476" text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif" font-size="68" font-weight="700"
+        fill="#FFFFFF">AI</text>
+
+  <path d="M401 330C396 356 380 372 354 378C380 384 396 400 401 426C407 400 423 384 449 378C423 372 407 356 401 330Z"
+        fill="#8FAD78"/>
+  <path d="M612 470C607 496 591 512 565 518C591 524 607 540 612 566C618 540 634 524 660 518C634 512 618 496 612 470Z"
+        fill="#214E78"/>
+</svg>

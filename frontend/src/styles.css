@@ -7674,6 +7674,17 @@ button:focus-visible,
   font-weight: 900;
 }
 
+.brand-logo {
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.brand-mark-fallback {
+  line-height: 1;
+}
+
 .brand-copy h1,
 .brand h1 {
   color: var(--edu-ink);

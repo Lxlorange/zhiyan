@@ -1,7 +1,16 @@
 <template>
   <aside class="app-sidebar" :class="{ 'is-collapsed': collapsed }">
     <div class="brand">
-      <div class="brand-mark">AI</div>
+      <div class="brand-mark">
+        <img
+          v-if="!logoLoadFailed"
+          class="brand-logo"
+          :src="logoSrc"
+          alt=""
+          @error="logoLoadFailed = true"
+        />
+        <span v-else class="brand-mark-fallback">AI</span>
+      </div>
       <div class="brand-copy">
         <h1>智研星链</h1>
         <p>多智能体学习平台</p>
@@ -67,10 +76,15 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineProps<{
   activePage: string
   collapsed: boolean
 }>()
+
+const logoLoadFailed = ref(false)
+const logoSrc = '/logo.svg'
 
 const emit = defineEmits<{
   navigate: [page: string]
