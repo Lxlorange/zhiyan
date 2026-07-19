@@ -120,6 +120,76 @@
           </el-table-column>
         </el-table>
       </article>
+
+      <article class="panel-like knowledge-upload-panel knowledge-documents-panel">
+        <header>
+          <strong>文档列表</strong>
+          <span>{{ documents.length }} 份资料</span>
+        </header>
+
+        <div class="knowledge-filter-row">
+          <el-input
+            v-model="documentQuery"
+            clearable
+            placeholder="搜索课程代码、文件名、摘要"
+            @keyup.enter="loadDocuments"
+            @clear="loadDocuments"
+          />
+          <el-button :loading="loadingDocuments" @click="loadDocuments">搜索</el-button>
+        </div>
+
+        <div class="knowledge-document-workbench">
+          <el-table
+            :data="documents"
+            v-loading="loadingDocuments"
+            class="knowledge-table"
+            row-key="id"
+            highlight-current-row
+            @row-click="selectDocument"
+          >
+            <el-table-column prop="title" label="名称" min-width="220" show-overflow-tooltip />
+            <el-table-column label="课程代码" width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.course_code || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="doc_type" label="类型" width="100" />
+            <el-table-column label="片段" width="90">
+              <template #default="{ row }">{{ row.chunk_count || 0 }}</template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="入库时间" width="180">
+              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="danger" @click.stop="handleDeleteDocument(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <section class="knowledge-chunk-panel">
+            <header>
+              <strong>{{ selectedDocument?.title || '选择文档查看切片' }}</strong>
+              <span v-if="selectedDocument">{{ selectedDocument.chunk_count }} 个片段</span>
+            </header>
+            <div v-if="selectedDocument" v-loading="loadingChunks" class="knowledge-chunk-list">
+              <article v-for="chunk in documentChunks" :key="chunk.id">
+                <div>
+                  <strong>{{ chunk.knowledge_point || chunk.section_title || `片段 ${chunk.chunk_index + 1}` }}</strong>
+                  <span>
+                    {{ chunkLocationLabel(chunk) }}
+                    <template v-if="chunk.token_count"> · {{ chunk.token_count }} tokens</template>
+                  </span>
+                </div>
+                <p>{{ chunk.content }}</p>
+                <div v-if="chunk.keywords?.length" class="knowledge-chunk-tags">
+                  <el-tag v-for="keyword in chunk.keywords" :key="keyword" size="small" effect="plain">{{ keyword }}</el-tag>
+                </div>
+              </article>
+              <el-empty v-if="!loadingChunks && !documentChunks.length" description="该文档暂无可预览片段" />
+            </div>
+            <el-empty v-else description="从左侧选择一份已入库资料" />
+          </section>
+        </div>
+      </article>
     </section>
   </div>
 </template>
@@ -130,9 +200,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile, UploadUserFile } from 'element-plus'
 import {
   deleteKnowledgeImportJob,
+  deleteKnowledgeDocument,
   getKnowledgeStorageUsage,
   importKnowledgePackage,
+  listKnowledgeDocumentChunks,
+  listKnowledgeDocuments,
   listKnowledgeImportJobs,
+  type KnowledgeChunkRead,
+  type KnowledgeDocumentRead,
   type KnowledgeImportJobRead,
   type KnowledgeStorageUsageRead
 } from '../services/apiClient'
@@ -149,10 +224,16 @@ const uploadForm = reactive({
 const selectedUploadFile = ref<File | null>(null)
 const selectedUploadFiles = ref<UploadUserFile[]>([])
 const jobs = ref<KnowledgeImportJobRead[]>([])
+const documents = ref<KnowledgeDocumentRead[]>([])
+const selectedDocument = ref<KnowledgeDocumentRead | null>(null)
+const documentChunks = ref<KnowledgeChunkRead[]>([])
+const documentQuery = ref('')
 const storageUsage = ref<KnowledgeStorageUsageRead | null>(null)
 const loading = ref(false)
 const uploading = ref(false)
 const loadingJobs = ref(false)
+const loadingDocuments = ref(false)
+const loadingChunks = ref(false)
 let importPollTimer: ReturnType<typeof window.setInterval> | null = null
 
 const normalizedCourseCode = computed(() => normalizeCourseCode(uploadForm.course_code))
@@ -164,9 +245,9 @@ const courseNameConflict = computed(() => {
   const code = normalizedCourseCode.value
   const title = normalizedCourseTitle.value
   if (!code || !title) return ''
-  const existing = jobs.value.find((job) => normalizeCourseCode(job.course_code || '') === code && (job.course_title || '').trim())
-  if (!existing) return ''
-  const existingTitle = String(existing.course_title || '').trim()
+  const fromJobs = jobs.value.find((job) => normalizeCourseCode(job.course_code || '') === code && (job.course_title || '').trim())
+  const fromDocuments = documents.value.find((document) => normalizeCourseCode(document.course_code || '') === code && (document.title || '').trim())
+  const existingTitle = String(fromJobs?.course_title || fromDocuments?.title || '').trim()
   return existingTitle && existingTitle !== title ? existingTitle : ''
 })
 
@@ -176,7 +257,7 @@ onBeforeUnmount(stopImportPolling)
 async function loadAll() {
   loading.value = true
   try {
-    await Promise.all([loadStorageUsage(), loadJobs()])
+    await Promise.all([loadStorageUsage(), loadJobs(), loadDocuments()])
     updateImportPolling()
   } finally {
     loading.value = false
@@ -196,6 +277,34 @@ async function loadJobs() {
     updateImportPolling()
   } finally {
     loadingJobs.value = false
+  }
+}
+
+async function loadDocuments() {
+  loadingDocuments.value = true
+  try {
+    const { data } = await listKnowledgeDocuments({
+      query: documentQuery.value.trim(),
+      limit: 80
+    })
+    documents.value = data
+    if (selectedDocument.value && !data.some((document) => document.id === selectedDocument.value?.id)) {
+      selectedDocument.value = null
+      documentChunks.value = []
+    }
+  } finally {
+    loadingDocuments.value = false
+  }
+}
+
+async function selectDocument(row: KnowledgeDocumentRead) {
+  selectedDocument.value = row
+  loadingChunks.value = true
+  try {
+    const { data } = await listKnowledgeDocumentChunks(row.id, 120)
+    documentChunks.value = data
+  } finally {
+    loadingChunks.value = false
   }
 }
 
@@ -262,7 +371,7 @@ async function handleUploadConfirm() {
     clearSelectedUpload()
     jobs.value = [data, ...jobs.value.filter((job) => job.id !== data.id)]
     updateImportPolling()
-    await Promise.all([loadStorageUsage(), loadJobs()])
+    await Promise.all([loadStorageUsage(), loadJobs(), loadDocuments()])
   } finally {
     uploading.value = false
   }
@@ -296,6 +405,7 @@ async function refreshImportJobsInBackground() {
       stopImportPolling()
       if (hadActiveImport) {
         await loadStorageUsage()
+        await loadDocuments()
       }
     }
   } catch {
@@ -353,7 +463,26 @@ async function handleDeleteJob(row: KnowledgeImportJobRead) {
   }
   await deleteKnowledgeImportJob(row.id)
   ElMessage.success('上传记录已删除')
-  await Promise.all([loadJobs(), loadStorageUsage()])
+  await Promise.all([loadJobs(), loadStorageUsage(), loadDocuments()])
+}
+
+async function handleDeleteDocument(row: KnowledgeDocumentRead) {
+  try {
+    await ElMessageBox.confirm(`确认删除文档“${row.title}”吗？`, '删除知识库文档', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await deleteKnowledgeDocument(row.id)
+  ElMessage.success('文档已删除')
+  if (selectedDocument.value?.id === row.id) {
+    selectedDocument.value = null
+    documentChunks.value = []
+  }
+  await Promise.all([loadDocuments(), loadStorageUsage()])
 }
 
 function isActiveImportStatus(status: string) {
@@ -415,5 +544,13 @@ function formatDate(value: string) {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function chunkLocationLabel(chunk: KnowledgeChunkRead) {
+  const parts = [`#${chunk.chunk_index + 1}`]
+  if (chunk.page_no) parts.push(`第 ${chunk.page_no} 页`)
+  if (chunk.slide_no) parts.push(`第 ${chunk.slide_no} 张`)
+  if (chunk.section_title) parts.push(chunk.section_title)
+  return parts.join(' · ')
 }
 </script>

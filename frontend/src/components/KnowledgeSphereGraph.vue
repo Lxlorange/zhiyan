@@ -118,7 +118,7 @@ const FOV = 1400
 const WORLD_HEIGHT = 980
 const SPIN_SPEED = 0.00018
 const MAX_DRAW_EDGES = 900
-const palette = ['#dc8b5e', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#a05a34', '#4f8b78']
+const palette = ['#4f8b78', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#8a6f4d', '#3f7f8f']
 
 const canvasHost = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -400,13 +400,15 @@ function constrainToFunnel(node: WorldNode) {
 
 function buildCategoryChips(nodes: KnowledgeLinkNode[]): CategoryChip[] {
   const counts = new Map<string, number>()
+  const colors = new Map<string, string>()
   nodes.forEach((node) => {
     if (node.layer === 'document') return
     const key = categoryKey(node)
     counts.set(key, (counts.get(key) || 0) + 1)
+    if (!colors.has(key)) colors.set(key, nodeColor(node))
   })
   return Array.from(counts.entries())
-    .map(([key, count]) => ({ key, label: categoryLabel(key), color: categoryColor(key), count }))
+    .map(([key, count]) => ({ key, label: categoryLabel(key), color: colors.get(key) || categoryColor(key), count }))
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
     .slice(0, 10)
 }
@@ -693,15 +695,14 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     const selected = selectedNode.value?.id === node.id
     const hovered = hoverIndex === index
     const lineage = lineageNodes.has(node.id)
-    const path = pathNodeIds.value.has(node.id)
     let dim = 1
-    if (hasSelection && !selected && !lineage && !path) dim = 0.14
+    if (hasSelection && !selected && !lineage) dim = 0.14
 
-    const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : path ? 1.18 : 1)
+    const r = projected.radius * (selected ? 1.55 : hovered ? 1.36 : 1)
     const alpha = Math.min(1, dim * (0.62 + 0.38 * Math.min(1, projected.pf * projected.pf)))
     const [red, green, blue] = worldNode.rgb
 
-    ctx.shadowBlur = selected || hovered || lineage || path ? 12 : 4
+    ctx.shadowBlur = selected || hovered || lineage ? 12 : 4
     ctx.shadowColor = `rgba(${red}, ${green}, ${blue}, ${0.26 * alpha})`
     ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`
     ctx.beginPath()
@@ -709,8 +710,8 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     ctx.fill()
 
     ctx.shadowBlur = 0
-    ctx.strokeStyle = selected || hovered || lineage || path ? '#17312c' : `rgba(23, 32, 51, ${0.2 * dim})`
-    ctx.lineWidth = selected || hovered ? 1.3 : lineage || path ? 0.95 : 0.55
+    ctx.strokeStyle = selected || hovered || lineage ? '#17312c' : `rgba(23, 32, 51, ${0.2 * dim})`
+    ctx.lineWidth = selected || hovered ? 1.3 : lineage ? 0.95 : 0.55
     ctx.beginPath()
     ctx.arc(projected.sx, projected.sy, r, 0, Math.PI * 2)
     ctx.stroke()
@@ -1030,20 +1031,18 @@ function resizeCanvas() {
 
 function nodeRadius(node: KnowledgeLinkNode) {
   const weight = Math.max(1, Number(node.weight || 1))
-  const pathBoost = pathNodeIds.value.has(node.id) ? 0.8 : 0
-  if (node.layer === 'project') return 2.8 + pathBoost
+  if (node.layer === 'project') return 2.8
   if (node.layer === 'document') return 1.8 + Math.min(1.1, Math.log(weight + 1) * 0.24)
-  if (node.layer === 'platform') return 1.8 + pathBoost
-  if (node.layer === 'knowledge_base') return 2.1 + Math.min(1.4, Math.log(weight + 1) * 0.28) + pathBoost
+  if (node.layer === 'platform') return 1.8
+  if (node.layer === 'knowledge_base') return 2.1 + Math.min(1.4, Math.log(weight + 1) * 0.28)
   return 1.7 + Math.min(1.2, Math.log(weight + 1) * 0.26)
 }
 
 function nodeColor(node: KnowledgeLinkNode) {
-  if (pathNodeIds.value.has(node.id)) return '#dc8b5e'
   if (node.layer === 'project') return '#dc8b5e'
   if (node.layer === 'document') return '#b99126'
   if (node.layer === 'platform') return '#6f8f49'
-  return categoryColor(categoryKey(node))
+  return categoryColor(categoryKey(node), node.layer)
 }
 
 function categoryKey(node: KnowledgeLinkNode) {
@@ -1069,7 +1068,8 @@ function normalizeCategoryLabel(value: string) {
   return label
 }
 
-function categoryColor(key: string) {
+function categoryColor(key: string, layer = '') {
+  if (layer === 'knowledge_base') return '#4f8b78'
   if (key === '平台功能介绍') return '#6f8f49'
   if (key.includes('文献') || key.includes('论文')) return '#2f7fa3'
   if (key.includes('项目')) return '#dc8b5e'

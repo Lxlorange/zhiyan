@@ -9398,6 +9398,18 @@ body::after {
   width: 100%;
 }
 
+.knowledge-documents-panel {
+  grid-column: 1 / -1;
+}
+
+.knowledge-document-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
 .knowledge-import-progress {
   display: grid;
   gap: 6px;
@@ -9824,6 +9836,10 @@ body::after {
 @media (max-width: 1100px) {
   .knowledge-upload-layout,
   .knowledge-content-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-document-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
 
