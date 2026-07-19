@@ -652,15 +652,14 @@ function drawEdges(ctx: CanvasRenderingContext2D) {
     if (!source.visible || !target.visible) return
 
     const inLineage = lineageEdges.has(worldEdge.index)
-    const sourceNode = worldNodes[worldEdge.source]
     const alpha = edgeAlpha(worldEdge, hasSelection, inLineage)
     if (alpha <= 0.01) return
-    const rgb = inLineage ? sourceNode.rgb : edgeRgb(worldEdge.edge)
+    const rgb = edgeRgb(worldEdge.edge)
     const depth = Math.max(0.35, Math.min(1.15, (source.pf + target.pf) / 2))
 
     const pulse = reduceMotion ? 0 : Math.sin(driftTime * 1.6 + worldEdge.index * 0.37) * 0.16
     ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, alpha * depth + pulse * alpha)})`
-    ctx.lineWidth = inLineage || worldEdge.path ? 1.55 : worldEdge.edge.relation === 'prerequisite' ? 0.9 : 0.64
+    ctx.lineWidth = inLineage ? 1.18 : worldEdge.edge.relation === 'prerequisite' ? 0.86 : 0.6
     ctx.beginPath()
     ctx.moveTo(source.sx, source.sy)
     const midX = (source.sx + target.sx) / 2
@@ -717,7 +716,7 @@ function drawNodes(ctx: CanvasRenderingContext2D) {
     ctx.stroke()
 
     if (selected || hovered) {
-      ctx.strokeStyle = selected ? '#dc8b5e' : '#172033'
+      ctx.strokeStyle = '#172033'
       ctx.lineWidth = 1.15
       ctx.beginPath()
       ctx.arc(projected.sx, projected.sy, r + 2.8, 0, Math.PI * 2)
@@ -768,7 +767,7 @@ function dynamicPoint(node: WorldNode): Vec3 {
   const seed = node.driftSeed * 0.01
   const layerFloat = node.node.layer === 'project' ? 0.35 : node.node.layer === 'document' ? 0.72 : 1
   const categoryFloat = 0.72 + (hashString(node.categoryKey) % 28) / 100
-  const strength = (lineageNodes.has(node.node.id) || pathNodeIds.value.has(node.node.id) ? 13 : 8) * layerFloat
+  const strength = (lineageNodes.has(node.node.id) ? 13 : 8) * layerFloat
   return {
     x: node.x + Math.sin(driftTime * 0.74 * categoryFloat + seed) * strength,
     y: node.y + Math.sin(driftTime * 0.48 + seed * 1.7) * strength * 0.42,
@@ -806,8 +805,7 @@ function isNodeVisible(worldNode: WorldNode) {
 }
 
 function edgeAlpha(edge: WorldEdge, hasSelection: boolean, inLineage: boolean) {
-  if (hasSelection) return inLineage ? 0.72 : edge.path ? 0.3 : 0.035
-  if (edge.path) return 0.58
+  if (hasSelection) return inLineage ? 0.58 : 0.035
   if (edge.edge.relation === 'prerequisite') return edge.edge.strength === 'hard' ? 0.16 : 0.1
   if (edge.edge.relation === 'evidence') return 0.07
   return 0.08
@@ -949,20 +947,12 @@ function buildLineage(nodeId: string) {
   lineageNodes = new Set<string>()
   lineageEdges = new Set<number>()
   if (!nodeId) return
-  const queue = [nodeId]
   lineageNodes.add(nodeId)
-  while (queue.length) {
-    const current = queue.shift()
-    if (!current) continue
-    for (const edge of worldEdges) {
-      if (edge.edge.relation !== 'prerequisite') continue
-      if (edge.edge.target !== current) continue
-      lineageEdges.add(edge.index)
-      if (!lineageNodes.has(edge.edge.source)) {
-        lineageNodes.add(edge.edge.source)
-        queue.push(edge.edge.source)
-      }
-    }
+  for (const edge of worldEdges) {
+    if (edge.edge.relation !== 'prerequisite') continue
+    if (edge.edge.target !== nodeId) continue
+    lineageEdges.add(edge.index)
+    lineageNodes.add(edge.edge.source)
   }
 }
 
