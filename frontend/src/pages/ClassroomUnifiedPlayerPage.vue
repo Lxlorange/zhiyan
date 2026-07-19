@@ -617,6 +617,9 @@ type MindmapEdge = {
 
 const mindmapNodes = ref<MindmapNode[]>([])
 const mindmapEdges = ref<MindmapEdge[]>([])
+watch(() => [activeSlideIndex.value, activeTool.value] as const, () => {
+  if (activeTool.value === 'mindmap') hydrateMindmap()
+})
 const latestSubmission = computed(() => {
   const submissions = classroom.value?.submissions || []
   return submissions[submissions.length - 1] || null
@@ -1157,6 +1160,5 @@ function statusType(status: string): '' | 'success' | 'warning' | 'info' | 'prim
   return 'primary'
 }
 </script>
-
 
 
