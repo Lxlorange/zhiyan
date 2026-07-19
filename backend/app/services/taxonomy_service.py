@@ -260,13 +260,15 @@ def _clean_point_row(row: dict[str, Any]) -> dict[str, Any]:
     row["document_parse_meta"] = [item for item in (row.get("document_parse_meta") or []) if isinstance(item, dict)]
     row["course_title"] = str(row.get("course_title") or row.get("chapter") or "知识库")
     row["course_code"] = str(row.get("course_code") or "")
-    tags = [str(item) for item in row.get("tags") or [] if item]
-    row["tags"] = tags
+    raw_tags = [str(item).strip() for item in row.get("tags") or [] if str(item).strip()]
+    row["tags"] = raw_tags
     taxonomy = _taxonomy_meta_from_row(row)
+    tags = [tag for tag in raw_tags if not _is_internal_tag(tag)]
+    row["tags"] = tags
     row["taxonomy"] = taxonomy
     row["topic_type"] = taxonomy.get("type", "")
     row["assessment_prompt"] = taxonomy.get("assessment_prompt", "")
-    row["source_kind"] = str(row.get("source_kind") or ("platform" if "platform_feature" in tags else "rag"))
+    row["source_kind"] = str(row.get("source_kind") or ("platform" if "platform_feature" in raw_tags else "rag"))
     return row
 
 
@@ -410,7 +412,7 @@ def _point_category(row: dict[str, Any]) -> str:
         return course_title
     tags = [str(item).strip() for item in row.get("tags") or [] if str(item).strip()]
     for tag in tags:
-        if tag not in {"imported", "taxonomy_topic", "legacy_compacted", "courseware", "知识库", "个人知识库"}:
+        if not _is_internal_tag(tag) and tag not in {"知识库", "个人知识库"}:
             return tag
     chapter = str(row.get("chapter") or "").strip()
     if chapter and chapter != "导入课件资料":
@@ -419,6 +421,26 @@ def _point_category(row: dict[str, Any]) -> str:
     if titles:
         return titles[0][:80]
     return "知识点"
+
+
+def _is_internal_tag(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return True
+    if normalized in {
+        "imported",
+        "taxonomy_topic",
+        "legacy_compacted",
+        "courseware",
+        "platform_feature",
+        "conceptual_mastery",
+        "procedural_mastery",
+        "representational_mastery",
+        "language_mastery",
+        "meta_mastery",
+    }:
+        return True
+    return normalized.endswith("_mastery") or normalized.startswith("taxonomy_")
 
 
 def _add_project_nodes(nodes: dict[str, KnowledgeLinkNode], projects: list[LearningProject]) -> list[KnowledgeLinkNode]:

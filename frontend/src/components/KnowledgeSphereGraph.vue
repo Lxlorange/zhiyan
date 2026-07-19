@@ -119,6 +119,18 @@ const WORLD_HEIGHT = 980
 const SPIN_SPEED = 0.00018
 const MAX_DRAW_EDGES = 900
 const palette = ['#4f8b78', '#2f7fa3', '#6f8f49', '#b99126', '#b76577', '#5f6fb0', '#8a6f4d', '#3f7f8f']
+const internalTagSet = new Set([
+  'conceptual_mastery',
+  'procedural_mastery',
+  'representational_mastery',
+  'language_mastery',
+  'meta_mastery',
+  'taxonomy_topic',
+  'legacy_compacted',
+  'imported',
+  'courseware',
+  'platform_feature'
+])
 
 const canvasHost = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -178,7 +190,7 @@ const selectedTags = computed<string[]>(() => {
   if (!selectedNode.value) return []
   const node = selectedNode.value
   const meta = node.meta || {}
-  const tags = Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)).filter(Boolean) : []
+  const tags = Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)).filter((item) => !isInternalTag(item)) : []
   return [categoryLabel(categoryKey(node)), ...tags]
     .filter((item, index, array) => item && array.indexOf(item) === index)
     .slice(0, 7)
@@ -1053,18 +1065,25 @@ function normalizeCategoryLabel(value: string) {
   const label = value.trim()
   const lower = label.toLowerCase()
   if (!label) return ''
+  if (isInternalTag(label)) return ''
   if (lower === 'pdf' || lower === 'document' || lower === 'doc' || lower === 'ppt' || lower === 'pptx') return ''
   if (label.includes('生成PDF') || label.includes('生成 PDF')) return ''
   return label
 }
 
 function categoryColor(key: string, layer = '') {
-  if (layer === 'knowledge_base') return '#4f8b78'
   if (key === '平台功能介绍') return '#6f8f49'
   if (key.includes('文献') || key.includes('论文')) return '#2f7fa3'
   if (key.includes('项目')) return '#dc8b5e'
   if (key.includes('资料') || key.includes('pdf') || key.includes('document')) return '#b99126'
   return palette[hashString(key) % palette.length]
+}
+
+function isInternalTag(value: string) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return true
+  if (internalTagSet.has(normalized)) return true
+  return normalized.endsWith('_mastery') || normalized.startsWith('taxonomy_')
 }
 
 function edgeRgb(edge: KnowledgeLinkEdge): [number, number, number] {
