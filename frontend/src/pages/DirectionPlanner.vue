@@ -130,7 +130,6 @@
             clearable
           >
             <el-option label="课程项目" value="course_project" />
-            <el-option label="科研项目" value="research_project" />
             <el-option label="课程知识" value="course_knowledge" />
           </el-select>
 
