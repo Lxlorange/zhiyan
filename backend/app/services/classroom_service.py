@@ -2571,46 +2571,58 @@ def _generate_visualization3d_html_direct(
         f"{FORMULA_OUTPUT_INSTRUCTIONS}"
     )
     user_prompt = (
-        "生成一个完整的交互式 3D 演示 HTML 页面。\n\n"
-        "## 技术要求\n"
-        "1. 使用 Three.js ES 模块（importmap 从 esm.sh 加载 three@0.167）\n"
-        "2. 必须包含 OrbitControls（鼠标旋转/缩放/平移）\n"
-        "3. 良好的光照：AmbientLight + DirectionalLight + 可选的 HemisphereLight\n"
-        "4. 响应式设计，铺满整个窗口\n"
-        "5. 底部控制栏：播放/暂停按钮、速度滑块、重置按钮\n"
-        "6. 左上角信息面板：标题和当前步骤说明\n"
-        "7. 深色背景 (#0b1120)，对象颜色鲜明可辨\n\n"
-        "## 场景要求\n"
-        f"根据以下内容设计 3D 场景：\n"
-        f"- 项目：{project.title}\n"
-        f"- 学习项：{item.title}\n"
-        f"- 知识点：{item.knowledge_points}\n"
-        f"- 用户要求：{instruction}\n"
-        f"- 课堂摘要：{package.learning_summary}\n\n"
-        "## 场景设计指南\n"
-        "- 创建 4-8 个 3D 对象（球体/立方体/圆柱/环），用颜色区分角色\n"
-        "- 对象之间用线条或管状体连接表示关系\n"
-        "- 添加标签（sprite 或 CSS label）标识对象名称\n"
-        '- 设计 4-6 个“步骤帧”，每帧高亮不同对象、显示不同说明文字\n'
-        "- 对象在各帧之间可以有位置/颜色/大小变化\n"
-        "- 至少有一个对象带有粒子拖尾效果（用 Points 实现）\n\n"
-        "## 交互要求\n"
-        "- 播放/暂停按钮自动循环步骤（每步约 2 秒）\n"
-        "- 速度滑块控制播放速度\n"
-        "- 点击 3D 对象弹出信息面板显示详情\n"
-        "- 底部步骤按钮可直接跳转到指定步骤\n\n"
-        "## 代码规范\n"
-        "- 用 importmap 加载 Three.js：'three': 'https://esm.sh/three@0.167.1'\n"
-        "- OrbitControls：'three/addons/controls/OrbitControls.js'\n"
-        "- 动画循环用 requestAnimationFrame\n"
-        "- 窗口 resize 时更新 camera 和 renderer\n"
-        "- 所有对象存储在 objects 字典中方便查找\n"
-        "- 信息数据存储在 frames 数组中\n\n"
-        "## 容错要求（必须）\n"
-        "- 检测 WebGL 支持，不支持时显示友好提示\n"
-        "- 初始化用 try-catch 包裹，失败时显示错误信息和重试按钮\n"
-        "- 加载时显示 loading 遮罩，初始化完成后隐藏\n\n"
-        "只输出 HTML，不要任何解释。"
+        '生成一个完整的交互式 3D 演示 HTML 页面。\n\n'
+        '## 技术要求\n'
+        '1. 使用 Three.js ES 模块 (importmap 从 esm.sh 加载 three@0.167)\n'
+        '2. 必须包含 OrbitControls (鼠标旋转/缩放/平移)\n'
+        '3. 良好的光照: AmbientLight + DirectionalLight + 可选的 HemisphereLight\n'
+        '4. 响应式设计，铺满整个窗口\n'
+        '5. 底部控制栏: 播放/暂停按钮、速度滑块、重置按钮、步骤跳转按钮\n'
+        '6. 左上角信息面板: 标题和当前步骤说明\n'
+        '7. 深色背景 (#0b1120)，对象颜色鲜明可辨\n\n'
+        '## 场景要求\n'
+        f'根据以下内容设计 3D 场景:\n'
+        f'- 项目: {project.title}\n'
+        f'- 学习项: {item.title}\n'
+        f'- 知识点: {item.knowledge_points}\n'
+        f'- 用户要求: {instruction}\n'
+        f'- 课堂摘要: {package.learning_summary}\n\n'
+        '## 场景设计指南\n'
+        '- 创建 4-8 个 3D 对象 (球体/立方体/圆柱/环)，用颜色区分角色\n'
+        '- 对象之间用线条连接表示关系\n'
+        '- 用 CSS positioned div 做标签，通过 project+transform 定位\n'
+        '- 设计 4-6 个步骤帧，存储在 frames 数组中，每帧有 title/description/highlight 字段\n'
+        '- 对象在各帧之间可以有位置/颜色/大小变化\n'
+        '- 至少有一个对象带有粒子效果 (用 Points 实现)\n\n'
+        '## 交互要求\n'
+        '- 播放/暂停按钮自动循环步骤 (每步约3秒)\n'
+        '- 速度滑块控制播放速度\n'
+        '- 鼠标悬停 3D 对象时高亮并显示 tooltip\n'
+        '- 底部步骤按钮可直接跳转到指定步骤\n\n'
+        '## 关键代码规范 (必须遵守，否则页面白屏)\n'
+        '1. 用静态 import，不要用动态 import() -- 动态导入在 importmap 环境下可能失败:\n'
+        '   import * as THREE from “three”;\n'
+        '   import { OrbitControls } from “three/addons/controls/OrbitControls.js”;\n'
+        '2. 渲染循环必须始终运行 -- animate() 无条件调用 requestAnimationFrame 和 renderer.render():\n'
+        '   function animate() {\n'
+        '       requestAnimationFrame(animate);\n'
+        '       if (isPlaying) { /* update animations */ }\n'
+        '       controls.update();\n'
+        '       renderer.render(scene, camera);\n'
+        '   }\n'
+        '3. 初始化完成后先渲染一帧再隐藏 loading:\n'
+        '   renderer.render(scene, camera);\n'
+        '   document.getElementById(“loading”).style.display = “none”;\n'
+        '   animate();\n'
+        '4. Raycaster 需要递归收集所有 Mesh (包括 Group 子对象):\n'
+        '   const allMeshes = [];\n'
+        '   scene.traverse(child => { if (child.isMesh) allMeshes.push(child); });\n'
+        '5. objects 字典中只存可独立控制的 Mesh/Line/Points，不要存 Group\n\n'
+        '## 容错要求 (必须)\n'
+        '- 检测 WebGL 支持，不支持时显示友好提示\n'
+        '- 初始化用 try-catch 包裹，失败时显示错误信息和重试按钮\n'
+        '- 加载时显示 loading 遮罩\n\n'
+        '只输出 HTML，不要任何解释。'
     )
 
     raw = _qwen_chat_raw_text(
