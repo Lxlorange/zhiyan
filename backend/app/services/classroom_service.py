@@ -2555,253 +2555,326 @@ _3D_TO_NON_3D_FALLBACK = {
 }
 
 
-def _generate_visualization3d_html_direct(
+def _generate_visualization3d_scene_data(
     project: LearningProject,
     item: LearningSyllabusItem,
     package: _ClassroomPackage,
     instruction: str,
     *,
     user: Optional[User] = None,
-) -> tuple[str, str]:
-    """OpenMAIC-style: LLM directly outputs a complete self-contained Three.js HTML page."""
+) -> dict[str, Any]:
+    """LLM outputs simple JSON scene spec. Python renders tested HTML template."""
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
-    system_prompt = (
-        "你是 3D 可视化专家。根据课堂内容生成一个完整的、自包含的 HTML 文件，使用 Three.js 展示交互式 3D 场景。"
-        "只输出完整 HTML 文档（从 <!DOCTYPE html> 到 </html>），不输出 Markdown、解释或代码块标记。"
-        f"{FORMULA_OUTPUT_INSTRUCTIONS}"
-    )
-    user_prompt = (
-        '生成一个交互式 3D 演示 HTML 页面。\n'
-        '严格按照下面的骨架模板填充场景内容，不要改动模板结构，只替换 /* TODO */ 注释部分。\n\n'
-        '=== 骨架模板 (复制此结构，只改 TODO) ===\n'
-        '<!DOCTYPE html>\n'
-        '<html lang=”zh-CN”>\n'
-        '<head>\n'
-        '<meta charset=”UTF-8”>\n'
-        '<meta name=”viewport” content=”width=device-width,initial-scale=1.0”>\n'
-        '<title>/* TODO: 标题 */</title>\n'
-        '<style>\n'
-        '*{margin:0;padding:0;box-sizing:border-box}\n'
-        'body{overflow:hidden;background:#0b1120;font-family:system-ui,sans-serif;color:#e0e0ff;height:100vh;display:flex;flex-direction:column}\n'
-        '#canvas-container{flex:1;position:relative}\n'
-        '#info{position:absolute;top:16px;left:16px;background:rgba(15,25,45,0.9);padding:14px 18px;border-radius:10px;border:1px solid #2a3a5a;max-width:380px;z-index:10}\n'
-        '#info h1{font-size:1.2rem;color:#6ad1ff;margin-bottom:6px}\n'
-        '#info p{font-size:0.9rem;color:#a0b0d0;line-height:1.5}\n'
-        '#controls{display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 16px;background:rgba(10,18,32,0.95);border-top:1px solid #1a2a4a;flex-wrap:wrap}\n'
-        'button{background:#2a4a7a;color:#c0d0ff;border:none;border-radius:6px;padding:8px 14px;font-size:0.9rem;cursor:pointer}\n'
-        'button:hover{background:#3a6abf} button.active{background:#4a8aef;color:#fff}\n'
-        'input[type=range]{width:120px;accent-color:#6ad1ff}\n'
-        '#loading{position:fixed;inset:0;background:#0b1120;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:1000;color:#6ad1ff;font-size:1.1rem}\n'
-        '.spinner{width:44px;height:44px;border:4px solid rgba(106,209,255,0.2);border-top-color:#6ad1ff;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px}\n'
-        '@keyframes spin{to{transform:rotate(360deg)}}\n'
-        '#error{position:fixed;inset:0;background:#0b1120;display:none;flex-direction:column;justify-content:center;align-items:center;z-index:1000;color:#ff6b6b;text-align:center;padding:20px}\n'
-        '#error h2{font-size:1.4rem;margin-bottom:12px}\n'
-        '#error p{max-width:500px;line-height:1.6;margin-bottom:20px;color:#d0d0e0}\n'
-        '.label-div{position:absolute;pointer-events:none;color:#fff;font-size:13px;font-weight:700;text-shadow:0 0 4px rgba(0,0,0,0.9);transform:translate(-50%,-50%);white-space:nowrap;z-index:5}\n'
-        '</style>\n'
-        '</head>\n'
-        '<body>\n'
-        '<div id=”loading”><div class=”spinner”></div>Loading 3D Scene...</div>\n'
-        '<div id=”error”><h2>Initialize Failed</h2><p id=”error-message”></p><button onclick=”location.reload()” style=”background:#ff4757;color:#fff;padding:10px 24px;border:none;border-radius:6px;cursor:pointer;font-size:1rem”>Retry</button></div>\n'
-        '<div id=”canvas-container”>\n'
-        '<div id=”info”><h1>/* TODO: 标题 */</h1><p>/* TODO: 初始描述 */</p></div>\n'
-        '</div>\n'
-        '<div id=”controls”>\n'
-        '<button id=”playBtn”>Play</button>\n'
-        '<button id=”resetBtn”>Reset</button>\n'
-        '<label style=”color:#a0b0d0;font-size:0.85rem”>Speed <input type=”range” id=”speedSlider” min=”0.2” max=”3” step=”0.1” value=”1”></label>\n'
-        '<span id=”stepBtns”></span>\n'
-        '</div>\n'
-        '<script type=”importmap”>\n'
-        '{“imports”:{“three”:”https://unpkg.com/three@0.160.0/build/three.module.js”,”three/addons/”:”https://unpkg.com/three@0.160.0/examples/jsm/”}}\n'
-        '</script>\n'
-        '<script type=”module”>\n'
-        'import * as THREE from “three”;\n'
-        'import { OrbitControls } from “three/addons/controls/OrbitControls.js”;\n'
-        '// === WebGL check ===\n'
-        'const testCanvas = document.createElement(“canvas”);\n'
-        'if (!(testCanvas.getContext(“webgl2”) || testCanvas.getContext(“webgl”))) {\n'
-        '  document.getElementById(“error-message”).textContent = “WebGL not supported in this browser”;\n'
-        '  document.getElementById(“error”).style.display = “flex”;\n'
-        '  document.getElementById(“loading”).style.display = “none”;\n'
-        '  throw new Error(“WebGL not supported”);\n'
-        '}\n'
-        '// === Scene setup ===\n'
-        'const scene = new THREE.Scene();\n'
-        'scene.background = new THREE.Color(0x0b1120);\n'
-        'const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 200);\n'
-        'camera.position.set(5, 6, 14);\n'
-        'const renderer = new THREE.WebGLRenderer({antialias: true});\n'
-        'renderer.setSize(innerWidth, innerHeight);\n'
-        'renderer.setPixelRatio(Math.min(devicePixelRatio, 2));\n'
-        'document.getElementById(“canvas-container”).appendChild(renderer.domElement);\n'
-        'const controls = new OrbitControls(camera, renderer.domElement);\n'
-        'controls.enableDamping = true;\n'
-        '// === Lighting ===\n'
-        'scene.add(new THREE.AmbientLight(0x404040, 2.5));\n'
-        'scene.add(new THREE.DirectionalLight(0xffffff, 1.8));\n'
-        'scene.add(new THREE.HemisphereLight(0x80a0ff, 0x201030, 1.2));\n'
-        '// === Grid ===\n'
-        'scene.add(new THREE.GridHelper(16, 16, 0x1a2a4a, 0x121e35));\n'
-        '// === Objects (TODO: create your 3D objects here) ===\n'
-        'const objects = {};\n'
-        '/* TODO: create 4-8 Mesh objects with clear colors,\n'
-        '   store them in objects dict by id, add to scene.\n'
-        '   Example:\n'
-        '   const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.5,32,32), new THREE.MeshPhongMaterial({color:0x4facfe}));\n'
-        '   sphere.position.set(2,1,0); sphere.userData = {id:”obj1”,label:”Object 1”};\n'
-        '   scene.add(sphere); objects[“obj1”] = sphere;\n'
-        '   Also create connecting lines between objects.\n'
-        '   Also create a Points particle system with BufferGeometry. */\n'
-        '// === Frames (TODO: define 4-6 step frames) ===\n'
-        'const frames = [\n'
-        '  /* TODO: {title:”...”, desc:”...”, highlight:[“obj1”,”obj2”]} */\n'
-        '];\n'
-        '// === Labels (HTML divs positioned via project()) ===\n'
-        'const labelDivs = [];\n'
-        '/* TODO: for each object, create a div.label-div, append to canvas-container,\n'
-        '   push {el, worldPos} to labelDivs */\n'
-        'function updateLabels() {\n'
-        '  for (const lbl of labelDivs) {\n'
-        '    const v = lbl.worldPos.clone().project(camera);\n'
-        '    lbl.el.style.left = ((v.x*0.5+0.5)*innerWidth)+”px”;\n'
-        '    lbl.el.style.top = ((-v.y*0.5+0.5)*innerHeight)+”px”;\n'
-        '    lbl.el.style.display = v.z<1 ? “block”:”none”;\n'
-        '  }\n'
-        '}\n'
-        '// === State ===\n'
-        'let currentStep = 0, isPlaying = false, speed = 1, stepTimer = 0;\n'
-        'const allMeshes = [];\n'
-        'scene.traverse(c => { if (c.isMesh) allMeshes.push(c); });\n'
-        '// === Step navigation ===\n'
-        'function goToStep(i) {\n'
-        '  currentStep = ((i%frames.length)+frames.length)%frames.length;\n'
-        '  const f = frames[currentStep];\n'
-        '  document.getElementById(“info”).innerHTML = “<h1>”+f.title+”</h1><p>”+f.desc+”</p>”;\n'
-        '  for (const [id,obj] of Object.entries(objects)) {\n'
-        '    if (!obj.material) continue;\n'
-        '    if (f.highlight && f.highlight.includes(id)) { obj.material.emissive = new THREE.Color(0x333333); obj.material.emissiveIntensity = 0.6; }\n'
-        '    else { obj.material.emissive = new THREE.Color(0x000000); obj.material.emissiveIntensity = 0; }\n'
-        '  }\n'
-        '  document.querySelectorAll(“#stepBtns button”).forEach((b,j)=>{b.classList.toggle(“active”,j===currentStep);});\n'
-        '}\n'
-        '// === Build step buttons ===\n'
-        'const stepBtnsEl = document.getElementById(“stepBtns”);\n'
-        'frames.forEach((f,i)=>{\n'
-        '  const b = document.createElement(“button”); b.textContent = i+1;\n'
-        '  b.onclick = ()=>{ isPlaying=false; goToStep(i); };\n'
-        '  stepBtnsEl.appendChild(b);\n'
-        '});\n'
-        '// === Controls ===\n'
-        'document.getElementById(“playBtn”).onclick = ()=>{ isPlaying=!isPlaying; document.getElementById(“playBtn”).textContent=isPlaying?”Pause”:”Play”; };\n'
-        'document.getElementById(“resetBtn”).onclick = ()=>{ isPlaying=false; goToStep(0); document.getElementById(“playBtn”).textContent=”Play”; };\n'
-        'document.getElementById(“speedSlider”).oninput = (e)=>{ speed=parseFloat(e.target.value); };\n'
-        '// === Animate ===\n'
-        'let clock = new THREE.Clock();\n'
-        'function animate() {\n'
-        '  requestAnimationFrame(animate);\n'
-        '  const dt = Math.min(clock.getDelta(),0.1);\n'
-        '  if (isPlaying) {\n'
-        '    stepTimer += dt * speed;\n'
-        '    if (stepTimer > 3.5) { stepTimer = 0; goToStep((currentStep+1)%frames.length); }\n'
-        '    /* TODO: animate particle positions, object rotations etc. */\n'
-        '  }\n'
-        '  controls.update();\n'
-        '  updateLabels();\n'
-        '  renderer.render(scene, camera);\n'
-        '}\n'
-        '// === Resize ===\n'
-        'window.addEventListener(“resize”,()=>{\n'
-        '  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();\n'
-        '  renderer.setSize(innerWidth,innerHeight);\n'
-        '});\n'
-        '// === Start ===\n'
-        'renderer.render(scene, camera);\n'
-        'document.getElementById(“loading”).style.display = “none”;\n'
-        'if (frames.length>0) goToStep(0);\n'
-        'animate();\n'
-        '</script>\n'
-        '</body>\n'
-        '</html>\n'
-        '=== 骨架模板结束 ===\n\n'
-        f'场景主题:\n'
-        f'- 项目: {project.title}\n'
-        f'- 学习项: {item.title}\n'
-        f'- 知识点: {item.knowledge_points}\n'
-        f'- 用户要求: {instruction}\n'
-        f'- 课堂摘要: {package.learning_summary}\n\n'
-        '要求:\n'
-        '- 替换全部 /* TODO */ 为实际内容\n'
-        '- 创建 4-8 个 3D 对象 (球/立方体/圆柱)，颜色区分，存储到 objects\n'
-        '- 对象间用 THREE.Line 连接\n'
-        '- 每个对象创建对应的 labelDivs 条目\n'
-        '- 定义 4-6 个 frames，每帧 highlight 不同对象\n'
-        '- 创建粒子 Points 系统 (BufferGeometry + PointsMaterial)\n'
-        '- 在 animate() 的 TODO 处添加粒子动画和对象动画\n'
-        '- 不要改动模板中已有的 JS 代码，只替换 TODO 和添加对象创建代码\n'
-        '- 输出完整 HTML，不要 Markdown 包裹\n'
-    )
-
-    raw = _qwen_chat_raw_text(
-        system_prompt,
-        user_prompt,
-        max_tokens=9000,
-        temperature=0.3,
+    raw = _qwen_chat_raw_json(
+        '你是 3D 教学场景设计师。只输出严格 JSON，描述一个教学用 3D 场景。不输出任何解释。',
+        (
+            '输出一个 JSON 对象，字段:\n'
+            '{"title":"演示标题","objects":[...],"frames":[...]}\n\n'
+            'objects 数组, 4-8 个元素, 每个:\n'
+            '{"id":"唯一id","label":"中文标签","shape":"sphere|box|cylinder","color":"#hex颜色",'
+            '"pos":[x,y,z],"size":0.5,"connectsTo":["其他对象id"]}\n'
+            '- shape 只能是 sphere/box/cylinder\n'
+            '- pos 是三维坐标, 值在 -8 到 8 之间\n'
+            '- connectsTo 是该对象连接到哪些对象 (可选, 空数组表示无连接)\n\n'
+            'frames 数组, 4-6 个元素, 每个:\n'
+            '{"title":"步骤标题","desc":"步骤说明文字 (30-80字)",'
+            '"highlight":["要在此步骤高亮的对象id列表"]}\n\n'
+            f'场景主题:\n- 项目:{project.title}\n- 学习项:{item.title}\n'
+            f'- 知识点:{item.knowledge_points}\n- 用户要求:{instruction}\n'
+            f'- 课堂摘要:{package.learning_summary}\n\n'
+            '只输出 JSON 对象，不要 Markdown。'
+        ),
+        max_tokens=3000,
+        temperature=0.2,
         timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
         user=user,
     )
+    objects = _as_list(raw.get('objects'))
+    frames = _as_list(raw.get('frames'))
+    if len(objects) < 3:
+        objects = _fallback_3d_objects(item)
+    if len(frames) < 3:
+        frames = _fallback_3d_frames(item, [obj.get('id', f'obj{i}') for i, obj in enumerate(objects)])
+    return {
+        'title': str(raw.get('title') or f'{item.title} - 3D Demo'),
+        'objects': [_normalize_3d_object(obj, i) for i, obj in enumerate(objects[:8])],
+        'frames': [_normalize_3d_frame(frame, i) for i, frame in enumerate(frames[:6])],
+    }
 
-    # Strip markdown code blocks and extract HTML
-    html = _extract_html_from_response(raw)
 
-    # Derive title from item
-    title = f"{item.title} — 3D 互动演示"
+def _normalize_3d_object(raw: Any, index: int) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+    pos = raw.get('pos', [index * 2 - 4, 1, (index % 3 - 1) * 3])
+    if not isinstance(pos, list) or len(pos) != 3:
+        pos = [index * 2 - 4, 1, (index % 3 - 1) * 3]
+    color = str(raw.get('color') or '')
+    if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+        color = _VISUAL_COLOR_PALETTE[index % len(_VISUAL_COLOR_PALETTE)]
+    return {
+        'id': re.sub(r'[^a-zA-Z0-9_-]', '_', str(raw.get('id') or f'obj{index + 1}'))[:32],
+        'label': str(raw.get('label') or f'Object {index + 1}')[:20],
+        'shape': str(raw.get('shape') or 'sphere').strip().lower()[:16],
+        'color': color,
+        'pos': [float(pos[0]), float(pos[1]), float(pos[2])],
+        'size': max(0.2, min(2.0, float(raw.get('size', 0.5)))),
+        'connectsTo': [str(c)[:32] for c in _as_list(raw.get('connectsTo') or [])][:5],
+    }
 
-    return html, title
+
+def _normalize_3d_frame(raw: Any, index: int) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        'title': str(raw.get('title') or f'Step {index + 1}')[:40],
+        'desc': str(raw.get('desc') or raw.get('description') or f'Observe step {index + 1}.')[:120],
+        'highlight': [str(h)[:32] for h in _as_list(raw.get('highlight') or [])][:8],
+    }
 
 
-def _extract_html_from_response(text: str) -> str:
-    """Extract HTML document from LLM response, stripping markdown wrappers."""
-    # Remove markdown code block markers
-    text = text.strip()
-    if text.startswith("```html"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    text = text.strip()
+def _fallback_3d_objects(item: LearningSyllabusItem) -> list[dict[str, Any]]:
+    pts = item.knowledge_points or [item.title or 'Core']
+    return [
+        {'id': 'obj1', 'label': str(pts[0])[:16] if pts else 'Input', 'shape': 'sphere', 'color': _VISUAL_COLOR_PALETTE[0], 'pos': [-3, 1.5, 0], 'size': 0.6, 'connectsTo': ['obj2']},
+        {'id': 'obj2', 'label': str(pts[1])[:16] if len(pts) > 1 else 'Process', 'shape': 'box', 'color': _VISUAL_COLOR_PALETTE[1], 'pos': [0, 1.5, 0], 'size': 0.5, 'connectsTo': ['obj3']},
+        {'id': 'obj3', 'label': str(pts[2])[:16] if len(pts) > 2 else 'Output', 'shape': 'sphere', 'color': _VISUAL_COLOR_PALETTE[2], 'pos': [3, 1.5, 0], 'size': 0.6, 'connectsTo': []},
+        {'id': 'obj4', 'label': (str(pts[0])[:12] + 'Sub') if pts else 'Observer', 'shape': 'cylinder', 'color': _VISUAL_COLOR_PALETTE[3], 'pos': [0, -2, 2], 'size': 0.4, 'connectsTo': ['obj2']},
+    ]
 
-    # If it already starts with DOCTYPE or html tag, return as-is
-    if text.startswith("<!DOCTYPE") or text.startswith("<html"):
-        return text
 
-    # Try to find HTML document boundaries
-    doctype_idx = text.find("<!DOCTYPE html>")
-    html_start = text.find("<html")
-    start = doctype_idx if doctype_idx != -1 else html_start
-    if start != -1:
-        html_end = text.rfind("</html>")
-        if html_end != -1:
-            return text[start:html_end + 7]
+def _fallback_3d_frames(item: LearningSyllabusItem, obj_ids: list[str]) -> list[dict[str, Any]]:
+    if len(obj_ids) < 2:
+        obj_ids = ['obj1', 'obj2', 'obj3', 'obj4']
+    return [
+        {'title': 'Overview', 'desc': f'Observe the structure of {item.title}.', 'highlight': obj_ids[:4]},
+        {'title': 'Focus', 'desc': 'Note the connections between core objects.', 'highlight': obj_ids[:2]},
+        {'title': 'Relations', 'desc': 'Observe data/signal flow between objects.', 'highlight': obj_ids[1:3] if len(obj_ids) >= 3 else obj_ids[:2]},
+        {'title': 'Summary', 'desc': f'Review key mechanisms of {item.title}.', 'highlight': obj_ids[:4]},
+    ]
 
-    # Fallback: wrap in basic HTML structure
-    return f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>3D 互动演示</title></head>
-<body>{text}</body>
-</html>"""
+
+def _render_3d_html_from_scene_data(scene_data: dict[str, Any]) -> str:
+    """Render pre-built HTML template with scene JSON embedded."""
+    data_json = json.dumps(scene_data, ensure_ascii=False).replace('</', '<\\/')
+    return _SIMPLE_3D_HTML_TEMPLATE.replace('__SCENE_JSON__', data_json)
 
 
 def _write_raw_visualization_html(session_id: int, item: LearningSyllabusItem, html_content: str) -> Path:
-    """Write a pre-generated HTML string directly to a file."""
-    output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
+    output_dir = Path(__file__).resolve().parents[2] / 'generated' / 'visualizations'
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization3d.html"
-    path.write_text(html_content, encoding="utf-8")
+    path = output_dir / f'classroom-{session_id}-item-{item.id}-visualization3d.html'
+    path.write_text(html_content, encoding='utf-8')
     return path
 
+
+# Pre-built, tested 3D HTML template. No LLM-written JavaScript.
+_SIMPLE_3D_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>3D Interactive Demo</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#0b1120;font-family:system-ui,sans-serif;color:#e0e0ff;height:100vh;display:flex;flex-direction:column}
+#canvas-container{flex:1;position:relative}
+#info{position:absolute;top:16px;left:16px;background:rgba(15,25,45,0.92);padding:14px 18px;border-radius:10px;border:1px solid #2a3a5a;max-width:380px;z-index:10;pointer-events:none}
+#info h1{font-size:1.2rem;color:#6ad1ff;margin-bottom:6px}
+#info p{font-size:0.9rem;color:#a0b0d0;line-height:1.5}
+#controls{display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 16px;background:rgba(10,18,32,0.95);border-top:1px solid #1a2a4a;flex-wrap:wrap}
+button{background:#2a4a7a;color:#c0d0ff;border:none;border-radius:6px;padding:8px 14px;font-size:0.9rem;cursor:pointer;min-height:36px}
+button:hover{background:#3a6abf}
+button.active{background:#4a8aef;color:#fff}
+input[type=range]{width:120px;accent-color:#6ad1ff}
+#loading{position:fixed;inset:0;background:#0b1120;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:1000;color:#6ad1ff;font-size:1.1rem}
+.spinner{width:44px;height:44px;border:4px solid rgba(106,209,255,0.2);border-top-color:#6ad1ff;border-radius:50%;animation:spin .8s linear infinite;margin-bottom:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.label-div{position:absolute;pointer-events:none;color:#fff;font-size:13px;font-weight:700;text-shadow:0 0 4px rgba(0,0,0,0.9);transform:translate(-50%,-50%);white-space:nowrap;z-index:5}
+.step-btn{min-width:32px;height:32px;padding:0 8px;font-size:.8rem}
+</style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div>Loading 3D Scene...</div>
+<div id="canvas-container">
+<div id="info"><h1></h1><p></p></div>
+</div>
+<div id="controls">
+<button id="playBtn">Play</button>
+<button id="resetBtn">Reset</button>
+<label style="color:#a0b0d0;font-size:.85rem">Speed <input type="range" id="speedSlider" min=".2" max="3" step=".1" value="1"></label>
+<span id="stepBtns"></span>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+var SCENE_DATA = __SCENE_JSON__;
+var tc = document.createElement("canvas");
+if (!(tc.getContext("webgl2") || tc.getContext("webgl"))) {
+  document.getElementById("loading").innerHTML = '<div style="color:#ff6b6b;text-align:center"><h2>WebGL Not Supported</h2><p>Please use Chrome, Firefox, or Edge.</p></div>';
+  throw new Error("WebGL not supported");
+}
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1120);
+var camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 200);
+camera.position.set(5, 6, 14);
+var renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.getElementById("canvas-container").appendChild(renderer.domElement);
+var controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0x404040, 2.5));
+var dl = new THREE.DirectionalLight(0xffffff, 1.8);
+dl.position.set(8, 12, 8);
+scene.add(dl);
+scene.add(new THREE.HemisphereLight(0x80a0ff, 0x201030, 1.2));
+scene.add(new THREE.GridHelper(16, 16, 0x1a2a4a, 0x121e35));
+
+function makeGeometry(shape, size) {
+  var s = Number(size) || .5;
+  if (shape === "box" || shape === "cube") return new THREE.BoxGeometry(s, s, s);
+  if (shape === "cylinder") return new THREE.CylinderGeometry(s * .5, s * .5, s * 1.2, 32);
+  return new THREE.SphereGeometry(s, 36, 28);
+}
+
+var objects = {};
+var labelDivs = [];
+var objMeta = [];
+var dataObjects = SCENE_DATA.objects || [];
+for (var i = 0; i < dataObjects.length; i++) {
+  var obj = dataObjects[i];
+  var geo = makeGeometry(obj.shape, obj.size);
+  var mat = new THREE.MeshPhongMaterial({color: obj.color || 0x4facfe, specular: 0x111111, shininess: 30});
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(obj.pos[0] || 0, obj.pos[1] || 0, obj.pos[2] || 0);
+  mesh.castShadow = true;
+  mesh.userData = {id: obj.id, label: obj.label};
+  scene.add(mesh);
+  objects[obj.id] = mesh;
+  var labelEl = document.createElement("div");
+  labelEl.className = "label-div";
+  labelEl.textContent = obj.label || "";
+  document.getElementById("canvas-container").appendChild(labelEl);
+  labelDivs.push({el: labelEl, worldPos: mesh.position});
+  objMeta.push(obj);
+}
+
+for (var j = 0; j < objMeta.length; j++) {
+  var srcObj = objMeta[j];
+  if (!srcObj.connectsTo || !srcObj.connectsTo.length) continue;
+  for (var k = 0; k < srcObj.connectsTo.length; k++) {
+    var target = objects[srcObj.connectsTo[k]];
+    if (!target) continue;
+    var pts = [objects[srcObj.id].position.clone(), target.position.clone()];
+    var lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+    var line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color: 0x3a6abf, transparent: true, opacity: .5}));
+    scene.add(line);
+  }
+}
+
+var pCount = 300;
+var pGeo = new THREE.BufferGeometry();
+var pPos = new Float32Array(pCount * 3);
+for (var pi = 0; pi < pCount; pi++) {
+  pPos[pi * 3] = (Math.random() - .5) * 12;
+  pPos[pi * 3 + 1] = Math.random() * 8;
+  pPos[pi * 3 + 2] = (Math.random() - .5) * 12;
+}
+pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
+var pMat = new THREE.PointsMaterial({color: 0x6ad1ff, size: .04, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false});
+var particles = new THREE.Points(pGeo, pMat);
+scene.add(particles);
+
+var frames = SCENE_DATA.frames || [];
+
+function updateLabels() {
+  for (var li = 0; li < labelDivs.length; li++) {
+    var lbl = labelDivs[li];
+    var v = lbl.worldPos.clone().project(camera);
+    lbl.el.style.left = ((v.x * .5 + .5) * innerWidth) + "px";
+    lbl.el.style.top = ((-v.y * .5 + .5) * innerHeight) + "px";
+    lbl.el.style.display = v.z < 1 ? "block" : "none";
+  }
+}
+
+var currentStep = 0, isPlaying = false, speed = 1, stepTimer = 0;
+
+function goToStep(i) {
+  currentStep = ((i % frames.length) + frames.length) % frames.length;
+  var f = frames[currentStep] || {};
+  document.querySelector("#info h1").textContent = f.title || "";
+  document.querySelector("#info p").textContent = f.desc || "";
+  var hl = f.highlight || [];
+  var hlSet = {};
+  for (var hi = 0; hi < hl.length; hi++) hlSet[hl[hi]] = true;
+  var objIds = Object.keys(objects);
+  for (var oi = 0; oi < objIds.length; oi++) {
+    var id = objIds[oi];
+    var m = objects[id];
+    if (hlSet[id]) {
+      m.material.emissive = new THREE.Color(m.material.color).multiplyScalar(.5);
+    } else {
+      m.material.emissive = new THREE.Color(0x000000);
+    }
+  }
+  var btns = document.querySelectorAll("#stepBtns button");
+  for (var bi = 0; bi < btns.length; bi++) {
+    btns[bi].classList.toggle("active", bi === currentStep);
+  }
+}
+
+var sbEl = document.getElementById("stepBtns");
+for (var fi = 0; fi < frames.length; fi++) {
+  (function(idx) {
+    var b = document.createElement("button");
+    b.className = "step-btn";
+    b.textContent = idx + 1;
+    b.title = frames[idx].title || ("Step " + (idx + 1));
+    b.onclick = function() { isPlaying = false; goToStep(idx); };
+    sbEl.appendChild(b);
+  })(fi);
+}
+
+var playBtn = document.getElementById("playBtn");
+playBtn.onclick = function() { isPlaying = !isPlaying; playBtn.textContent = isPlaying ? "Pause" : "Play"; };
+document.getElementById("resetBtn").onclick = function() { isPlaying = false; playBtn.textContent = "Play"; goToStep(0); };
+document.getElementById("speedSlider").oninput = function(e) { speed = parseFloat(e.target.value); };
+
+var clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  var dt = Math.min(clock.getDelta(), .1);
+  if (isPlaying) {
+    stepTimer += dt * speed;
+    if (stepTimer > 3.5 && frames.length > 0) { stepTimer = 0; goToStep((currentStep + 1) % frames.length); }
+    particles.rotation.y += dt * .15;
+    var meshIds = Object.keys(objects);
+    for (var mi = 0; mi < meshIds.length; mi++) {
+      objects[meshIds[mi]].rotation.y += dt * .3;
+    }
+  }
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener("resize", function() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+renderer.render(scene, camera);
+document.getElementById("loading").style.display = "none";
+if (frames.length > 0) goToStep(0);
+animate();
+</script>
+</body>
+</html>
+"""
 
 def generate_classroom_visualization(
     db: Session,
@@ -2817,16 +2890,18 @@ def generate_classroom_visualization(
     is_3d = _normalize_widget_type(request.preferred_kind, allow_auto=True) == "visualization3d"
 
     if is_3d:
-        html_content, demo_title = _generate_visualization3d_html_direct(
+        scene_data = _generate_visualization3d_scene_data(
             project, item, package, request.instruction, user=user
         )
+        html_content = _render_3d_html_from_scene_data(scene_data)
         html_path = _write_raw_visualization_html(session.id, item, html_content)
         content_data = {
             "widget_type": "visualization3d",
-            "title": demo_title,
-            "html": html_content,
+            "title": scene_data["title"],
+            "scene_data": scene_data,
         }
-        source = "THU-MAIC/OpenMAIC direct HTML; widget_type=visualization3d"
+        source = "THU-MAIC/OpenMAIC scene; widget_type=visualization3d"
+        demo_title = scene_data["title"]
     else:
         demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind, user=user)
         html_path = _write_visualization_html(session.id, item, demo)
