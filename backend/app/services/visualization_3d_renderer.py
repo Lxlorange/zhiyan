@@ -503,6 +503,8 @@ THREE_PHYSICS_TEMPLATE = r"""<!doctype html>
         geometry = new THREE.CylinderGeometry(size[0] / 2, size[0] / 2, size[1], 40);
       } else if (shapeType === 'torus') {
         geometry = new THREE.TorusGeometry(size[0] / 2, size[0] / 5, 24, 48);
+      } else if (shapeType === 'plane') {
+        geometry = new THREE.BoxGeometry(size[0], 0.12, size[2] || size[0], 1, 1, 1);
       } else {
         const radius = Math.max(0.25, size[0] / 2);
         geometry = new THREE.SphereGeometry(radius, 48, 36);

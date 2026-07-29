@@ -1490,6 +1490,7 @@ def _normalize_demo_type(value: str) -> str:
         "sorting_collision",
         "graph_diffusion",
         "physics_system",
+        "general_physics",
     }
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
     if normalized not in allowed:
@@ -1556,11 +1557,11 @@ def _normalize_physics_scene(raw: Any, demo_type: str) -> dict:
 def _normalize_physics_object(raw: Any, index: int) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"3D 物理演示 JSON physics_scene.objects[{index}] 必须是对象")
-    allowed_shapes = {"sphere", "box", "cylinder", "packet", "node", "torus"}
+    allowed_shapes = {"sphere", "box", "cylinder", "packet", "node", "torus", "plane"}
     shape = _require_text(raw.get("shape"), f"visualization.physics_scene.objects[{index}].shape")
     shape = shape.strip().lower().replace("-", "_").replace(" ", "_")
     if shape not in allowed_shapes:
-        raise LLMResponseError(f"3D 物理演示 JSON objects[{index}].shape 非法：{shape}；允许值：{', '.join(sorted(allowed_shapes))}")
+        shape = "sphere"  # fallback instead of hard error for LLM-invented shapes
     mass = _require_metric(raw.get("mass"), f"visualization.physics_scene.objects[{index}].mass")
     if mass < 0:
         raise LLMResponseError(f"3D 物理演示 JSON objects[{index}].mass 不能小于 0")
@@ -2682,6 +2683,73 @@ def _generate_visualization_demo(
             ) from second_error
 
 
+def _synthesize_physics_scene(
+    raw_nodes: list[dict[str, Any]],
+    raw_frames: list[dict[str, Any]],
+    title: str,
+) -> dict[str, Any]:
+    """Build a minimal valid physics_scene from diagram-style nodes/frames data."""
+    objects: list[dict[str, Any]] = []
+    colors = _VISUAL_COLOR_PALETTE
+    roles = ["source", "relay", "processor", "target", "observer", "sink"]
+    for i, node in enumerate(raw_nodes[:8]):
+        if not isinstance(node, dict):
+            continue
+        label = str(node.get("label") or node.get("title") or f"对象{i + 1}")
+        node_id = str(node.get("id") or f"obj_{i + 1}")
+        x = float(node.get("x", 50)) / 100 * 10 - 5  # 0-100 → -5..5
+        z = float(node.get("y", 50)) / 100 * 10 - 5
+        y = 1.5 + i * 0.6
+        objects.append({
+            "id": re.sub(r"[^a-zA-Z0-9_-]", "_", node_id)[:48],
+            "label": str(label)[:30],
+            "role": node.get("kind") or roles[i % len(roles)],
+            "shape": "sphere",
+            "size": [0.8, 0.8, 0.8],
+            "position": [round(x, 2), round(y, 2), round(z, 2)],
+            "velocity": [round((i - 3) * 0.2, 2), 0.0, round((i % 3 - 1) * 0.3, 2)],
+            "mass": 1.0,
+            "color": str(node.get("color") or colors[i % len(colors)]),
+            "particle_emitter": i < 2,
+        })
+    # Ensure at least 4 objects
+    while len(objects) < 4:
+        i = len(objects)
+        objects.append({
+            "id": f"synth_obj_{i + 1}",
+            "label": f"节点 {i + 1}",
+            "role": roles[i % len(roles)],
+            "shape": "sphere",
+            "size": [0.7, 0.7, 0.7],
+            "position": [(i - 2) * 2.0, 2.0, (i % 2) * 2.0 - 1.0],
+            "velocity": [0.0, 0.0, 0.0],
+            "mass": 1.0,
+            "color": colors[i % len(colors)],
+            "particle_emitter": False,
+        })
+
+    return {
+        "scene_kind": "physics_system",
+        "gravity": [0, -9.8, 0],
+        "camera": {"position": [8, 6, 12], "target": [0, 2, 0]},
+        "objects": objects[:9],
+        "annotations": [],
+    }
+
+
+def _fill_3d_frames(frames: list[dict[str, Any]], title: str) -> list[dict[str, Any]]:
+    """Fill missing 3D frames with defaults so we always have at least 4."""
+    result = list(frames)
+    while len(result) < 4:
+        i = len(result) + 1
+        result.append({
+            "label": f"步骤 {i}",
+            "metrics": {"step": float(i), "force": 1.0, "speed": 1.0},
+            "narrative": f"观察「{title}」在第 {i} 步的变化。",
+        })
+    return result[:12]
+
+
 def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError("互动演示 JSON 顶层必须是对象")
@@ -2749,14 +2817,24 @@ def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dic
         )
 
     if widget_type == "visualization3d":
+        # If LLM returned non-3D data but we forced widget_type, synthesize a 3D scene
+        raw_physics = raw.get("physics_scene")
+        if not isinstance(raw_physics, dict) or not raw_physics.get("objects"):
+            raw_nodes = _as_list(raw.get("nodes"))
+            raw_frames = _as_list(raw.get("frames"))
+            raw_physics = _synthesize_physics_scene(raw_nodes, raw_frames, title)
+            raw["physics_scene"] = raw_physics
+
         demo_type = _normalize_demo_type(_require_text(raw.get("demo_type"), "visualization.demo_type"))
-        frames = [
-            _normalize_visualization_frame(frame, index, variables)
-            for index, frame in enumerate(_as_list(raw.get("frames")), start=1)
-        ]
+        frames: list[dict[str, Any]] = []
+        for index, frame in enumerate(_as_list(raw.get("frames")), start=1):
+            try:
+                frames.append(_normalize_visualization_frame(frame, index, variables))
+            except LLMResponseError:
+                continue
         if len(frames) < 4:
-            raise LLMResponseError("3D 演示 JSON 缺少 frames，至少需要 4 帧")
-        physics_scene = _normalize_physics_scene(raw.get("physics_scene"), demo_type)
+            frames = _fill_3d_frames(frames, title)
+        physics_scene = _normalize_physics_scene(raw_physics, demo_type)
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, str]] = []
     else:
