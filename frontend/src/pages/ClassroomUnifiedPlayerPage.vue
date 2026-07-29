@@ -227,11 +227,18 @@
                               {{ visualizationResource ? '重新生成' : '生成演示' }}
                             </el-button>
                           </header>
-                          <div v-if="visualizationUrl || loadingVisualizationView" class="visualization-frame-shell">
+                          <div v-if="isVisualization3D && visualizationUrl" class="visualization-3d-links">
+                            <p class="visualization-3d-tip">3D 演示已生成，点击下方按钮在新标签页中打开或下载。</p>
+                            <div class="visualization-3d-actions">
+                              <el-button type="primary" @click="openVisualizationInNewTab">在新标签页打开</el-button>
+                              <el-button @click="downloadVisualizationHtml">下载 HTML 文件</el-button>
+                            </div>
+                          </div>
+                          <div v-else-if="(visualizationUrl || loadingVisualizationView) && !isVisualization3D" class="visualization-frame-shell">
                             <iframe v-if="visualizationUrl" :src="visualizationUrl" title="课堂动态演示" />
                             <div v-if="loadingVisualizationView" class="visualization-loading">正在加载演示...</div>
                           </div>
-                          <div v-else class="om-empty-tool">
+                          <div v-else-if="!visualizationUrl && !loadingVisualizationView" class="om-empty-tool">
                             <p>根据当前页内容生成合适的动态演示，不固定为 3D。</p>
                             <el-input v-model="visualizationInstruction" type="textarea" :rows="5" :placeholder="currentVisualizationPlaceholder" />
                           </div>
@@ -480,6 +487,10 @@ const pptResource = computed<ClassroomResourceRead | null>(() => {
 const visualizationResource = computed<ClassroomResourceRead | null>(() => {
   const resources = classroom.value?.resources || []
   return [...resources].reverse().find((resource) => resource.resource_type === 'interactive_visualization') || null
+})
+const isVisualization3D = computed(() => {
+  const data = visualizationResource.value?.content_data
+  return (data?.widget_type === 'visualization3d') || (visualizationResource.value?.file_path || '').endsWith('visualization3d.html')
 })
 const pptPackage = computed<Record<string, any> | null>(() => pptResource.value?.content_data || null)
 const slideList = computed<any[]>(() => pptPackage.value?.slides || [])
@@ -839,6 +850,18 @@ async function handleSaveNote() {
   } finally {
     savingNote.value = false
   }
+}
+
+function openVisualizationInNewTab() {
+  if (!visualizationUrl.value) return
+  window.open(visualizationUrl.value, '_blank', 'noopener,noreferrer')
+}
+
+function downloadVisualizationHtml() {
+  if (!visualizationResource.value) return
+  void downloadClassroomResource(visualizationResource.value.id).then(({ data }) => {
+    downloadBlob(data, `${visualizationResource.value?.title || 'visualization3d'}.html`)
+  })
 }
 
 async function loadVisualizationView() {

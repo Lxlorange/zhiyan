@@ -6778,6 +6778,30 @@ textarea {
   background: #f7f6f1;
 }
 
+.visualization-3d-links {
+  display: grid;
+  gap: 14px;
+  padding: 24px 18px;
+  border: 1px solid #dbe4ff;
+  border-radius: 16px;
+  background: #f0f9ff;
+  text-align: center;
+}
+
+.visualization-3d-tip {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.visualization-3d-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 .om-visual-panel iframe {
   width: 100%;
   height: min(650px, calc(100vh - 238px));

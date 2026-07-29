@@ -1509,13 +1509,12 @@ def _normalize_physics_scene(raw: Any, demo_type: str) -> dict:
         "sorting_collision",
         "graph_diffusion",
         "general_physics",
+        "physics_system",
     }
     scene_kind = _require_text(raw.get("scene_kind"), "visualization.physics_scene.scene_kind")
     scene_kind = scene_kind.strip().lower().replace("-", "_").replace(" ", "_")
     if scene_kind not in allowed_kinds:
         raise LLMResponseError(f"3D 物理演示 JSON scene_kind 非法：{scene_kind}；允许值：{', '.join(sorted(allowed_kinds))}")
-    if demo_type != "physics_system" and scene_kind == "general_physics":
-        raise LLMResponseError("3D 物理演示 JSON scene_kind 不能在具体 demo_type 下使用 general_physics")
     camera = raw.get("camera")
     if not isinstance(camera, dict):
         raise LLMResponseError("3D 物理演示 JSON physics_scene.camera 必须是对象")
@@ -1834,6 +1833,52 @@ def _repair_classroom_package_json(
         timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
         user=user,
     )
+
+
+def _qwen_chat_raw_text(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 9000,
+    temperature: float = 0.3,
+    timeout_seconds: Optional[int] = None,
+    user: Optional[User] = None,
+) -> str:
+    """Call Qwen API without forcing JSON mode — returns raw text (e.g. HTML)."""
+    settings = get_settings()
+    config = resolve_chat_config(user, timeout_seconds=timeout_seconds or settings.qwen_timeout_seconds)
+    validate_qwen_config(user)
+    payload = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        f"{config.base_url}/chat/completions",
+        data=data,
+        headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        timeout = config.timeout_seconds
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (TimeoutError, socket.timeout) as exc:
+        raise LLMResponseError(f"{config.provider} 接口请求超时：{timeout} 秒内未返回") from exc
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise LLMResponseError(f"{config.provider} 接口返回错误：{exc.code} {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise LLMResponseError(f"无法连接 {config.provider} 接口：{exc.reason}") from exc
+    try:
+        return body["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LLMResponseError(f"{config.provider} 接口响应缺少 choices[0].message.content") from exc
 
 
 def _qwen_chat_raw_json(
@@ -2510,6 +2555,125 @@ _3D_TO_NON_3D_FALLBACK = {
 }
 
 
+def _generate_visualization3d_html_direct(
+    project: LearningProject,
+    item: LearningSyllabusItem,
+    package: _ClassroomPackage,
+    instruction: str,
+    *,
+    user: Optional[User] = None,
+) -> tuple[str, str]:
+    """OpenMAIC-style: LLM directly outputs a complete self-contained Three.js HTML page."""
+    knowledge_context = build_rag_context_for_classroom(project, item, instruction)
+    system_prompt = (
+        "你是 3D 可视化专家。根据课堂内容生成一个完整的、自包含的 HTML 文件，使用 Three.js 展示交互式 3D 场景。"
+        "只输出完整 HTML 文档（从 <!DOCTYPE html> 到 </html>），不输出 Markdown、解释或代码块标记。"
+        f"{FORMULA_OUTPUT_INSTRUCTIONS}"
+    )
+    user_prompt = (
+        "生成一个完整的交互式 3D 演示 HTML 页面。\n\n"
+        "## 技术要求\n"
+        "1. 使用 Three.js ES 模块（importmap 从 esm.sh 加载 three@0.167）\n"
+        "2. 必须包含 OrbitControls（鼠标旋转/缩放/平移）\n"
+        "3. 良好的光照：AmbientLight + DirectionalLight + 可选的 HemisphereLight\n"
+        "4. 响应式设计，铺满整个窗口\n"
+        "5. 底部控制栏：播放/暂停按钮、速度滑块、重置按钮\n"
+        "6. 左上角信息面板：标题和当前步骤说明\n"
+        "7. 深色背景 (#0b1120)，对象颜色鲜明可辨\n\n"
+        "## 场景要求\n"
+        f"根据以下内容设计 3D 场景：\n"
+        f"- 项目：{project.title}\n"
+        f"- 学习项：{item.title}\n"
+        f"- 知识点：{item.knowledge_points}\n"
+        f"- 用户要求：{instruction}\n"
+        f"- 课堂摘要：{package.learning_summary}\n\n"
+        "## 场景设计指南\n"
+        "- 创建 4-8 个 3D 对象（球体/立方体/圆柱/环），用颜色区分角色\n"
+        "- 对象之间用线条或管状体连接表示关系\n"
+        "- 添加标签（sprite 或 CSS label）标识对象名称\n"
+        '- 设计 4-6 个“步骤帧”，每帧高亮不同对象、显示不同说明文字\n'
+        "- 对象在各帧之间可以有位置/颜色/大小变化\n"
+        "- 至少有一个对象带有粒子拖尾效果（用 Points 实现）\n\n"
+        "## 交互要求\n"
+        "- 播放/暂停按钮自动循环步骤（每步约 2 秒）\n"
+        "- 速度滑块控制播放速度\n"
+        "- 点击 3D 对象弹出信息面板显示详情\n"
+        "- 底部步骤按钮可直接跳转到指定步骤\n\n"
+        "## 代码规范\n"
+        "- 用 importmap 加载 Three.js：'three': 'https://esm.sh/three@0.167.1'\n"
+        "- OrbitControls：'three/addons/controls/OrbitControls.js'\n"
+        "- 动画循环用 requestAnimationFrame\n"
+        "- 窗口 resize 时更新 camera 和 renderer\n"
+        "- 所有对象存储在 objects 字典中方便查找\n"
+        "- 信息数据存储在 frames 数组中\n\n"
+        "## 容错要求（必须）\n"
+        "- 检测 WebGL 支持，不支持时显示友好提示\n"
+        "- 初始化用 try-catch 包裹，失败时显示错误信息和重试按钮\n"
+        "- 加载时显示 loading 遮罩，初始化完成后隐藏\n\n"
+        "只输出 HTML，不要任何解释。"
+    )
+
+    raw = _qwen_chat_raw_text(
+        system_prompt,
+        user_prompt,
+        max_tokens=9000,
+        temperature=0.3,
+        timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
+        user=user,
+    )
+
+    # Strip markdown code blocks and extract HTML
+    html = _extract_html_from_response(raw)
+
+    # Derive title from item
+    title = f"{item.title} — 3D 互动演示"
+
+    return html, title
+
+
+def _extract_html_from_response(text: str) -> str:
+    """Extract HTML document from LLM response, stripping markdown wrappers."""
+    # Remove markdown code block markers
+    text = text.strip()
+    if text.startswith("```html"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+
+    # If it already starts with DOCTYPE or html tag, return as-is
+    if text.startswith("<!DOCTYPE") or text.startswith("<html"):
+        return text
+
+    # Try to find HTML document boundaries
+    doctype_idx = text.find("<!DOCTYPE html>")
+    html_start = text.find("<html")
+    start = doctype_idx if doctype_idx != -1 else html_start
+    if start != -1:
+        html_end = text.rfind("</html>")
+        if html_end != -1:
+            return text[start:html_end + 7]
+
+    # Fallback: wrap in basic HTML structure
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>3D 互动演示</title></head>
+<body>{text}</body>
+</html>"""
+
+
+def _write_raw_visualization_html(session_id: int, item: LearningSyllabusItem, html_content: str) -> Path:
+    """Write a pre-generated HTML string directly to a file."""
+    output_dir = Path(__file__).resolve().parents[2] / "generated" / "visualizations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"classroom-{session_id}-item-{item.id}-visualization3d.html"
+    path.write_text(html_content, encoding="utf-8")
+    return path
+
+
 def generate_classroom_visualization(
     db: Session,
     user: User,
@@ -2520,8 +2684,26 @@ def generate_classroom_visualization(
     item = _item_or_404(db, user, session.syllabus_item_id)
     project = _project_or_404(db, user, session.project_id)
     package = _classroom_package_or_error(session)
-    demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind, user=user)
-    html_path = _write_visualization_html(session.id, item, demo)
+
+    is_3d = _normalize_widget_type(request.preferred_kind, allow_auto=True) == "visualization3d"
+
+    if is_3d:
+        html_content, demo_title = _generate_visualization3d_html_direct(
+            project, item, package, request.instruction, user=user
+        )
+        html_path = _write_raw_visualization_html(session.id, item, html_content)
+        content_data = {
+            "widget_type": "visualization3d",
+            "title": demo_title,
+            "html": html_content,
+        }
+        source = "THU-MAIC/OpenMAIC direct HTML; widget_type=visualization3d"
+    else:
+        demo = _generate_visualization_demo(project, item, package, request.instruction, request.preferred_kind, user=user)
+        html_path = _write_visualization_html(session.id, item, demo)
+        content_data = demo.model_dump(mode="json")
+        source = f"THU-MAIC/OpenMAIC scene widget; widget_type={demo.widget_type}"
+        demo_title = demo.title
 
     resource = ClassroomResource(
         session_id=session.id,
@@ -2529,10 +2711,10 @@ def generate_classroom_visualization(
         project_id=project.id,
         user_id=user.id,
         resource_type="interactive_visualization",
-        title=demo.title,
-        content_data=demo.model_dump(mode="json"),
+        title=demo_title,
+        content_data=content_data,
         file_path=str(html_path),
-        source=f"THU-MAIC/OpenMAIC scene widget; widget_type={demo.widget_type}",
+        source=source,
         status="ready",
     )
     db.add(resource)
@@ -2543,7 +2725,7 @@ def generate_classroom_visualization(
             agent="SceneOutlineAgent+InteractiveWidgetRouter",
             status="completed",
             input_summary=f"{project.title} / {item.title}",
-            output_summary=f"生成 {demo.widget_type} 互动演示：{demo.title}",
+            output_summary=f"生成互动演示：{demo_title}",
             latency_ms=0,
         )
     )
@@ -2552,8 +2734,8 @@ def generate_classroom_visualization(
         project,
         user,
         "classroom_visualization_generated",
-        f"生成 {demo.widget_type} 互动演示：{demo.title}",
-        {"session_id": session.id, "demo_type": demo.demo_type, "widget_type": demo.widget_type},
+        f"生成互动演示：{demo_title}",
+        {"session_id": session.id, "widget_type": content_data.get("widget_type", "")},
     )
     db.commit()
     return _get_session(db, user, session.id)
@@ -2642,7 +2824,7 @@ def _generate_visualization_demo(
         "objects 4-9 个，每个必须包含 id, label, role, shape, size, position, velocity, mass, color, particle_emitter。"
         "role 可以是 source, emitter, target, relay, observer, sink, processor, storage, controller, sensor；"
         "particle_emitter 为 true 时对象会发射粒子拖尾，适合 role=source/emitter/sensor 的对象。"
-        "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics 之一。"
+        "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics, physics_system 之一。"
         "camera 必须包含 position 和 target 两个 [x,y,z] 数组。"
         "annotations 数组可为空或包含标注箭头对象 {origin:[x,y,z], direction:[x,y,z], length:float, color:'#hex'}。"
         "每个 frame 必须包含 label, narrative, metrics（至少含 force 和 speed 数值）；"
@@ -2729,7 +2911,7 @@ def _synthesize_physics_scene(
         })
 
     return {
-        "scene_kind": "physics_system",
+        "scene_kind": "general_physics",
         "gravity": [0, -9.8, 0],
         "camera": {"position": [8, 6, 12], "target": [0, 2, 0]},
         "objects": objects[:9],
