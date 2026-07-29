@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -2580,7 +2580,7 @@ def _repair_visualization_demo_json(
         "frames 每帧必须包含 label, narrative, metrics（至少 force 和 speed 数值）。\n"
         "4. 如果 widget_type 不是 visualization3d，则 physics_scene 必须为 null；"
         "nodes 至少 4 个、edges 至少 3 个、frames 至少 4 帧。\n"
-        "5. 所有数组不得为空；不要使用"待补充""暂无""N/A""占位符"。\n"
+        '5. 所有数组不得为空；不要使用“待补充”“暂无”“N/A”“占位符”。\n'
         f"校验错误：{validation_error}\n"
         f"原始任务要求：{_truncate_for_prompt(original_prompt, 5000)}\n"
         f"用户 widget_type 偏好：{widget_preference}\n"

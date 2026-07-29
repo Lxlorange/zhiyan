@@ -24,6 +24,7 @@ Thumbs.db
 .DS_Store
 .codex/
 .agents/
+.claude/
 
 # Local data
 backend/data/*.db
