@@ -1460,7 +1460,7 @@ def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -
         raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 必须是对象")
     metrics = _numeric_metrics(raw.get("metrics") if isinstance(raw.get("metrics"), dict) else {})
     if not metrics:
-        raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 缺少可渲染的 metrics")
+        metrics = {"step": float(index), "force": 1.0, "speed": 1.0}
     return {
         "label": _require_text(raw.get("label"), f"visualization.frames[{index}].label"),
         "metrics": metrics,
@@ -2606,7 +2606,8 @@ def _generate_visualization_demo(
             "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics 之一。"
             "camera 必须包含 position 和 target 两个 [x,y,z] 数组。"
             "annotations 数组可为空或包含标注箭头对象 {origin:[x,y,z], direction:[x,y,z], length:float, color:'#hex'}。"
-            "每个 frame 可选包含 camera_position 和 camera_target，用于切换帧时自动运镜过渡。\n"
+            "每个 frame 必须包含 label, narrative, metrics（至少含 force 和 speed 数值）；"
+            "可选包含 camera_position 和 camera_target，用于切换帧时自动运镜过渡。\n"
             "controls 至少 2 个，每个包含 name, label, min_value, max_value, default_value, description。\n"
             "teaching_points 至少 3 条，student_tasks 至少 2 条，safety_notes 至少 1 条。\n"
             "所有内容必须贴合课堂当前页和知识库来源，不得输出空数组、占位符、模板化泛泛描述。\n"
