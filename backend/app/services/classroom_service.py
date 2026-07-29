@@ -2619,8 +2619,10 @@ def _generate_visualization3d_html_direct(
         '   scene.traverse(child => { if (child.isMesh) allMeshes.push(child); });\n'
         '5. objects 字典中只存可独立控制的 Mesh/Line/Points，不要存 Group\n\n'
         '## 容错要求 (必须)\n'
-        '- 检测 WebGL 支持，不支持时显示友好提示\n'
-        '- 初始化用 try-catch 包裹，失败时显示错误信息和重试按钮\n'
+        '- 检测 WebGL 支持: 用 canvas.getContext("webgl2") || canvas.getContext("webgl") 检测\n'
+        '- 初始化用 try-catch 包裹，catch 中必须把 err.message 显示在页面上，不能只显示静态文案:\n'
+        '  document.getElementById("error-message").textContent = err.message || String(err);\n'
+        '  document.getElementById("error").style.display = "flex";\n'
         '- 加载时显示 loading 遮罩\n\n'
         '只输出 HTML，不要任何解释。'
     )
