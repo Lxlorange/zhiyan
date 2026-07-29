@@ -150,6 +150,8 @@ class _VisualizationFrame(BaseModel):
     active_nodes: list[str] = Field(default_factory=list)
     active_edges: list[str] = Field(default_factory=list)
     annotations: list[str] = Field(default_factory=list)
+    camera_position: Optional[list[float]] = None
+    camera_target: Optional[list[float]] = None
 
 
 class _VisualizationControl(BaseModel):
@@ -171,6 +173,7 @@ class _PhysicsObjectSpec(BaseModel):
     velocity: list[float] = Field(min_length=3, max_length=3)
     mass: float
     color: str
+    particle_emitter: bool = False
 
 
 class _PhysicsSceneSpec(BaseModel):
@@ -178,6 +181,7 @@ class _PhysicsSceneSpec(BaseModel):
     gravity: list[float] = Field(min_length=3, max_length=3)
     camera: dict[str, list[float]]
     objects: list[_PhysicsObjectSpec] = Field(min_length=4, max_length=9)
+    annotations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class _VisualizationDemo(BaseModel):
@@ -1522,6 +1526,21 @@ def _normalize_physics_scene(raw: Any, demo_type: str) -> dict:
         raise LLMResponseError("3D 物理演示 JSON physics_scene.objects 至少需要 4 个对象")
     if len(objects) > 9:
         raise LLMResponseError("3D 物理演示 JSON physics_scene.objects 最多允许 9 个对象")
+    annotations_raw = raw.get("annotations")
+    annotations: list[dict[str, Any]] = []
+    if isinstance(annotations_raw, list):
+        for ann_index, ann in enumerate(annotations_raw):
+            if not isinstance(ann, dict):
+                continue
+            try:
+                annotations.append({
+                    "origin": _vector3(ann.get("origin"), f"visualization.annotations[{ann_index}].origin"),
+                    "direction": _vector3(ann.get("direction"), f"visualization.annotations[{ann_index}].direction"),
+                    "length": float(ann.get("length", 2.0)),
+                    "color": str(ann.get("color", "#fbbf24")),
+                })
+            except LLMResponseError:
+                continue
     return {
         "scene_kind": scene_kind,
         "gravity": _vector3(raw.get("gravity"), "visualization.physics_scene.gravity"),
@@ -1530,13 +1549,14 @@ def _normalize_physics_scene(raw: Any, demo_type: str) -> dict:
             "target": _vector3(camera.get("target"), "visualization.physics_scene.camera.target"),
         },
         "objects": objects,
+        "annotations": annotations,
     }
 
 
 def _normalize_physics_object(raw: Any, index: int) -> dict:
     if not isinstance(raw, dict):
         raise LLMResponseError(f"3D 物理演示 JSON physics_scene.objects[{index}] 必须是对象")
-    allowed_shapes = {"sphere", "box", "cylinder", "packet", "node"}
+    allowed_shapes = {"sphere", "box", "cylinder", "packet", "node", "torus"}
     shape = _require_text(raw.get("shape"), f"visualization.physics_scene.objects[{index}].shape")
     shape = shape.strip().lower().replace("-", "_").replace(" ", "_")
     if shape not in allowed_shapes:
@@ -1554,6 +1574,7 @@ def _normalize_physics_object(raw: Any, index: int) -> dict:
         "velocity": _vector3(raw.get("velocity"), f"visualization.physics_scene.objects[{index}].velocity"),
         "mass": mass,
         "color": _require_color(raw.get("color"), f"visualization.physics_scene.objects[{index}].color"),
+        "particle_emitter": bool(raw.get("particle_emitter")),
     }
 
 
@@ -2440,6 +2461,53 @@ _DEMO_TYPE_ALIASES = {
     },
 }
 
+# When user forces widget_type → visualization3d, map the LLM's non-3D demo_type to a sensible 3D fallback
+_DEMO_TO_3D_FALLBACK = {
+    "concept_map": "graph_diffusion",
+    "system_diagram": "physics_system",
+    "flowchart": "network_packet",
+    "comparison_map": "optimization_landscape",
+    "algorithm_trace": "sorting_collision",
+    "data_flow": "network_packet",
+    "process_simulation": "physics_system",
+    "state_machine": "sorting_collision",
+    "code_walkthrough": "signal_wave",
+    "debug_trace": "signal_wave",
+    "api_flow": "network_packet",
+    "reproduction_demo": "signal_wave",
+}
+
+# When user forces widget_type away from visualization3d, map 3D demo_types
+_3D_TO_NON_3D_FALLBACK = {
+    "diagram": {
+        "signal_wave": "concept_map",
+        "network_packet": "system_diagram",
+        "neural_activation": "concept_map",
+        "optimization_landscape": "comparison_map",
+        "sorting_collision": "flowchart",
+        "graph_diffusion": "concept_map",
+        "physics_system": "system_diagram",
+    },
+    "simulation": {
+        "signal_wave": "algorithm_trace",
+        "network_packet": "data_flow",
+        "neural_activation": "process_simulation",
+        "optimization_landscape": "algorithm_trace",
+        "sorting_collision": "algorithm_trace",
+        "graph_diffusion": "data_flow",
+        "physics_system": "process_simulation",
+    },
+    "code": {
+        "signal_wave": "code_walkthrough",
+        "network_packet": "api_flow",
+        "neural_activation": "code_walkthrough",
+        "optimization_landscape": "debug_trace",
+        "sorting_collision": "code_walkthrough",
+        "graph_diffusion": "api_flow",
+        "physics_system": "reproduction_demo",
+    },
+}
+
 
 def generate_classroom_visualization(
     db: Session,
@@ -2531,8 +2599,14 @@ def _generate_visualization_demo(
             "frames 需要 4-8 帧，每帧必须包含 label, narrative, metrics, active_nodes, active_edges；"
             "active_nodes/active_edges 必须引用节点 id 和边 id/source-target。\n"
             "当 widget_type 是 code 时，code_snippet 必须给出与主题相关、可阅读的短代码；"
-            "当 widget_type 是 visualization3d 时：physics_scene 必须包含 scene_kind, gravity, camera, objects，"
-            "objects 4-9 个且每个对象包含 id, label, role, shape, size, position, velocity, mass, color。\n"
+            "当 widget_type 是 visualization3d 时：physics_scene 必须包含 scene_kind, gravity, camera, objects, annotations；"
+            "objects 4-9 个，每个必须包含 id, label, role, shape, size, position, velocity, mass, color, particle_emitter。"
+            "role 可以是 source, emitter, target, relay, observer, sink, processor, storage, controller, sensor；"
+            "particle_emitter 为 true 时对象会发射粒子拖尾，适合 role=source/emitter/sensor 的对象。"
+            "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics 之一。"
+            "camera 必须包含 position 和 target 两个 [x,y,z] 数组。"
+            "annotations 数组可为空或包含标注箭头对象 {origin:[x,y,z], direction:[x,y,z], length:float, color:'#hex'}。"
+            "每个 frame 可选包含 camera_position 和 camera_target，用于切换帧时自动运镜过渡。\n"
             "controls 至少 2 个，每个包含 name, label, min_value, max_value, default_value, description。\n"
             "teaching_points 至少 3 条，student_tasks 至少 2 条，safety_notes 至少 1 条。\n"
             "所有内容必须贴合课堂当前页和知识库来源，不得输出空数组、占位符、模板化泛泛描述。\n"
@@ -2560,7 +2634,18 @@ def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dic
     widget_type = _normalize_widget_type(raw.get("widget_type") or raw.get("type"), allow_auto=False)
     preferred = _normalize_widget_type(preferred_kind, allow_auto=True)
     if preferred != "auto" and widget_type != preferred:
+        # Force user's preferred widget_type; also remap demo_type to a valid fallback
+        raw["widget_type"] = preferred
         widget_type = preferred
+        raw_demo = str(raw.get("demo_type") or "")
+        if preferred == "visualization3d":
+            # Map non-3D demo types to a sensible 3D fallback
+            raw["demo_type"] = _DEMO_TO_3D_FALLBACK.get(raw_demo.strip().lower(), "physics_system")
+        else:
+            raw["demo_type"] = _3D_TO_NON_3D_FALLBACK.get(preferred, {}).get(
+                raw_demo.strip().lower(),
+                {"diagram": "concept_map", "simulation": "algorithm_trace", "code": "code_walkthrough"}.get(preferred, "concept_map"),
+            )
 
     title = _first_visual_text(raw.get("title") or raw.get("name"), "互动演示")
     learning_goal = _first_visual_text(raw.get("learning_goal") or raw.get("goal"), f"理解「{title}」的关键机制")
