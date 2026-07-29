@@ -2394,12 +2394,11 @@ def _require_text(value: Any, field_path: str) -> str:
 # OpenMAIC-style interactive widget generation.
 # Keep this section after the legacy helpers so Python binds these names last.
 
-_VISUAL_WIDGET_TYPES = {"diagram", "simulation", "code", "timeline", "visualization3d"}
+_VISUAL_WIDGET_TYPES = {"diagram", "simulation", "code", "visualization3d"}
 _NON_3D_DEMO_TYPES = {
     "diagram": {"concept_map", "system_diagram", "flowchart", "comparison_map"},
     "simulation": {"state_machine", "data_flow", "algorithm_trace", "process_simulation"},
     "code": {"code_walkthrough", "debug_trace", "api_flow", "reproduction_demo"},
-    "timeline": {"research_plan", "experiment_schedule", "paper_workflow", "defense_process"},
 }
 _VISUAL_COLOR_PALETTE = ["#4f8b78", "#6f7fb7", "#d08a4f", "#8d6ab8", "#2f7ea8", "#b75f5f", "#6d8f46", "#c28b2e"]
 _DEMO_TYPE_ALIASES = {
@@ -2438,15 +2437,6 @@ _DEMO_TYPE_ALIASES = {
         "api": "api_flow",
         "reproduce": "reproduction_demo",
         "repro_demo": "reproduction_demo",
-    },
-    "timeline": {
-        "plan": "research_plan",
-        "research_timeline": "research_plan",
-        "experiment_plan": "experiment_schedule",
-        "schedule": "experiment_schedule",
-        "paper": "paper_workflow",
-        "writing_workflow": "paper_workflow",
-        "defense": "defense_process",
     },
 }
 
@@ -2515,7 +2505,7 @@ def _generate_visualization_demo(
         (
             "你是 OpenMAIC 风格的 SceneOutlineAgent + InteractiveWidgetRouter。"
             "为当前课堂页生成一个可交互教学场景规格。"
-            "先判断内容最适合 diagram、simulation、code、timeline 还是 visualization3d。"
+            "先判断内容最适合 diagram、simulation、code 还是 visualization3d。"
             "只有真实空间结构、物理装置、几何、机械、分子、3D 坐标关系等内容才允许使用 visualization3d。"
             "只输出严格 JSON，不输出 Markdown、HTML 或 JavaScript。"
             f"{FORMULA_OUTPUT_INSTRUCTIONS}"
@@ -2524,18 +2514,16 @@ def _generate_visualization_demo(
             "输出顶层字段必须完整包含：title, widget_type, demo_type, learning_goal, description, "
             "variables, nodes, edges, frames, controls, teaching_points, student_tasks, safety_notes, "
             "code_snippet, physics_scene。\n"
-            "widget_type 只能是 diagram, simulation, code, timeline, visualization3d。\n"
+            "widget_type 只能是 diagram, simulation, code, visualization3d。\n"
             f"用户偏好：{widget_preference}。如果为 auto，你必须根据主题自行选择最清楚的形态，不要默认 3D。\n"
             "diagram 适合概念关系、系统结构、论文脉络、课程知识框架；"
             "simulation 适合算法迭代、状态变化、数据流、协议交互、训练过程；"
             "code 适合 Python/工程复现/API/实验脚本讲解；"
-            "timeline 适合科研计划、实验阶段、论文写作、答辩准备；"
             "visualization3d 只适合空间、物理、机械、几何、分子、传感器布置等确实需要三维理解的内容。\n"
             "demo_type 必须使用规范值，不得自造别名："
             "diagram=concept_map/system_diagram/flowchart/comparison_map；"
             "simulation=algorithm_trace/data_flow/process_simulation/state_machine；"
-            "code=code_walkthrough/debug_trace/api_flow/reproduction_demo；"
-            "timeline=research_plan/experiment_schedule/paper_workflow/defense_process。"
+            "code=code_walkthrough/debug_trace/api_flow/reproduction_demo。"
             "算法执行、递归栈、迭代过程、复杂度对比必须用 widget_type=simulation 且 demo_type=algorithm_trace。\n"
             "当 widget_type 不是 visualization3d 时：physics_scene 必须为 null；nodes 至少 4 个；edges 至少 3 个；"
             "每个 node 必须包含 id, label, kind, x, y, color, detail；x/y 是 0-100 的数字；"
@@ -2572,7 +2560,7 @@ def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dic
     widget_type = _normalize_widget_type(raw.get("widget_type") or raw.get("type"), allow_auto=False)
     preferred = _normalize_widget_type(preferred_kind, allow_auto=True)
     if preferred != "auto" and widget_type != preferred:
-        raise LLMResponseError(f"互动演示 widget_type 与用户选择不一致：期望 {preferred}，实际 {widget_type}")
+        widget_type = preferred
 
     title = _first_visual_text(raw.get("title") or raw.get("name"), "互动演示")
     learning_goal = _first_visual_text(raw.get("learning_goal") or raw.get("goal"), f"理解「{title}」的关键机制")
@@ -2702,7 +2690,6 @@ def _normalize_widget_type(value: Any, allow_auto: bool) -> str:
         "flow": "simulation",
         "sim": "simulation",
         "coding": "code",
-        "schedule": "timeline",
     }
     text = aliases.get(text, text)
     allowed = set(_VISUAL_WIDGET_TYPES)
@@ -2722,7 +2709,6 @@ def _normalize_non_3d_demo_type(widget_type: str, value: str) -> str:
             "diagram": "concept_map",
             "simulation": "algorithm_trace",
             "code": "code_walkthrough",
-            "timeline": "research_plan",
         }.get(widget_type)
         if fallback:
             return fallback
@@ -2792,7 +2778,7 @@ def _fill_visual_nodes(
     seeds = [title, *teaching_points, description, "输入", "处理", "观察", "输出"]
     positions = [(14, 50), (36, 24), (62, 32), (82, 58), (58, 78), (28, 76)]
     existing = {node["id"] for node in result}
-    kind = "step" if widget_type in {"simulation", "timeline"} else "concept"
+    kind = "step" if widget_type in {"simulation"} else "concept"
     for seed in seeds:
         if len(result) >= 4:
             break

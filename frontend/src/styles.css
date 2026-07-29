@@ -6827,13 +6827,15 @@ textarea {
 }
 
 .om-workspace-panel.is-mindmap {
-  width: min(840px, calc(100vw - 220px));
-  min-height: min(760px, calc(100vh - 136px));
-  max-height: min(860px, calc(100vh - 112px));
+  width: min(780px, calc(100vw - 240px));
+  min-height: min(700px, calc(100vh - 160px));
+  max-height: min(820px, calc(100vh - 140px));
+  overflow: hidden;
 }
 
 .om-workspace-panel.is-mindmap .classroom-mindmap-flow {
-  min-height: min(660px, calc(100vh - 250px));
+  min-height: min(600px, calc(100vh - 280px));
+  max-height: min(720px, calc(100vh - 180px));
 }
 
 .om-workspace-panel .classroom-mindmap-canvas {
@@ -6855,8 +6857,7 @@ textarea {
   stroke-linecap: round;
 }
 
-.om-workspace-panel .classroom-mindmap-node {
-  position: absolute;
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node {
   width: 170px;
   padding: 12px 14px;
   border: 1px solid rgba(203, 213, 225, 0.9);
@@ -6865,7 +6866,7 @@ textarea {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
 }
 
-.om-workspace-panel .classroom-mindmap-node.center {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node.center {
   z-index: 2;
   width: 198px;
   padding: 16px 18px;
@@ -6873,33 +6874,33 @@ textarea {
   background: linear-gradient(180deg, #ecfeff, #ffffff);
 }
 
-.om-workspace-panel .classroom-mindmap-node.group {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node.group {
   border-color: rgba(167, 243, 208, 0.9);
   background: #f0fdfa;
 }
 
-.om-workspace-panel .classroom-mindmap-node.leaf {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node.leaf {
   width: 160px;
   border-style: dashed;
   background: #ffffff;
 }
 
-.om-workspace-panel .classroom-mindmap-node strong {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node strong {
   display: block;
   color: #134e4a;
   font-size: 15px;
   line-height: 1.35;
 }
 
-.om-workspace-panel .classroom-mindmap-node p,
-.om-workspace-panel .classroom-mindmap-group {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node p,
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-group {
   margin: 0 0 6px;
   color: #0f766e;
   font-size: 12px;
   font-weight: 900;
 }
 
-.om-workspace-panel .classroom-mindmap-node p:last-child {
+.om-workspace-panel .classroom-mindmap-flow .classroom-mindmap-node p:last-child {
   margin-bottom: 0;
   color: #475569;
   font-size: 12px;

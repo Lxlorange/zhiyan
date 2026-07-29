@@ -1063,7 +1063,7 @@ export function generateClassroomPpt(sessionId: number, instruction = '') {
   return api.post<ClassroomSessionRead>(`/classroom-sessions/${sessionId}/ppt`, { instruction })
 }
 
-export type ClassroomVisualizationKind = 'auto' | 'diagram' | 'simulation' | 'code' | 'timeline' | 'visualization3d'
+export type ClassroomVisualizationKind = 'auto' | 'diagram' | 'simulation' | 'code' | 'visualization3d'
 
 export function generateClassroomVisualization(
   sessionId: number,

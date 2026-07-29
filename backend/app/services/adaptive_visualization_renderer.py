@@ -483,10 +483,74 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
         max-width: none;
       }
     }
+
+    /* ---------- widget-type-specific styles ---------- */
+
+    /* simulation: step-counter emphasis */
+    .app[data-widget="simulation"] .canvas-shell {
+      background:
+        linear-gradient(rgba(208, 138, 79, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(208, 138, 79, 0.06) 1px, transparent 1px),
+        linear-gradient(135deg, #fffdfa, #fdf6ee);
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    .app[data-widget="simulation"] .frame-card {
+      border-color: rgba(208, 138, 79, 0.32);
+      background: #fef7f0;
+    }
+
+    .app[data-widget="simulation"] .edge.active {
+      stroke: var(--amber);
+      stroke-width: 4.8;
+      animation: flowFast 0.65s linear infinite;
+    }
+
+    @keyframes flowFast {
+      to { stroke-dashoffset: -66; }
+    }
+
+    .app[data-widget="simulation"] .node.active .halo {
+      animation: breatheFast 0.7s ease-in-out infinite;
+    }
+
+    @keyframes breatheFast {
+      50% { transform: scale(1.14); opacity: 0.52; }
+    }
+
+    /* code: code-first layout */
+    .app[data-widget="code"] .canvas-shell {
+      background:
+        linear-gradient(rgba(99, 119, 182, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 119, 182, 0.06) 1px, transparent 1px),
+        linear-gradient(135deg, #fffdfa, #f3f4fc);
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    .app[data-widget="code"] .frame-card {
+      border-color: rgba(99, 119, 182, 0.32);
+      background: #f3f4fc;
+    }
+
+    .app[data-widget="code"] .edge.active {
+      stroke: var(--blue);
+      stroke-width: 3.6;
+    }
+
+    .app[data-widget="code"] pre {
+      border-left: 3px solid var(--blue);
+    }
+
+    .code-line-highlight {
+      display: inline-block;
+      width: 100%;
+      background: rgba(99, 119, 182, 0.22);
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="appRoot">
     <main class="stage">
       <header class="head">
         <div>
@@ -538,7 +602,6 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
       diagram: '关系图解',
       simulation: '动态模拟',
       code: '代码走读',
-      timeline: '过程时间线',
       visualization3d: '三维演示'
     };
     const typeLabels = {
@@ -553,22 +616,26 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
       code_walkthrough: '代码走读',
       debug_trace: '调试轨迹',
       api_flow: 'API 流程',
-      reproduction_demo: '复现实验',
-      research_plan: '研究计划',
-      experiment_schedule: '实验排期',
-      paper_workflow: '论文流程',
-      defense_process: '答辩流程'
+      reproduction_demo: '复现实验'
     };
 
-    document.getElementById('kind').textContent = widgetLabels[demo.widget_type] || demo.widget_type || '互动演示';
+    const widgetType = demo.widget_type || 'diagram';
+    document.getElementById('kind').textContent = widgetLabels[widgetType] || widgetType || '互动演示';
     document.getElementById('type').textContent = typeLabels[demo.demo_type] || demo.demo_type || 'OpenMAIC-style';
     document.getElementById('title').textContent = demo.title || document.title;
     document.getElementById('goal').textContent = demo.learning_goal || demo.description || '通过可视化步骤观察核心机制。';
     document.getElementById('points').innerHTML = listHtml(demo.teaching_points);
     document.getElementById('tasks').innerHTML = listHtml(demo.student_tasks);
+    document.getElementById('appRoot').setAttribute('data-widget', widgetType);
     if (demo.code_snippet) {
       document.getElementById('codePanel').hidden = false;
       document.getElementById('code').textContent = demo.code_snippet;
+    }
+    if (widgetType === 'code') {
+      document.getElementById('codePanel').hidden = false;
+      if (!demo.code_snippet) {
+        document.getElementById('code').textContent = '# ' + (demo.title || 'code walkthrough') + '\\n# 代码演示模式 — 按步骤观察逻辑流程';
+      }
     }
 
     renderSteps();
@@ -706,7 +773,8 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
       const frame = frames[state.frame] || {};
       const activeNodes = new Set(frame.active_nodes || frame.activeNodes || []);
       const activeEdges = new Set(frame.active_edges || frame.activeEdges || []);
-      document.getElementById('frameLabel').textContent = `${state.frame + 1} / ${frames.length} ${frame.label || ''}`;
+      const stepLabel = widgetType === 'simulation' ? `步骤 ${state.frame + 1}` : `${state.frame + 1} / ${frames.length}`;
+      document.getElementById('frameLabel').textContent = `${stepLabel} ${frame.label || ''}`;
       document.getElementById('frameNarrative').textContent = frame.narrative || '';
       document.getElementById('progress').style.width = `${Math.round(((state.frame + 1) / frames.length) * 100)}%`;
       document.querySelectorAll('.steps button').forEach((button, buttonIndex) => {
@@ -724,10 +792,25 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
       });
       movePulse([...activeNodes]);
       renderMetrics(frame.metrics || {});
+      highlightCodeLine(state.frame);
       if (state.selectedNodeId) {
         const node = nodes.find((item) => item.id === state.selectedNodeId);
         if (node) inspectNode(node);
       }
+    }
+
+    function highlightCodeLine(frameIndex) {
+      if (widgetType !== 'code') return;
+      const codeEl = document.getElementById('code');
+      if (!codeEl) return;
+      const lines = (codeEl.textContent || '').split('\\n');
+      const html = lines.map((line, lineIndex) => {
+        const activeLine = Math.floor((frameIndex / Math.max(1, frames.length)) * lines.length);
+        return lineIndex === activeLine
+          ? '<span class="code-line-highlight">' + escapeHtml(line) + '</span>'
+          : escapeHtml(line);
+      }).join('\\n');
+      codeEl.innerHTML = html;
     }
 
     function movePulse(activeNodes) {
@@ -746,14 +829,17 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
     function tick() {
       if (!state.playing) return;
       showFrame((state.frame + 1) % Math.max(1, frames.length));
-      state.timer = setTimeout(tick, Math.max(650, 1850 / state.speed));
+      const baseDelay = widgetType === 'simulation' ? 1100 : 1850;
+      state.timer = setTimeout(tick, Math.max(450, baseDelay / state.speed));
     }
 
     function renderSteps() {
       const container = document.getElementById('steps');
-      container.innerHTML = frames.map((frame, index) => `
-        <button type="button" title="${escapeHtml(frame.label || `步骤 ${index + 1}`)}">${escapeHtml(frame.label || `步骤 ${index + 1}`)}</button>
-      `).join('');
+      const stepPrefix = widgetType === 'simulation' ? '步骤' : '';
+      container.innerHTML = frames.map((frame, index) => {
+        const label = stepPrefix ? `${stepPrefix}${index + 1}` : (frame.label || `步骤 ${index + 1}`);
+        return `<button type="button" title="${escapeHtml(frame.label || `步骤 ${index + 1}`)}">${escapeHtml(label)}</button>`;
+      }).join('');
       container.querySelectorAll('button').forEach((button, index) => {
         button.addEventListener('click', () => {
           state.playing = false;
@@ -783,6 +869,8 @@ ADAPTIVE_VISUALIZATION_TEMPLATE = """<!doctype html>
 
     function buildControls() {
       const controls = Array.isArray(demo.controls) ? demo.controls : [];
+      const defaultSpeed = widgetType === 'simulation' ? 1.2 : 1.0;
+      state.speed = defaultSpeed;
       document.getElementById('controls').innerHTML = controls.map((control, index) => {
         const min = Number(control.min_value ?? 0);
         const max = Number(control.max_value ?? 1);

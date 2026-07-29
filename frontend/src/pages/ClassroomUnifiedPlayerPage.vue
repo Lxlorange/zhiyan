@@ -469,7 +469,6 @@ const visualizationKindOptions: Array<{ label: string; value: ClassroomVisualiza
   { label: '图解', value: 'diagram' },
   { label: '模拟', value: 'simulation' },
   { label: '代码', value: 'code' },
-  { label: '时间线', value: 'timeline' },
   { label: '3D', value: 'visualization3d' }
 ]
 
@@ -1070,14 +1069,15 @@ function hydrateNote() {
 
 function hydrateMindmap() {
   const centerLabel = currentSlide.value?.title || currentItem.value?.title || pptPackage.value?.title || '当前内容'
+  const centerDetail = currentSlideExplanation.value.slice(0, 120) || '点击节点查看详情'
   const nodes: MindmapNode[] = [
     {
       id: 'mindmap-center',
       type: 'mindmap',
-      position: { x: 420, y: 250 },
+      position: { x: 320, y: 240 },
       data: {
         label: centerLabel,
-        detail: currentSlideExplanation.value.slice(0, 120),
+        detail: centerDetail,
         kind: 'center',
         summary: currentSlideTakeaways.value[0] || currentSlideKnowledgePoints.value[0] || '核心主题'
       },
@@ -1086,45 +1086,51 @@ function hydrateMindmap() {
     }
   ]
   const edges: MindmapEdge[] = []
+
+  const knowledgeItems = (currentSlideKnowledgePoints.value.length
+    ? currentSlideKnowledgePoints.value
+    : (currentItem.value?.knowledge_points || [])
+  ).slice(0, 5)
+  if (!knowledgeItems.length) {
+    knowledgeItems.push(currentItem.value?.title || centerLabel, '回顾课件要点', '梳理概念关系')
+  }
+
+  const lectureItems = [
+    currentSlide.value?.example,
+    currentSlide.value?.misconception,
+    currentSlide.value?.interaction_prompt,
+    currentSlide.value?.visual_hint
+  ].filter(Boolean) as string[]
+  if (!lectureItems.length) {
+    lectureItems.push('理解核心概念', '关注易混淆点', '完成互动思考')
+  }
+
+  const outputItems = [
+    noteMarkdown.value ? '📝 笔记已生成' : '可记录 Markdown 笔记',
+    visualizationResource.value ? '🎬 动态演示已生成' : '可生成动态演示',
+    currentSlideTakeaways.value[0] || '',
+  ].filter(Boolean) as string[]
+  if (outputItems.length < 2) {
+    outputItems.push('整理学习笔记', '完成课后练习')
+  }
+
+  const reflectionItems = reflectionPrompts.value.slice(0, 4)
+  if (!reflectionItems.length) {
+    reflectionItems.push('今天我学到了什么？', '还有哪些疑问？', '下一步如何深入？')
+  }
+
   const groups = [
-    {
-      id: 'knowledge',
-      label: '知识点',
-      detail: '本页核心信息',
-      items: (currentSlideKnowledgePoints.value.length ? currentSlideKnowledgePoints.value : (currentItem.value?.knowledge_points || [])).slice(0, 5)
-    },
-    {
-      id: 'lecture',
-      label: '讲解',
-      detail: '课堂说明与示例',
-      items: [
-        currentSlide.value?.example,
-        currentSlide.value?.misconception,
-        currentSlide.value?.interaction_prompt
-      ].filter(Boolean) as string[]
-    },
-    {
-      id: 'output',
-      label: '产物',
-      detail: '可沉淀内容',
-      items: [
-        noteMarkdown.value ? '笔记已生成' : '可记录 Markdown 笔记',
-        visualizationResource.value ? '动态演示已生成' : '可生成动态演示',
-        currentSlideTakeaways.value[0] || ''
-      ].filter(Boolean) as string[]
-    },
-    {
-      id: 'reflection',
-      label: '复盘',
-      detail: '下一步改进',
-      items: reflectionPrompts.value.slice(0, 4)
-    }
+    { id: 'knowledge', label: '知识点', detail: '本页核心信息', items: knowledgeItems },
+    { id: 'lecture', label: '讲解', detail: '课堂说明与示例', items: lectureItems.slice(0, 4) },
+    { id: 'output', label: '产物', detail: '可沉淀内容', items: outputItems.slice(0, 4) },
+    { id: 'reflection', label: '复盘', detail: '下一步改进', items: reflectionItems.slice(0, 4) }
   ]
+
   const anchors = [
-    { x: 140, y: 70 },
-    { x: 770, y: 70 },
-    { x: 140, y: 410 },
-    { x: 770, y: 410 }
+    { x: 80, y: 50 },
+    { x: 560, y: 50 },
+    { x: 80, y: 400 },
+    { x: 560, y: 400 }
   ]
   groups.forEach((group, groupIndex) => {
     const anchor = anchors[groupIndex] || anchors[groupIndex % anchors.length]
@@ -1149,15 +1155,15 @@ function hydrateMindmap() {
       const column = itemIndex % 2
       const nodeId = `${group.id}-${itemIndex}`
       const nodePosition = {
-        x: anchor.x + column * 180,
-        y: anchor.y + 110 + row * 106
+        x: anchor.x + column * 155,
+        y: anchor.y + 100 + row * 90
       }
       nodes.push({
         id: nodeId,
         type: 'mindmap',
         position: nodePosition,
         data: {
-          label: String(item),
+          label: String(item).slice(0, 28),
           detail: group.detail,
           group: group.label,
           kind: 'leaf',
