@@ -1460,7 +1460,7 @@ def _normalize_visualization_frame(raw: Any, index: int, variables: list[str]) -
         raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 必须是对象")
     metrics = _numeric_metrics(raw.get("metrics") if isinstance(raw.get("metrics"), dict) else {})
     if not metrics:
-        metrics = {"step": float(index), "force": 1.0, "speed": 1.0}
+        raise LLMResponseError(f"3D 物理演示 JSON frames[{index}] 缺少可渲染的 metrics")
     return {
         "label": _require_text(raw.get("label"), f"visualization.frames[{index}].label"),
         "metrics": metrics,
@@ -2558,6 +2558,44 @@ def generate_classroom_visualization(
     return _get_session(db, user, session.id)
 
 
+def _repair_visualization_demo_json(
+    *,
+    system_prompt: str,
+    original_prompt: str,
+    raw: Any,
+    validation_error: str,
+    widget_preference: str,
+    user: Optional[User] = None,
+) -> Any:
+    """Give the LLM one chance to fix its broken visualization JSON, same pattern as classroom package repair."""
+    repair_prompt = (
+        "你刚才输出的互动演示 JSON 未通过系统结构校验。请只返回修复后的完整 JSON 对象，不要 Markdown，不要解释。\n"
+        "修复原则：\n"
+        "1. 必须保留原演示主题和教学意图，只补齐或改正不合格字段。\n"
+        "2. 不得删除必填顶层字段：title, widget_type, demo_type, learning_goal, description, "
+        "variables, nodes, edges, frames, controls, teaching_points, student_tasks, safety_notes, "
+        "code_snippet, physics_scene。\n"
+        "3. 如果 widget_type 是 visualization3d，则 physics_scene 必须是一个包含 scene_kind, gravity, camera, objects 的对象；"
+        "每个 object 必须包含 id, label, role, shape, size, position, velocity, mass, color；"
+        "frames 每帧必须包含 label, narrative, metrics（至少 force 和 speed 数值）。\n"
+        "4. 如果 widget_type 不是 visualization3d，则 physics_scene 必须为 null；"
+        "nodes 至少 4 个、edges 至少 3 个、frames 至少 4 帧。\n"
+        "5. 所有数组不得为空；不要使用"待补充""暂无""N/A""占位符"。\n"
+        f"校验错误：{validation_error}\n"
+        f"原始任务要求：{_truncate_for_prompt(original_prompt, 5000)}\n"
+        f"用户 widget_type 偏好：{widget_preference}\n"
+        f"待修复 JSON：{_truncate_for_prompt(json.dumps(raw, ensure_ascii=False), 9000)}\n"
+    )
+    return _qwen_chat_raw_json(
+        system_prompt,
+        repair_prompt,
+        max_tokens=5200,
+        temperature=0.1,
+        timeout_seconds=get_settings().qwen_classroom_timeout_seconds,
+        user=user,
+    )
+
+
 def _generate_visualization_demo(
     project: LearningProject,
     item: LearningSyllabusItem,
@@ -2569,64 +2607,79 @@ def _generate_visualization_demo(
 ) -> _VisualizationDemo:
     widget_preference = _normalize_widget_type(preferred_kind, allow_auto=True)
     knowledge_context = build_rag_context_for_classroom(project, item, instruction)
-    raw = _qwen_chat_raw_json(
-        (
-            "你是 OpenMAIC 风格的 SceneOutlineAgent + InteractiveWidgetRouter。"
-            "为当前课堂页生成一个可交互教学场景规格。"
-            "先判断内容最适合 diagram、simulation、code 还是 visualization3d。"
-            "只有真实空间结构、物理装置、几何、机械、分子、3D 坐标关系等内容才允许使用 visualization3d。"
-            "只输出严格 JSON，不输出 Markdown、HTML 或 JavaScript。"
-            f"{FORMULA_OUTPUT_INSTRUCTIONS}"
-        ),
-        (
-            "输出顶层字段必须完整包含：title, widget_type, demo_type, learning_goal, description, "
-            "variables, nodes, edges, frames, controls, teaching_points, student_tasks, safety_notes, "
-            "code_snippet, physics_scene。\n"
-            "widget_type 只能是 diagram, simulation, code, visualization3d。\n"
-            f"用户偏好：{widget_preference}。如果为 auto，你必须根据主题自行选择最清楚的形态，不要默认 3D。\n"
-            "diagram 适合概念关系、系统结构、论文脉络、课程知识框架；"
-            "simulation 适合算法迭代、状态变化、数据流、协议交互、训练过程；"
-            "code 适合 Python/工程复现/API/实验脚本讲解；"
-            "visualization3d 只适合空间、物理、机械、几何、分子、传感器布置等确实需要三维理解的内容。\n"
-            "demo_type 必须使用规范值，不得自造别名："
-            "diagram=concept_map/system_diagram/flowchart/comparison_map；"
-            "simulation=algorithm_trace/data_flow/process_simulation/state_machine；"
-            "code=code_walkthrough/debug_trace/api_flow/reproduction_demo。"
-            "算法执行、递归栈、迭代过程、复杂度对比必须用 widget_type=simulation 且 demo_type=algorithm_trace。\n"
-            "当 widget_type 不是 visualization3d 时：physics_scene 必须为 null；nodes 至少 4 个；edges 至少 3 个；"
-            "每个 node 必须包含 id, label, kind, x, y, color, detail；x/y 是 0-100 的数字；"
-            "每个 edge 必须包含 source, target, label；source/target 必须引用已有 node id；"
-            "frames 需要 4-8 帧，每帧必须包含 label, narrative, metrics, active_nodes, active_edges；"
-            "active_nodes/active_edges 必须引用节点 id 和边 id/source-target。\n"
-            "当 widget_type 是 code 时，code_snippet 必须给出与主题相关、可阅读的短代码；"
-            "当 widget_type 是 visualization3d 时：physics_scene 必须包含 scene_kind, gravity, camera, objects, annotations；"
-            "objects 4-9 个，每个必须包含 id, label, role, shape, size, position, velocity, mass, color, particle_emitter。"
-            "role 可以是 source, emitter, target, relay, observer, sink, processor, storage, controller, sensor；"
-            "particle_emitter 为 true 时对象会发射粒子拖尾，适合 role=source/emitter/sensor 的对象。"
-            "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics 之一。"
-            "camera 必须包含 position 和 target 两个 [x,y,z] 数组。"
-            "annotations 数组可为空或包含标注箭头对象 {origin:[x,y,z], direction:[x,y,z], length:float, color:'#hex'}。"
-            "每个 frame 必须包含 label, narrative, metrics（至少含 force 和 speed 数值）；"
-            "可选包含 camera_position 和 camera_target，用于切换帧时自动运镜过渡。\n"
-            "controls 至少 2 个，每个包含 name, label, min_value, max_value, default_value, description。\n"
-            "teaching_points 至少 3 条，student_tasks 至少 2 条，safety_notes 至少 1 条。\n"
-            "所有内容必须贴合课堂当前页和知识库来源，不得输出空数组、占位符、模板化泛泛描述。\n"
-            f"项目：{project.title}\n"
-            f"研究/学习方向：{project.research_direction}\n"
-            f"学习项：{item.title}\n"
-            f"学习目标：{item.objective}\n"
-            f"知识点：{item.knowledge_points}\n"
-            f"课堂摘要：{package.learning_summary}\n"
-            f"课程知识库来源：\n{knowledge_context}\n"
-            f"当前页/用户要求：{instruction}\n"
-        ),
-        user=user,
+
+    viz_system_prompt = (
+        "你是 OpenMAIC 风格的 SceneOutlineAgent + InteractiveWidgetRouter。"
+        "为当前课堂页生成一个可交互教学场景规格。"
+        "先判断内容最适合 diagram、simulation、code 还是 visualization3d。"
+        "只有真实空间结构、物理装置、几何、机械、分子、3D 坐标关系等内容才允许使用 visualization3d。"
+        "只输出严格 JSON，不输出 Markdown、HTML 或 JavaScript。"
+        f"{FORMULA_OUTPUT_INSTRUCTIONS}"
     )
-    normalized = _normalize_visualization_demo(raw, widget_preference)
+    viz_user_prompt = (
+        "输出顶层字段必须完整包含：title, widget_type, demo_type, learning_goal, description, "
+        "variables, nodes, edges, frames, controls, teaching_points, student_tasks, safety_notes, "
+        "code_snippet, physics_scene。\n"
+        "widget_type 只能是 diagram, simulation, code, visualization3d。\n"
+        f"用户偏好：{widget_preference}。如果为 auto，你必须根据主题自行选择最清楚的形态，不要默认 3D。\n"
+        "diagram 适合概念关系、系统结构、论文脉络、课程知识框架；"
+        "simulation 适合算法迭代、状态变化、数据流、协议交互、训练过程；"
+        "code 适合 Python/工程复现/API/实验脚本讲解；"
+        "visualization3d 只适合空间、物理、机械、几何、分子、传感器布置等确实需要三维理解的内容。\n"
+        "demo_type 必须使用规范值，不得自造别名："
+        "diagram=concept_map/system_diagram/flowchart/comparison_map；"
+        "simulation=algorithm_trace/data_flow/process_simulation/state_machine；"
+        "code=code_walkthrough/debug_trace/api_flow/reproduction_demo。"
+        "算法执行、递归栈、迭代过程、复杂度对比必须用 widget_type=simulation 且 demo_type=algorithm_trace。\n"
+        "当 widget_type 不是 visualization3d 时：physics_scene 必须为 null；nodes 至少 4 个；edges 至少 3 个；"
+        "每个 node 必须包含 id, label, kind, x, y, color, detail；x/y 是 0-100 的数字；"
+        "每个 edge 必须包含 source, target, label；source/target 必须引用已有 node id；"
+        "frames 需要 4-8 帧，每帧必须包含 label, narrative, metrics, active_nodes, active_edges；"
+        "active_nodes/active_edges 必须引用节点 id 和边 id/source-target。\n"
+        "当 widget_type 是 code 时，code_snippet 必须给出与主题相关、可阅读的短代码；"
+        "当 widget_type 是 visualization3d 时：physics_scene 必须包含 scene_kind, gravity, camera, objects, annotations；"
+        "objects 4-9 个，每个必须包含 id, label, role, shape, size, position, velocity, mass, color, particle_emitter。"
+        "role 可以是 source, emitter, target, relay, observer, sink, processor, storage, controller, sensor；"
+        "particle_emitter 为 true 时对象会发射粒子拖尾，适合 role=source/emitter/sensor 的对象。"
+        "scene_kind 必须是 signal_wave, network_packet, neural_activation, optimization_landscape, sorting_collision, graph_diffusion, general_physics 之一。"
+        "camera 必须包含 position 和 target 两个 [x,y,z] 数组。"
+        "annotations 数组可为空或包含标注箭头对象 {origin:[x,y,z], direction:[x,y,z], length:float, color:'#hex'}。"
+        "每个 frame 必须包含 label, narrative, metrics（至少含 force 和 speed 数值）；"
+        "可选包含 camera_position 和 camera_target，用于切换帧时自动运镜过渡。\n"
+        "controls 至少 2 个，每个包含 name, label, min_value, max_value, default_value, description。\n"
+        "teaching_points 至少 3 条，student_tasks 至少 2 条，safety_notes 至少 1 条。\n"
+        "所有内容必须贴合课堂当前页和知识库来源，不得输出空数组、占位符、模板化泛泛描述。\n"
+        f"项目：{project.title}\n"
+        f"研究/学习方向：{project.research_direction}\n"
+        f"学习项：{item.title}\n"
+        f"学习目标：{item.objective}\n"
+        f"知识点：{item.knowledge_points}\n"
+        f"课堂摘要：{package.learning_summary}\n"
+        f"课程知识库来源：\n{knowledge_context}\n"
+        f"当前页/用户要求：{instruction}\n"
+    )
+
+    raw = _qwen_chat_raw_json(viz_system_prompt, viz_user_prompt, user=user)
     try:
+        normalized = _normalize_visualization_demo(raw, widget_preference)
         return _VisualizationDemo.model_validate(normalized)
-    except Exception as exc:
-        raise LLMResponseError(f"互动演示 JSON 结构校验失败：{exc}") from exc
+    except LLMResponseError as first_error:
+        repaired = _repair_visualization_demo_json(
+            system_prompt=viz_system_prompt,
+            original_prompt=viz_user_prompt,
+            raw=raw,
+            validation_error=str(first_error),
+            widget_preference=widget_preference,
+            user=user,
+        )
+        try:
+            normalized = _normalize_visualization_demo(repaired, widget_preference)
+            return _VisualizationDemo.model_validate(normalized)
+        except (LLMResponseError, Exception) as second_error:
+            raise LLMResponseError(
+                "互动演示 JSON 自动修复后仍未通过校验："
+                f"{second_error}；首次错误：{first_error}。请您截图联系管理员处理"
+            ) from second_error
 
 
 def _normalize_visualization_demo(raw: Any, preferred_kind: str = "auto") -> dict:
